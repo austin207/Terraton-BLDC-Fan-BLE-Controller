@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ble/ble_connection_state.dart';
 import '../../core/ble/ble_frame_builder.dart';
 import '../../core/ble/ble_response_parser.dart';
+import '../../core/ble/ble_service.dart';
 import '../../core/providers.dart';
 import '../../models/fan_device.dart';
 import 'connection_banner.dart';
@@ -26,10 +27,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
   StreamSubscription? _notifySub;
   double _colorTempValue = 0.5;
+  late BleService _ble;
 
   @override
   void initState() {
     super.initState();
+    // Cache before postFrameCallback — ref.read() is forbidden inside dispose()
+    // in Riverpod 2.x because _isDisposed is set before super.unmount().
+    _ble = ref.read(bleServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
   }
 
@@ -97,7 +102,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void dispose() {
     _telemetryTimer?.cancel();
     _notifySub?.cancel();
-    ref.read(bleServiceProvider).disconnect();
+    _ble.disconnect();
     super.dispose();
   }
 
