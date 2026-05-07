@@ -10,5 +10,5 @@ class AppConfig {
   /// qrScan  : User scans QR code on fan packaging.
   /// bleScan : User selects fan from a BLE scan list.
   /// No other code changes are needed when toggling this.
-  static const OnboardingMode onboardingMode = OnboardingMode.qrScan;
+  static const OnboardingMode onboardingMode = OnboardingMode.bleScan;
 }
