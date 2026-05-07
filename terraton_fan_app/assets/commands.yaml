@@ -1,0 +1,82 @@
+# assets/commands.yaml
+# BLE command definitions for Terraton BLDC Fan Controller.
+# Phase 1: bundled as an asset. Update by releasing a new app version.
+# Phase 2 (approved, not yet built): hosted remotely; app fetches on launch
+# and updates local cache when version is bumped. No app update needed.
+# Set command or data to null for pending/unimplemented commands.
+# New command sections added here are automatically available in the app.
+
+version: "1.0"
+
+protocol:
+  header: [0x55, 0xAA]
+  request_packet_id: 0x06
+  response_packet_id: 0x07
+
+# Special case: status poll uses a fixed non-standard frame
+status_poll:
+  frame: [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x01]
+
+commands:
+
+  power:
+    command: 0x02
+    actions:
+      on:  [0x01]
+      off: [0x00]
+
+  speed:
+    command: 0x04
+    steps:
+      1: [0x01]
+      2: [0x02]
+      3: [0x03]
+      4: [0x04]
+      5: [0x05]
+      6: [0x06]
+
+  modes:
+    command: 0x21
+    actions:
+      boost:   [0x01]
+      nature:  [0x02]
+      reverse: [0x03]
+      smart:   [0x04]
+
+  timers:
+    command: 0x22
+    actions:
+      off: [0x00]
+      2h:  [0x02]
+      4h:  [0x04]
+      8h:  [0x08]
+
+  queries:
+    power_consumption:
+      command: 0x23
+      data: [0x00]
+    running_speed:
+      command: 0x24
+      data: [0x00]
+
+  # Lighting commands pending from Terraton.
+  # Set command and data values when received. No code changes needed.
+  lighting:
+    on:
+      command: null
+      data: null
+    off:
+      command: null
+      data: null
+    color_temp:
+      command: null
+      data_min: 0
+      data_max: 255
+
+response_commands:
+  power:        0x02
+  speed:        0x04
+  mode:         0x21
+  timer:        0x22
+  power_watts:  0x23
+  running_rpm:  0x24

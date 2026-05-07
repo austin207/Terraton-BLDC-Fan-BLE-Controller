@@ -1,0 +1,125 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:7689092753891102258",
+      "lastPropertyId": "8:8724215114432112353",
+      "name": "FanDevice",
+      "properties": [
+        {
+          "id": "1:147237961700563683",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:5823485703107898771",
+          "name": "deviceId",
+          "type": 9,
+          "flags": 2080,
+          "indexId": "1:5348191743963573787"
+        },
+        {
+          "id": "3:3331529959578822022",
+          "name": "macAddress",
+          "type": 9
+        },
+        {
+          "id": "4:3190024517310603103",
+          "name": "model",
+          "type": 9
+        },
+        {
+          "id": "5:2480271103966888844",
+          "name": "nickname",
+          "type": 9
+        },
+        {
+          "id": "6:2392897008800705772",
+          "name": "fwVersion",
+          "type": 9
+        },
+        {
+          "id": "7:3502758498536394249",
+          "name": "addedAt",
+          "type": 10
+        },
+        {
+          "id": "8:8724215114432112353",
+          "name": "lastConnectedAt",
+          "type": 10
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "2:6584660752010918141",
+      "lastPropertyId": "9:8865044660608720712",
+      "name": "FanState",
+      "properties": [
+        {
+          "id": "1:2292579713487665491",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2791726193527070308",
+          "name": "deviceId",
+          "type": 9,
+          "flags": 2080,
+          "indexId": "2:2741298653888021969"
+        },
+        {
+          "id": "3:8142245391772955900",
+          "name": "speed",
+          "type": 6
+        },
+        {
+          "id": "4:5354836785458515567",
+          "name": "isBoost",
+          "type": 1
+        },
+        {
+          "id": "5:6223183583105743213",
+          "name": "activeMode",
+          "type": 9
+        },
+        {
+          "id": "6:9012323104763062137",
+          "name": "activeTimerCode",
+          "type": 6
+        },
+        {
+          "id": "7:1944379048785015591",
+          "name": "isPowered",
+          "type": 1
+        },
+        {
+          "id": "8:2621239356923991583",
+          "name": "lastWatts",
+          "type": 6
+        },
+        {
+          "id": "9:8865044660608720712",
+          "name": "lastRpm",
+          "type": 6
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "2:6584660752010918141",
+  "lastIndexId": "2:2741298653888021969",
+  "lastRelationId": "0:0",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [],
+  "retiredRelationUids": [],
+  "version": 1
+}
