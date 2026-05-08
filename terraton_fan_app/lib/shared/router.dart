@@ -1,7 +1,6 @@
 // lib/shared/router.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../core/config/app_config.dart';
 import '../features/home/home_screen.dart';
 import '../features/onboarding/qr_scan_screen.dart';
 import '../features/onboarding/ble_scan_screen.dart';
@@ -46,11 +45,34 @@ final appRouter = GoRouter(
   ],
 );
 
-/// Navigates to the correct onboarding screen based on AppConfig.onboardingMode.
+/// Shows a bottom sheet letting the user pick QR scan or BLE scan.
 void goToOnboarding(BuildContext context) {
-  if (AppConfig.onboardingMode == OnboardingMode.qrScan) {
-    context.push('/scan/qr');
-  } else {
-    context.push('/scan/ble');
-  }
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetCtx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+            child: Text('How would you like to add your fan?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.bluetooth_searching),
+            title: const Text('Search via Bluetooth'),
+            subtitle: const Text('Scan for nearby fans'),
+            onTap: () { Navigator.pop(sheetCtx); context.push('/scan/ble'); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.qr_code_scanner),
+            title: const Text('Scan QR Code'),
+            subtitle: const Text('Scan the QR code on your fan packaging'),
+            onTap: () { Navigator.pop(sheetCtx); context.push('/scan/qr'); },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
 }
