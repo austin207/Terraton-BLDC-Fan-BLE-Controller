@@ -6,94 +6,68 @@ $BuildsDir   = Join-Path $ProjectRoot "builds"
 $Repo        = "austin207/Terraton-BLDC-Fan-BLE-Controller"
 $ReleaseTag  = "latest"
 
-# ── Helper: build one variant and copy APKs to $BuildsDir ────────────────────
-function Build-Variant {
-    param(
-        [string]$Variant,     # "ble" or "qr"
-        [string]$ExtraFlags   # e.g. "--dart-define=BLE_SCAN=true" or ""
-    )
+# ── 1. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
+Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
+Set-Location $AppDir
 
-    Write-Host ""
-    Write-Host "Building $Variant variant ($ExtraFlags)..." -ForegroundColor Cyan
-    Set-Location $AppDir
-
-    $cmd = "flutter build apk --release --split-per-abi $ExtraFlags".Trim()
-    Invoke-Expression $cmd
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "$Variant build failed." -ForegroundColor Red
-        exit 1
-    }
-
-    $ApkDir = Join-Path $AppDir "build\app\outputs\flutter-apk"
-    $Arm64  = Join-Path $ApkDir "app-arm64-v8a-release.apk"
-    $Arm7   = Join-Path $ApkDir "app-armeabi-v7a-release.apk"
-    $X86    = Join-Path $ApkDir "app-x86_64-release.apk"
-
-    if (-not (Test-Path $Arm64)) {
-        Write-Host "arm64 APK not found at: $Arm64" -ForegroundColor Red
-        exit 1
-    }
-
-    $ts       = Get-Date -Format "yyyyMMdd_HHmmss"
-    $names    = @{}
-    $locals   = @{}
-
-    $names["arm64"] = "terraton-fan-$Variant-arm64-$ts.apk"
-    $locals["arm64"] = Join-Path $BuildsDir $names["arm64"]
-    Copy-Item $Arm64 $locals["arm64"]
-    Write-Host "  Saved arm64  : $($locals['arm64'])" -ForegroundColor Green
-
-    if (Test-Path $Arm7) {
-        $names["arm7"]  = "terraton-fan-$Variant-arm7-$ts.apk"
-        $locals["arm7"] = Join-Path $BuildsDir $names["arm7"]
-        Copy-Item $Arm7 $locals["arm7"]
-        Write-Host "  Saved arm7   : $($locals['arm7'])" -ForegroundColor Green
-    }
-    if (Test-Path $X86) {
-        $names["x86"]  = "terraton-fan-$Variant-x86_64-$ts.apk"
-        $locals["x86"] = Join-Path $BuildsDir $names["x86"]
-        Copy-Item $X86 $locals["x86"]
-        Write-Host "  Saved x86_64 : $($locals['x86'])" -ForegroundColor Green
-    }
-
-    return $locals
+flutter build apk --release --split-per-abi
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Build failed." -ForegroundColor Red
+    exit 1
 }
 
-# ── 1. Build both variants ────────────────────────────────────────────────────
-$QrApks  = Build-Variant -Variant "qr"  -ExtraFlags ""
-$BleApks = Build-Variant -Variant "ble" -ExtraFlags "--dart-define=BLE_SCAN=true"
+# arm64-v8a covers all modern Android phones and is the primary download.
+# arm7 and x86_64 are also uploaded for older devices and emulators.
+$ApkDir  = Join-Path $AppDir "build\app\outputs\flutter-apk"
+$Arm64   = Join-Path $ApkDir "app-arm64-v8a-release.apk"
+$Arm7    = Join-Path $ApkDir "app-armeabi-v7a-release.apk"
+$X86     = Join-Path $ApkDir "app-x86_64-release.apk"
 
-# ── 2. Publish to GitHub Releases (tag: latest) ───────────────────────────────
+if (-not (Test-Path $Arm64)) {
+    Write-Host "arm64 APK not found at: $Arm64" -ForegroundColor Red
+    exit 1
+}
+
+# ── 2. Save timestamped copies locally ───────────────────────────────────────
+$Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
+$Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
+$Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
+$X86Name    = "terraton-fan-x86_64-$Timestamp.apk"
+$Arm64Local = Join-Path $BuildsDir $Arm64Name
+$Arm7Local  = Join-Path $BuildsDir $Arm7Name
+$X86Local   = Join-Path $BuildsDir $X86Name
+
+Copy-Item $Arm64 $Arm64Local
+Write-Host "Saved arm64 : $Arm64Local" -ForegroundColor Green
+if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Local;  Write-Host "Saved arm7  : $Arm7Local"  -ForegroundColor Green }
+if (Test-Path $X86)   { Copy-Item $X86  $X86Local;   Write-Host "Saved x86_64: $X86Local"   -ForegroundColor Green }
+
+# ── 3. Publish to GitHub Releases (tag: latest) ───────────────────────────────
 Write-Host ""
 Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
 Set-Location $ProjectRoot
 
+# Delete existing 'latest' release and tag so we can replace it cleanly
 gh release delete $ReleaseTag --repo $Repo --yes 2>$null
 git tag -d $ReleaseTag 2>$null
 git push origin --delete $ReleaseTag 2>$null
 
-$Assets = @()
-foreach ($v in @($BleApks, $QrApks)) {
-    foreach ($k in @("arm64","arm7","x86")) {
-        if ($v.ContainsKey($k)) { $Assets += $v[$k] }
-    }
-}
+# Collect APKs to upload (arm64 always present; others if built)
+$Assets = @($Arm64Local)
+if (Test-Path $Arm7Local) { $Assets += $Arm7Local }
+if (Test-Path $X86Local)  { $Assets += $X86Local  }
 
 $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
 $Notes = @"
 Built on $BuildDate
 
-## BLE Scan variant (`-ble-` in filename)
-Onboarding: select fan from a Bluetooth scan list.
+Both QR scan and Bluetooth scan onboarding are included in every APK.
 
-## QR Scan variant (`-qr-` in filename)
-Onboarding: scan QR code on fan packaging.
-
-| APK suffix | Architecture | Use for |
-|------------|-------------|---------|
-| arm64 | arm64-v8a | All modern Android phones **(recommended)** |
-| arm7  | armeabi-v7a | Older 32-bit Android phones |
-| x86_64 | x86_64 | Android emulators |
+| APK | Architecture | Use for |
+|-----|-------------|---------|
+| terraton-fan-arm64-*.apk | arm64-v8a | All modern Android phones (recommended) |
+| terraton-fan-arm7-*.apk  | armeabi-v7a | Older 32-bit Android phones |
+| terraton-fan-x86_64-*.apk | x86_64 | Android emulators |
 "@
 
 gh release create $ReleaseTag @Assets `
@@ -109,5 +83,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green
-Write-Host "BLE arm64 (recommended): https://github.com/$Repo/releases/latest/download/$($BleApks['arm64'] | Split-Path -Leaf)" -ForegroundColor Cyan
-Write-Host "QR  arm64             : https://github.com/$Repo/releases/latest/download/$($QrApks['arm64']  | Split-Path -Leaf)" -ForegroundColor Cyan
+Write-Host "Recommended download (arm64): https://github.com/$Repo/releases/latest/download/$Arm64Name" -ForegroundColor Cyan
