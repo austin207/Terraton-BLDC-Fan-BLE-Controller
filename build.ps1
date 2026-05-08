@@ -6,6 +6,12 @@ $BuildsDir   = Join-Path $ProjectRoot "builds"
 $Repo        = "austin207/Terraton-BLDC-Fan-BLE-Controller"
 $ReleaseTag  = "latest"
 
+# ── 0. Clear builds folder ───────────────────────────────────────────────────
+if (Test-Path $BuildsDir) {
+    Remove-Item (Join-Path $BuildsDir "*.apk") -Force
+    Write-Host "Cleared old APKs from builds/" -ForegroundColor DarkGray
+}
+
 # ── 1. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
 Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 Set-Location $AppDir
