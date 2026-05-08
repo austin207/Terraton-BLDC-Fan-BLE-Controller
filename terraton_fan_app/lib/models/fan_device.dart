@@ -26,7 +26,7 @@ class FanDevice {
   String fwVersion = '';
 
   @Property(type: PropertyType.date)
-  late DateTime addedAt;
+  DateTime addedAt = DateTime.now(); // was `late` — default prevents LateInitializationError
 
   @Property(type: PropertyType.date)
   DateTime? lastConnectedAt;

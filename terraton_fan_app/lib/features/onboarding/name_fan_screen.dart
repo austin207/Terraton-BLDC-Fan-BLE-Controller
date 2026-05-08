@@ -2,8 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../models/fan_device.dart';
+import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
 
 class NameFanScreen extends ConsumerStatefulWidget {
   final FanDevice fan;
@@ -16,6 +17,9 @@ class NameFanScreen extends ConsumerStatefulWidget {
 class _NameFanScreenState extends ConsumerState<NameFanScreen> {
   late final TextEditingController _ctrl;
   final _formKey = GlobalKey<FormState>();
+
+  // Compiled once at class level — not on every keystroke.
+  static final _nameRegex = RegExp(r'^[a-zA-Z0-9 ]+$');
 
   @override
   void initState() {
@@ -33,9 +37,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
   String? _validate(String? v) {
     if (v == null || v.trim().isEmpty) return 'Name cannot be empty';
     if (v.length > 30) return 'Max 30 characters';
-    if (!RegExp(r'^[a-zA-Z0-9 ]+$').hasMatch(v)) {
-      return 'Alphanumeric characters and spaces only';
-    }
+    if (!_nameRegex.hasMatch(v)) return 'Alphanumeric characters and spaces only';
     return null;
   }
 
@@ -44,9 +46,8 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
     final fan = widget.fan..nickname = _ctrl.text.trim();
     await ref.read(fanRepositoryProvider).saveFan(fan);
     ref.invalidate(savedFansProvider);
-    ref.read(activeFanProvider.notifier).set(fan);
     if (mounted) {
-      context.go('/control', extra: fan);
+      context.go(AppRoutes.control, extra: fan);
     }
   }
 

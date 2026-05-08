@@ -1,14 +1,13 @@
 // lib/app.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'shared/router.dart';
-import 'shared/theme.dart';
+import 'package:terraton_fan_app/shared/router.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
-class TerratorApp extends ConsumerWidget {
+class TerratorApp extends StatelessWidget {
   const TerratorApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'Terraton Fan',
       theme: buildAppTheme(),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 const kPrimary    = Color(0xFF1A56A0);
 const kBackground = Color(0xFFF5F7FA);
+const kBoostColor = Colors.deepOrange;
 
 // Speed segment colours per AC-05-3
 const List<Color> kSpeedColors = [

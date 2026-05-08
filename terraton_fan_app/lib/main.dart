@@ -2,12 +2,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'core/commands/command_loader.dart';
-import 'core/storage/objectbox_store.dart';
-import 'app.dart';
+import 'package:terraton_fan_app/core/commands/command_loader.dart';
+import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
+import 'package:terraton_fan_app/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = FlutterError.presentError;
+  WidgetsBinding.instance.platformDispatcher.onError = (Object error, StackTrace stack) {
+    FlutterError.presentError(FlutterErrorDetails(exception: error, stack: stack));
+    return true;
+  };
+  ErrorWidget.builder = (details) => const Material(
+    child: Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Something went wrong.\nPlease restart the app.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Color(0xFFD32F2F)),
+        ),
+      ),
+    ),
+  );
 
   await CommandLoader.load();
   await initObjectBox();

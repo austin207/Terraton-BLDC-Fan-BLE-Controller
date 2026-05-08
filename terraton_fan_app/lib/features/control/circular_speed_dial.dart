@@ -2,7 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../shared/theme.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class CircularSpeedDial extends StatelessWidget {
   final int currentSpeed; // 0 = none; 1-6
@@ -54,7 +54,6 @@ class CircularSpeedDial extends StatelessWidget {
                 ),
               ),
             ),
-          // Centre readout
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -123,7 +122,6 @@ class _SegmentPainter extends CustomPainter {
         ..color = c,
     );
 
-    // Speed number label at arc midpoint
     final mid    = startAngle + sweepAngle / 2;
     final labelR = (outerR + innerR) / 2;
     final lx     = centre.dx + labelR * math.cos(mid);

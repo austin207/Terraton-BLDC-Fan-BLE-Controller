@@ -1,8 +1,8 @@
 // lib/core/ble/ble_service.dart
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'ble_constants.dart';
-import 'ble_connection_state.dart' as app;
+import 'package:terraton_fan_app/core/ble/ble_constants.dart';
+import 'package:terraton_fan_app/core/ble/ble_connection_state.dart' as app;
 
 class DiscoveredFan {
   final String macAddress;
@@ -17,6 +17,7 @@ abstract class BleService {
   Future<String> connect();
   Future<void> disconnect();
   Future<void> writeFrame(List<int> frame);
+  Future<void> dispose();
   Stream<List<int>>               get notifyStream;
   Stream<app.BleConnectionState>  get connectionStateStream;
   app.BleConnectionState          get currentState;
@@ -31,6 +32,12 @@ class BleServiceImpl implements BleService {
   int                        _retryCount = 0;
   static const int           _maxRetries = 3;
   static const Duration      _retryDelay = Duration(seconds: 5);
+
+  // Stored so they can be cancelled before re-subscribing and on dispose.
+  StreamSubscription<List<ScanResult>>? _scanResultsSub;
+  StreamSubscription<bool>?             _isScanSub;
+  StreamSubscription<BluetoothConnectionState>? _connStateSub;
+  StreamSubscription<List<int>>?        _notifyValueSub;
 
   final _notifyController      = StreamController<List<int>>.broadcast();
   final _stateController       = StreamController<app.BleConnectionState>.broadcast();
@@ -59,12 +66,17 @@ class BleServiceImpl implements BleService {
     _discovered.clear();
     _setState(app.BleConnectionState.scanning);
 
+    // Cancel previous scan subscriptions before re-subscribing.
+    // Without this, every Refresh tap stacks a new listener.
+    await _scanResultsSub?.cancel();
+    await _isScanSub?.cancel();
+
     await FlutterBluePlus.startScan(
       withServices: [Guid(kServiceUUID)],
       timeout: Duration(seconds: timeoutSeconds),
     );
 
-    FlutterBluePlus.scanResults.listen((results) {
+    _scanResultsSub = FlutterBluePlus.scanResults.listen((results) {
       for (final r in results) {
         final mac  = r.device.remoteId.str;
         final name = r.device.platformName.isNotEmpty ? r.device.platformName : mac;
@@ -73,7 +85,7 @@ class BleServiceImpl implements BleService {
       _scanResultsController.add(_discovered.values.toList());
     });
 
-    FlutterBluePlus.isScanning.listen((scanning) {
+    _isScanSub = FlutterBluePlus.isScanning.listen((scanning) {
       if (!scanning && _currentState == app.BleConnectionState.scanning) {
         _setState(app.BleConnectionState.disconnected);
       }
@@ -97,12 +109,10 @@ class BleServiceImpl implements BleService {
     BluetoothDevice? target;
 
     if (_targetMac != null) {
-      // Direct connect to known MAC (Android)
       target = BluetoothDevice.fromId(_targetMac!);
     } else {
-      // Wait for first scan result
       final completer = Completer<BluetoothDevice>();
-      StreamSubscription? sub;
+      StreamSubscription<List<ScanResult>>? sub;
       sub = FlutterBluePlus.scanResults.listen((results) {
         if (results.isNotEmpty && !completer.isCompleted) {
           completer.complete(results.first.device);
@@ -117,10 +127,12 @@ class BleServiceImpl implements BleService {
 
     try {
       await target.connect(license: License.free, timeout: const Duration(seconds: 15));
-    } catch (e) {
+    } on Object catch (_) {
+      // Disconnect the partial connection before retrying to avoid "already connected" errors.
+      try { await target.disconnect(); } on Object catch (_) {}
       if (_retryCount < _maxRetries) {
         _retryCount++;
-        await Future.delayed(_retryDelay);
+        await Future<void>.delayed(_retryDelay);
         return _doConnect();
       }
       _setState(app.BleConnectionState.disconnected);
@@ -129,7 +141,6 @@ class BleServiceImpl implements BleService {
 
     _device = target;
 
-    // Discover services and cache characteristics
     final services = await target.discoverServices();
     for (final svc in services) {
       if (svc.serviceUuid == Guid(kServiceUUID)) {
@@ -142,18 +153,21 @@ class BleServiceImpl implements BleService {
 
     if (_notifyChar != null) {
       await _notifyChar!.setNotifyValue(true);
-      _notifyChar!.onValueReceived.listen((bytes) {
+      await _notifyValueSub?.cancel();
+      _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
         _notifyController.add(bytes);
       });
     }
 
-    // Listen for disconnection to auto-reconnect
-    target.connectionState.listen((state) {
+    // Cancel any previous listener before attaching a new one.
+    // Without this, each reconnect adds a duplicate callback.
+    await _connStateSub?.cancel();
+    _connStateSub = target.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         _setState(app.BleConnectionState.disconnected);
         if (_retryCount < _maxRetries) {
           _retryCount++;
-          Future.delayed(_retryDelay, _doConnect);
+          unawaited(Future<void>.delayed(_retryDelay, _doConnect));
         }
       }
     });
@@ -166,6 +180,8 @@ class BleServiceImpl implements BleService {
   @override
   Future<void> disconnect() async {
     _retryCount = _maxRetries; // Prevent auto-reconnect on intentional disconnect
+    await _connStateSub?.cancel();
+    _connStateSub = null;
     await _device?.disconnect();
     _writeChar  = null;
     _notifyChar = null;
@@ -177,5 +193,16 @@ class BleServiceImpl implements BleService {
   Future<void> writeFrame(List<int> frame) async {
     if (_writeChar == null) return;
     await _writeChar!.write(frame, withoutResponse: false);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _scanResultsSub?.cancel();
+    await _isScanSub?.cancel();
+    await _connStateSub?.cancel();
+    await _notifyValueSub?.cancel();
+    await _notifyController.close();
+    await _stateController.close();
+    await _scanResultsController.close();
   }
 }

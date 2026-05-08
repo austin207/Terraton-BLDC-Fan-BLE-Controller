@@ -1,6 +1,7 @@
 // lib/features/control/timer_control_widget.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class TimerControlWidget extends StatelessWidget {
   final int? activeTimerCode; // 0x02, 0x04, 0x08, or null (OFF)
@@ -32,9 +33,9 @@ class TimerControlWidget extends StatelessWidget {
                   }
                 : null,
             style: OutlinedButton.styleFrom(
-              backgroundColor: isActive ? const Color(0xFF1A56A0) : null,
+              backgroundColor: isActive ? kPrimary : null,
               foregroundColor: isActive ? Colors.white : null,
-              side: const BorderSide(color: Color(0xFF1A56A0)),
+              side: const BorderSide(color: kPrimary),
             ),
             child: Text(label),
           ),

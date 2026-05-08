@@ -2,7 +2,7 @@
 import 'package:objectbox/objectbox.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import '../../objectbox.g.dart' as ob;
+import 'package:terraton_fan_app/objectbox.g.dart' as ob;
 
 Store? _store;
 
@@ -14,6 +14,8 @@ Future<Store> initObjectBox() async {
 }
 
 Store get store {
-  assert(_store != null, 'Call initObjectBox() before accessing store.');
+  if (_store == null) {
+    throw StateError('Call initObjectBox() before accessing store.');
+  }
   return _store!;
 }

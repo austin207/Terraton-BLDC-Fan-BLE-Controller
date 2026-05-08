@@ -1,6 +1,7 @@
 // lib/features/control/mode_control_widget.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class ModeControlWidget extends StatelessWidget {
   final String? activeMode;
@@ -52,9 +53,9 @@ class _ButtonRow extends StatelessWidget {
           child: OutlinedButton(
             onPressed: enabled ? () => onSelect(k) : null,
             style: OutlinedButton.styleFrom(
-              backgroundColor: isActive ? const Color(0xFF1A56A0) : null,
+              backgroundColor: isActive ? kPrimary : null,
               foregroundColor: isActive ? Colors.white : null,
-              side: const BorderSide(color: Color(0xFF1A56A0)),
+              side: const BorderSide(color: kPrimary),
             ),
             child: Text(k),
           ),

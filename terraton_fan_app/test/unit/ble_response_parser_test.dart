@@ -52,4 +52,38 @@ void main() {
       expect(BleResponseParser.parseRpm(r!), 360);
     });
   });
+
+  group('BleResponseParser.parseModeString', () {
+    // Checksum for mode frames: 0x07 + 0x21 + 0x01 + modeByteValue
+    test('byte 0x01 → boost', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x21, 0x01, 0x01, 0x2A]);
+      expect(BleResponseParser.parseModeString(r!), 'boost');
+    });
+
+    test('byte 0x02 → nature', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x21, 0x01, 0x02, 0x2B]);
+      expect(BleResponseParser.parseModeString(r!), 'nature');
+    });
+
+    test('byte 0x03 → reverse', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x21, 0x01, 0x03, 0x2C]);
+      expect(BleResponseParser.parseModeString(r!), 'reverse');
+    });
+
+    test('byte 0x04 → smart', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x21, 0x01, 0x04, 0x2D]);
+      expect(BleResponseParser.parseModeString(r!), 'smart');
+    });
+
+    test('unknown byte → null', () {
+      // checksum: 0x07+0x21+0x01+0xFF = 0x128 & 0xFF = 0x28
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x21, 0x01, 0xFF, 0x28]);
+      expect(BleResponseParser.parseModeString(r!), isNull);
+    });
+
+    test('wrong command → null', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0B]);
+      expect(BleResponseParser.parseModeString(r!), isNull);
+    });
+  });
 }

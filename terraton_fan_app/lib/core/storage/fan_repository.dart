@@ -1,9 +1,9 @@
 // lib/core/storage/fan_repository.dart
 import 'dart:convert';
-import '../../models/fan_device.dart';
-import '../../models/fan_state.dart';
-import '../../objectbox.g.dart';
-import 'objectbox_store.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/models/fan_state.dart';
+import 'package:terraton_fan_app/objectbox.g.dart';
+import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 
 abstract class FanRepository {
   List<FanDevice> getAllFans();
@@ -23,18 +23,26 @@ class FanRepositoryImpl implements FanRepository {
   Box<FanDevice> get _fanBox => store.box<FanDevice>();
   Box<FanState>  get _stateBox => store.box<FanState>();
 
-  @override
-  List<FanDevice> getAllFans() =>
-      _fanBox.query().order(FanDevice_.addedAt, flags: Order.descending).build().find();
+  static R _useQuery<T, R>(Query<T> q, R Function(Query<T>) fn) {
+    try { return fn(q); } finally { q.close(); }
+  }
 
   @override
-  FanDevice? getFanByDeviceId(String deviceId) =>
-      _fanBox.query(FanDevice_.deviceId.equals(deviceId)).build().findFirst();
+  List<FanDevice> getAllFans() => _useQuery(
+      _fanBox.query().order(FanDevice_.addedAt, flags: Order.descending).build(),
+      (q) => q.find());
+
+  @override
+  FanDevice? getFanByDeviceId(String deviceId) => _useQuery(
+      _fanBox.query(FanDevice_.deviceId.equals(deviceId)).build(),
+      (q) => q.findFirst());
 
   @override
   FanDevice? getFanByMac(String macAddress) {
     if (macAddress.isEmpty) return null;
-    return _fanBox.query(FanDevice_.macAddress.equals(macAddress)).build().findFirst();
+    return _useQuery(
+        _fanBox.query(FanDevice_.macAddress.equals(macAddress)).build(),
+        (q) => q.findFirst());
   }
 
   @override
@@ -55,7 +63,9 @@ class FanRepositoryImpl implements FanRepository {
   Future<void> deleteFan(String deviceId) async {
     final fan = getFanByDeviceId(deviceId);
     if (fan != null) _fanBox.remove(fan.id);
-    final st = _stateBox.query(FanState_.deviceId.equals(deviceId)).build().findFirst();
+    final st = _useQuery(
+        _stateBox.query(FanState_.deviceId.equals(deviceId)).build(),
+        (q) => q.findFirst());
     if (st != null) _stateBox.remove(st.id);
   }
 
@@ -69,13 +79,17 @@ class FanRepositoryImpl implements FanRepository {
 
   @override
   FanState getState(String deviceId) {
-    return _stateBox.query(FanState_.deviceId.equals(deviceId)).build().findFirst()
+    return _useQuery(
+        _stateBox.query(FanState_.deviceId.equals(deviceId)).build(),
+        (q) => q.findFirst())
         ?? (FanState()..deviceId = deviceId);
   }
 
   @override
   Future<void> saveState(FanState fanState) async {
-    final existing = _stateBox.query(FanState_.deviceId.equals(fanState.deviceId)).build().findFirst();
+    final existing = _useQuery(
+        _stateBox.query(FanState_.deviceId.equals(fanState.deviceId)).build(),
+        (q) => q.findFirst());
     if (existing != null) fanState.id = existing.id;
     _stateBox.put(fanState);
   }
@@ -100,26 +114,32 @@ class FanRepositoryImpl implements FanRepository {
 
   @override
   Future<int> importFromJson(String json) async {
-    final map = jsonDecode(json) as Map<String, dynamic>;
-    if (map['version'] != 1) throw FormatException('Unsupported export version.');
-    final fans = (map['fans'] as List).cast<Map<String, dynamic>>();
-    int imported = 0;
-    for (final f in fans) {
-      final deviceId   = f['device_id']   as String? ?? '';
-      final macAddress = f['mac_address'] as String? ?? '';
-      final nickname   = f['nickname']    as String? ?? '';
-      if (deviceId.isEmpty || nickname.isEmpty) continue;
-      if (getFanByDeviceId(deviceId) != null) continue;
-      final fan = FanDevice()
-        ..deviceId   = deviceId
-        ..macAddress = macAddress
-        ..model      = f['model']      as String? ?? ''
-        ..nickname   = nickname
-        ..fwVersion  = f['fw_version'] as String? ?? ''
-        ..addedAt    = DateTime.tryParse(f['added_at'] as String? ?? '') ?? DateTime.now();
-      _fanBox.put(fan);
-      imported++;
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      if (map['version'] != 1) throw const FormatException('Unsupported export version.');
+      final fans = (map['fans'] as List).cast<Map<String, dynamic>>();
+      int imported = 0;
+      for (final f in fans) {
+        final deviceId   = f['device_id']   as String? ?? '';
+        final macAddress = f['mac_address'] as String? ?? '';
+        final nickname   = f['nickname']    as String? ?? '';
+        if (deviceId.isEmpty || nickname.isEmpty) continue;
+        if (getFanByDeviceId(deviceId) != null) continue;
+        final fan = FanDevice()
+          ..deviceId   = deviceId
+          ..macAddress = macAddress
+          ..model      = f['model']      as String? ?? ''
+          ..nickname   = nickname
+          ..fwVersion  = f['fw_version'] as String? ?? ''
+          ..addedAt    = DateTime.tryParse(f['added_at'] as String? ?? '') ?? DateTime.now();
+        _fanBox.put(fan);
+        imported++;
+      }
+      return imported;
+    } on FormatException {
+      rethrow;
+    } on Object catch (e) {
+      throw FormatException('Malformed backup file: $e');
     }
-    return imported;
   }
 }

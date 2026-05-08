@@ -39,4 +39,16 @@ class BleResponseParser {
 
   static int?  parseTimer(FanResponse r) =>
       r.command == 0x22 && r.data.isNotEmpty ? r.data[0] : null;
+
+  // Converts mode response byte to mode name string.
+  // Keeps protocol byte values out of business logic (providers.dart).
+  static String? parseModeString(FanResponse r) {
+    if (r.command != 0x21 || r.data.isEmpty) return null;
+    return const <int, String>{
+      0x01: 'boost',
+      0x02: 'nature',
+      0x03: 'reverse',
+      0x04: 'smart',
+    }[r.data[0]];
+  }
 }

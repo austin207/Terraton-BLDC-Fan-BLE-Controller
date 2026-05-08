@@ -15,7 +15,9 @@ class CommandLoader {
   }
 
   static YamlMap get config {
-    assert(_config != null, 'CommandLoader.load() must be called before use.');
+    if (_config == null) {
+      throw StateError('CommandLoader.load() must be called before use.');
+    }
     return _config!;
   }
 
@@ -41,7 +43,7 @@ class CommandLoader {
   }
 
   static List<int>? speed(int step) {
-    assert(step >= 1 && step <= 6);
+    if (step < 1 || step > 6) return null;
     final cmd = _safeGet(['commands', 'speed']);
     if (cmd == null) return null;
     return buildFrame(cmd['command'] as int?, _toIntList(cmd['steps'][step]));
@@ -98,7 +100,6 @@ class CommandLoader {
     return buildFrame(cmd, data);
   }
 
-  /// Safe nested map access. Returns null on missing keys instead of throwing.
   static dynamic _safeGet(List<String> path) {
     dynamic node = config;
     for (final key in path) {

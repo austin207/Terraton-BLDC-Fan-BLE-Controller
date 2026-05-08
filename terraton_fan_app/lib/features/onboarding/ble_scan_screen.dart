@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/providers.dart';
-import '../../core/ble/ble_service.dart';
-import '../../models/fan_device.dart';
+import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
   const BleScanScreen({super.key});
@@ -18,7 +20,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   List<DiscoveredFan> _results = [];
   bool _scanning = true;
   bool _timedOut = false;
-  StreamSubscription? _sub;
+  StreamSubscription<List<DiscoveredFan>>? _sub;
   Timer? _timeout;
 
   @override
@@ -31,7 +33,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     setState(() { _scanning = true; _timedOut = false; _results = []; });
     final ble = ref.read(bleServiceProvider);
 
-    _sub?.cancel();
+    await _sub?.cancel();
     _sub = ble.scanResultsStream.listen((fans) {
       if (mounted) setState(() => _results = fans);
     });
@@ -53,7 +55,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.read(fanRepositoryProvider);
+    final repo = ref.watch(fanRepositoryProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,6 +63,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh scan',
             onPressed: _startScan,
           ),
         ],
@@ -103,7 +106,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             final alreadyAdded = repo.getFanByMac(fan.macAddress) != null;
             return Card(
               child: ListTile(
-                leading: const Icon(Icons.wind_power, color: Color(0xFF1A56A0)),
+                leading: const Icon(Icons.wind_power, color: kPrimary),
                 title: Text(fan.name),
                 subtitle: Text(fan.macAddress),
                 trailing: alreadyAdded
@@ -112,15 +115,18 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                             style: TextStyle(fontSize: 11)),
                         backgroundColor: Colors.grey.shade200,
                       )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.signal_cellular_alt,
-                              size: 16,
-                              color: _rssiColor(fan.rssi)),
-                          Text('${fan.rssi} dBm',
-                              style: const TextStyle(fontSize: 12)),
-                        ],
+                    : Semantics(
+                        label: 'Signal strength: ${_rssiLabel(fan.rssi)}',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.signal_cellular_alt,
+                                size: 16,
+                                color: _rssiColor(fan.rssi)),
+                            Text('${fan.rssi} dBm',
+                                style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
                       ),
                 enabled: !alreadyAdded,
                 onTap: alreadyAdded ? null : () {
@@ -129,7 +135,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                     ..macAddress = fan.macAddress
                     ..nickname   = ''
                     ..addedAt    = DateTime.now();
-                  context.push('/name-fan', extra: device);
+                  context.push(AppRoutes.nameFan, extra: device);
                 },
               ),
             );
@@ -143,5 +149,11 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     if (rssi >= -60) return Colors.green;
     if (rssi >= -80) return Colors.orange;
     return Colors.red;
+  }
+
+  String _rssiLabel(int rssi) {
+    if (rssi >= -60) return 'strong';
+    if (rssi >= -80) return 'fair';
+    return 'weak';
   }
 }

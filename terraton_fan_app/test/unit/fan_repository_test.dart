@@ -17,7 +17,7 @@ class _FakeRepo implements FanRepository {
   FanDevice? getFanByDeviceId(String deviceId) {
     try {
       return _fans.firstWhere((f) => f.deviceId == deviceId);
-    } catch (_) {
+    } on StateError catch (_) {
       return null;
     }
   }
@@ -27,7 +27,7 @@ class _FakeRepo implements FanRepository {
     if (macAddress.isEmpty) return null;
     try {
       return _fans.firstWhere((f) => f.macAddress == macAddress);
-    } catch (_) {
+    } on StateError catch (_) {
       return null;
     }
   }
@@ -63,7 +63,7 @@ class _FakeRepo implements FanRepository {
   FanState getState(String deviceId) {
     try {
       return _states.firstWhere((s) => s.deviceId == deviceId);
-    } catch (_) {
+    } on StateError catch (_) {
       return FanState()..deviceId = deviceId;
     }
   }
@@ -95,7 +95,7 @@ class _FakeRepo implements FanRepository {
   @override
   Future<int> importFromJson(String json) async {
     final map = jsonDecode(json) as Map<String, dynamic>;
-    if (map['version'] != 1) throw FormatException('Unsupported export version.');
+    if (map['version'] != 1) throw const FormatException('Unsupported export version.');
     final fans = (map['fans'] as List).cast<Map<String, dynamic>>();
     int imported = 0;
     for (final f in fans) {
@@ -357,7 +357,7 @@ void main() {
     });
 
     test('throws FormatException for unsupported version', () {
-      final bad = jsonEncode({'version': 2, 'fans': []});
+      final bad = jsonEncode({'version': 2, 'fans': <Map<String, dynamic>>[]});
       expect(repo.importFromJson(bad), throwsA(isA<FormatException>()));
     });
 

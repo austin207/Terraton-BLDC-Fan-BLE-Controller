@@ -1,9 +1,9 @@
 // lib/core/ble/ble_frame_builder.dart
 // All frames come from CommandLoader (YAML). This class is a typed facade.
 // Do not hardcode any bytes here.
-// Do not call BleFrameBuilder directly from UI widgets — go through ControlScreenNotifier.
+// Do not call BleFrameBuilder directly from UI widgets — go through ControlScreen._send().
 
-import '../commands/command_loader.dart';
+import 'package:terraton_fan_app/core/commands/command_loader.dart';
 
 class BleFrameBuilder {
   static List<int>  statusPoll()          => CommandLoader.statusPoll();

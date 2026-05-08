@@ -1,45 +1,49 @@
 // lib/shared/router.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../features/home/home_screen.dart';
-import '../features/onboarding/qr_scan_screen.dart';
-import '../features/onboarding/ble_scan_screen.dart';
-import '../features/onboarding/name_fan_screen.dart';
-import '../features/control/control_screen.dart';
-import '../features/settings/settings_screen.dart';
-import '../models/fan_device.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/features/home/home_screen.dart';
+import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
+import 'package:terraton_fan_app/features/onboarding/ble_scan_screen.dart';
+import 'package:terraton_fan_app/features/onboarding/name_fan_screen.dart';
+import 'package:terraton_fan_app/features/control/control_screen.dart';
+import 'package:terraton_fan_app/features/settings/settings_screen.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
 
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: AppRoutes.home,
   routes: [
     GoRoute(
-      path: '/',
+      path: AppRoutes.home,
       builder: (_, __) => const HomeScreen(),
     ),
     GoRoute(
-      path: '/scan/qr',
+      path: AppRoutes.scanQr,
       builder: (_, __) => const QrScanScreen(),
     ),
     GoRoute(
-      path: '/scan/ble',
+      path: AppRoutes.scanBle,
       builder: (_, __) => const BleScanScreen(),
     ),
     GoRoute(
-      path: '/name-fan',
+      path: AppRoutes.nameFan,
       builder: (context, state) {
-        final fan = state.extra as FanDevice;
+        // Redirect to home if extra is missing (e.g. deep link or back-stack restore).
+        final fan = state.extra as FanDevice?;
+        if (fan == null) return const HomeScreen();
         return NameFanScreen(fan: fan);
       },
     ),
     GoRoute(
-      path: '/control',
+      path: AppRoutes.control,
       builder: (context, state) {
-        final fan = state.extra as FanDevice;
+        final fan = state.extra as FanDevice?;
+        if (fan == null) return const HomeScreen();
         return ControlScreen(fan: fan);
       },
     ),
     GoRoute(
-      path: '/settings',
+      path: AppRoutes.settings,
       builder: (_, __) => const SettingsScreen(),
     ),
   ],
@@ -62,13 +66,19 @@ void goToOnboarding(BuildContext context) {
             leading: const Icon(Icons.bluetooth_searching),
             title: const Text('Search via Bluetooth'),
             subtitle: const Text('Scan for nearby fans'),
-            onTap: () { Navigator.pop(sheetCtx); context.push('/scan/ble'); },
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              context.push(AppRoutes.scanBle);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.qr_code_scanner),
             title: const Text('Scan QR Code'),
             subtitle: const Text('Scan the QR code on your fan packaging'),
-            onTap: () { Navigator.pop(sheetCtx); context.push('/scan/qr'); },
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              context.push(AppRoutes.scanQr);
+            },
           ),
           const SizedBox(height: 8),
         ],

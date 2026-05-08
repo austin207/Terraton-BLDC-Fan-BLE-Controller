@@ -3,17 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/ble/ble_connection_state.dart';
-import '../../core/ble/ble_frame_builder.dart';
-import '../../core/ble/ble_response_parser.dart';
-import '../../core/ble/ble_service.dart';
-import '../../core/providers.dart';
-import '../../models/fan_device.dart';
-import 'connection_banner.dart';
-import 'circular_speed_dial.dart';
-import 'mode_control_widget.dart';
-import 'timer_control_widget.dart';
-import 'lighting_control_widget.dart';
+import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
+import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
+import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/features/control/connection_banner.dart';
+import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
+import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
+import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
+import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class ControlScreen extends ConsumerStatefulWidget {
   final FanDevice fan;
@@ -25,43 +26,49 @@ class ControlScreen extends ConsumerStatefulWidget {
 
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
-  StreamSubscription? _notifySub;
+  StreamSubscription<List<int>>? _notifySub;
   double _colorTempValue = 0.5;
   late BleService _ble;
 
   @override
   void initState() {
     super.initState();
-    // Cache before postFrameCallback — ref.read() is forbidden inside dispose()
+    // Cache before postFrameCallback — ref.read() throws inside dispose()
     // in Riverpod 2.x because _isDisposed is set before super.unmount().
     _ble = ref.read(bleServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
   }
 
   Future<void> _connect() async {
-    final ble  = ref.read(bleServiceProvider);
     final repo = ref.read(fanRepositoryProvider);
     final mac  = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
 
-    await ble.startScan(targetMac: mac, timeoutSeconds: 10);
+    await _ble.startScan(targetMac: mac, timeoutSeconds: 10);
+    if (!mounted) return;
+
     try {
-      final returnedMac = await ble.connect();
+      final returnedMac = await _ble.connect();
+      if (!mounted) return;
       if (widget.fan.macAddress.isEmpty) {
         await repo.updateMac(widget.fan.deviceId, returnedMac);
+        if (!mounted) return;
         ref.invalidate(savedFansProvider);
       }
-    } catch (_) {}
+    } on Object catch (_) {
+      if (!mounted) return;
+      return;
+    }
 
     _startTelemetry();
     _subscribeNotify();
   }
 
   void _subscribeNotify() {
-    final ble = ref.read(bleServiceProvider);
-    _notifySub = ble.notifyStream.listen((bytes) {
+    _notifySub = _ble.notifyStream.listen((bytes) {
+      if (!mounted) return;
       final response = BleResponseParser.parse(bytes);
       if (response == null) return;
-      final notifier = ref.read(activeFanStateProvider.notifier);
+      final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
       switch (response.command) {
         case 0x02:
           final v = BleResponseParser.parsePowerState(response);
@@ -70,7 +77,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           final v = BleResponseParser.parseSpeed(response);
           if (v != null) notifier.updateSpeed(v);
         case 0x21:
-          final v = BleResponseParser.parseMode(response);
+          final v = BleResponseParser.parseModeString(response);
           if (v != null) notifier.updateMode(v);
         case 0x22:
           final v = BleResponseParser.parseTimer(response);
@@ -88,13 +95,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void _startTelemetry() {
     _telemetryTimer?.cancel();
     _telemetryTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      final ble = ref.read(bleServiceProvider);
-      if (ble.currentState != BleConnectionState.connected) return;
+      if (!mounted) return;
+      if (_ble.currentState != BleConnectionState.connected) return;
       final pFrame = BleFrameBuilder.queryPower();
       final sFrame = BleFrameBuilder.querySpeed();
-      if (pFrame != null) await ble.writeFrame(pFrame);
-      await Future.delayed(const Duration(milliseconds: 200));
-      if (sFrame != null) await ble.writeFrame(sFrame);
+      if (pFrame != null) await _ble.writeFrame(pFrame);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (sFrame != null) await _ble.writeFrame(sFrame);
     });
   }
 
@@ -102,7 +109,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void dispose() {
     _telemetryTimer?.cancel();
     _notifySub?.cancel();
-    _ble.disconnect();
+    unawaited(_ble.disconnect());
     super.dispose();
   }
 
@@ -114,12 +121,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
       return;
     }
-    await ref.read(bleServiceProvider).writeFrame(frame);
+    await _ble.writeFrame(frame);
   }
 
   @override
   Widget build(BuildContext context) {
-    final fanState  = ref.watch(activeFanStateProvider);
+    final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
     final connState = ref.watch(bleConnectionStateProvider).value
         ?? BleConnectionState.disconnected;
     final enabled   = connState == BleConnectionState.connected;
@@ -137,7 +144,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
-                  // Power button
                   _PowerButton(
                     isPowered: fanState.isPowered,
                     enabled: enabled,
@@ -147,7 +153,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Speed dial
                   CircularSpeedDial(
                     currentSpeed: fanState.speed,
                     watts: fanState.lastWatts,
@@ -157,7 +162,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Boost button
                   ElevatedButton(
                     onPressed: enabled
                         ? () {
@@ -167,14 +171,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                         : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: fanState.isBoost
-                          ? Colors.deepOrange
+                          ? kBoostColor
                           : null,
                     ),
                     child: const Text('BOOST'),
                   ),
                   const SizedBox(height: 16),
 
-                  // Mode row
                   ModeControlWidget(
                     activeMode: fanState.activeMode,
                     enabled: enabled,
@@ -190,7 +193,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Timer row
                   TimerControlWidget(
                     activeTimerCode: fanState.activeTimerCode,
                     enabled: enabled,
@@ -206,7 +208,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Lighting
                   LightingControlWidget(
                     enabled: enabled,
                     colorTempValue: _colorTempValue,
@@ -250,28 +251,33 @@ class _PowerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled
-          ? () {
-              HapticFeedback.lightImpact();
-              onPower(!isPowered);
-            }
-          : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isPowered ? const Color(0xFF1A56A0) : Colors.grey.shade300,
-          boxShadow: isPowered
-              ? [BoxShadow(color: const Color(0xFF1A56A0).withAlpha(100), blurRadius: 16)]
-              : null,
-        ),
-        child: Icon(
-          Icons.power_settings_new,
-          size: 36,
-          color: isPowered ? Colors.white : Colors.grey.shade600,
+    return Semantics(
+      button: true,
+      label: 'Power',
+      value: isPowered ? 'on' : 'off',
+      child: GestureDetector(
+        onTap: enabled
+            ? () {
+                HapticFeedback.lightImpact();
+                onPower(!isPowered);
+              }
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isPowered ? kPrimary : Colors.grey.shade300,
+            boxShadow: isPowered
+                ? [BoxShadow(color: kPrimary.withAlpha(100), blurRadius: 16)]
+                : null,
+          ),
+          child: Icon(
+            Icons.power_settings_new,
+            size: 36,
+            color: isPowered ? Colors.white : Colors.grey.shade600,
+          ),
         ),
       ),
     );

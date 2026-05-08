@@ -1,6 +1,6 @@
 // lib/features/control/connection_banner.dart
 import 'package:flutter/material.dart';
-import '../../core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 
 class ConnectionBanner extends StatelessWidget {
   final BleConnectionState state;
