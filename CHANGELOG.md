@@ -4,6 +4,16 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 4
+
+### Changed (Pass 4)
+- **`fan_card.dart` `onTap`** — `context.push('/control', ...)` → `context.push(AppRoutes.control, ...)` + added `import app_routes.dart`; this was the one route call site missed in Pass 3.
+- **`fan_card.dart` `.then()` callbacks** — both `_showRenameDialog` and `_confirmDelete` callbacks are now `async`; `renameFan`/`deleteFan` are `await`ed before `ref.invalidate(savedFansProvider)`, eliminating the race condition where the list could refresh before the ObjectBox write completed; added a second `context.mounted` guard after each `await`.
+- **`timer_control_widget.dart` `_codeToLabel`** — replaced old-style multi-`return` `switch` statement with a Dart 3 switch expression for conciseness and exhaustiveness.
+- **`connection_banner.dart` `build()`** — replaced mutable `Color bg; String label; bool showRetry = false;` locals + imperative `switch` with a single destructuring `final (bg, label, showRetry) = switch (state) { ... }` using a Dart 3 switch expression and record pattern; eliminates mutable state in `build()` and makes the exhaustive enum match visible to the compiler.
+
+---
+
 ## [Unreleased] — Review Pass 3
 
 ### Added (Pass 3)

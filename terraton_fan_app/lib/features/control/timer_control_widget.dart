@@ -44,12 +44,10 @@ class TimerControlWidget extends StatelessWidget {
     );
   }
 
-  static String _codeToLabel(int? code) {
-    switch (code) {
-      case 0x02: return '2H';
-      case 0x04: return '4H';
-      case 0x08: return '8H';
-      default:   return 'OFF';
-    }
-  }
+  static String _codeToLabel(int? code) => switch (code) {
+    0x02 => '2H',
+    0x04 => '4H',
+    0x08 => '8H',
+    _    => 'OFF',
+  };
 }

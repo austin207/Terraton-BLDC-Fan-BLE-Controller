@@ -10,23 +10,12 @@ class ConnectionBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color bg;
-    String label;
-    bool showRetry = false;
-
-    switch (state) {
-      case BleConnectionState.connected:
-        bg = Colors.green.shade600;
-        label = 'Connected';
-      case BleConnectionState.connecting:
-      case BleConnectionState.scanning:
-        bg = Colors.amber.shade700;
-        label = 'Connecting…';
-      case BleConnectionState.disconnected:
-        bg = Colors.red.shade600;
-        label = 'Disconnected';
-        showRetry = true;
-    }
+    final (Color bg, String label, bool showRetry) = switch (state) {
+      BleConnectionState.connected      => (Colors.green.shade600,  'Connected',     false),
+      BleConnectionState.connecting ||
+      BleConnectionState.scanning       => (Colors.amber.shade700,  'Connecting…',   false),
+      BleConnectionState.disconnected   => (Colors.red.shade600,    'Disconnected',  true),
+    };
 
     return Container(
       width: double.infinity,

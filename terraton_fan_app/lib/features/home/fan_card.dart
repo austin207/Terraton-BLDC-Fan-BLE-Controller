@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class FanCard extends ConsumerWidget {
@@ -20,7 +21,7 @@ class FanCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/control', extra: fan),
+        onTap: () => context.push(AppRoutes.control, extra: fan),
         onLongPress: () => _showOptions(context, ref),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -83,10 +84,10 @@ class FanCard extends ConsumerWidget {
     showDialog<String>(
       context: context,
       builder: (_) => _RenameDialog(initialName: fan.nickname),
-    ).then((name) {
+    ).then((name) async {
       if (name != null && name.isNotEmpty && context.mounted) {
-        ref.read(fanRepositoryProvider).renameFan(fan.deviceId, name);
-        ref.invalidate(savedFansProvider);
+        await ref.read(fanRepositoryProvider).renameFan(fan.deviceId, name);
+        if (context.mounted) ref.invalidate(savedFansProvider);
       }
     });
   }
@@ -108,10 +109,10 @@ class FanCard extends ConsumerWidget {
           ),
         ],
       ),
-    ).then((confirmed) {
+    ).then((confirmed) async {
       if (confirmed == true && context.mounted) {
-        ref.read(fanRepositoryProvider).deleteFan(fan.deviceId);
-        ref.invalidate(savedFansProvider);
+        await ref.read(fanRepositoryProvider).deleteFan(fan.deviceId);
+        if (context.mounted) ref.invalidate(savedFansProvider);
       }
     });
   }
