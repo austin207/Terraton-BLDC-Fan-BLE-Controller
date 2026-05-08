@@ -6,9 +6,11 @@ enum OnboardingMode {
 }
 
 class AppConfig {
-  /// Toggle this constant to switch onboarding mode.
-  /// qrScan  : User scans QR code on fan packaging.
-  /// bleScan : User selects fan from a BLE scan list.
-  /// No other code changes are needed when toggling this.
-  static const OnboardingMode onboardingMode = OnboardingMode.bleScan;
+  // Controlled at build time via --dart-define=BLE_SCAN=true.
+  // Default (no flag) → qrScan.  Pass the flag → bleScan.
+  // No code changes needed to produce both variants.
+  static const OnboardingMode onboardingMode =
+      bool.fromEnvironment('BLE_SCAN')
+          ? OnboardingMode.bleScan
+          : OnboardingMode.qrScan;
 }
