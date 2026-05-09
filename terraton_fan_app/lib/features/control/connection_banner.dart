@@ -1,52 +1,63 @@
 // lib/features/control/connection_banner.dart
 import 'package:flutter/material.dart';
-import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
-class ConnectionBanner extends StatelessWidget {
-  final BleConnectionState state;
+class ConnectionLostCard extends StatelessWidget {
   final VoidCallback onRetry;
-
-  const ConnectionBanner({super.key, required this.state, required this.onRetry});
+  const ConnectionLostCard({super.key, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    final bool isConnecting = state == BleConnectionState.connecting ||
-        state == BleConnectionState.scanning;
-    final (Color bg, String label, bool showRetry) = switch (state) {
-      BleConnectionState.connected    => (Colors.green.shade600, 'Connected',    false),
-      BleConnectionState.connecting ||
-      BleConnectionState.scanning     => (Colors.amber.shade700, 'Connecting…',  false),
-      BleConnectionState.disconnected => (Colors.red.shade600,   'Disconnected', true),
-    };
-
     return Container(
-      width: double.infinity,
-      color: bg,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(25),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isConnecting) ...[
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-          if (showRetry) ...[
-            const SizedBox(width: 12),
-            Semantics(
-              button: true,
-              label: 'Tap to reconnect',
-              child: GestureDetector(
-                onTap: onRetry,
-                child: const Text('Tap to retry',
-                    style: TextStyle(color: Colors.white, decoration: TextDecoration.underline)),
+          Row(
+            children: [
+              Icon(Icons.access_time_rounded, color: Colors.grey.shade600, size: 22),
+              const SizedBox(width: 10),
+              const Text(
+                'Connection Lost',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fan not found. Is it powered on and within range?',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: onRetry,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPrimary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text(
+                'Retry Connection',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );

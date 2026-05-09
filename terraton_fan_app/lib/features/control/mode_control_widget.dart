@@ -15,51 +15,37 @@ class ModeControlWidget extends StatelessWidget {
     required this.onMode,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return _ButtonRow(
-      items: const ['NATURE', 'SMART', 'REVERSE'],
-      activeKey: activeMode?.toUpperCase(),
-      enabled: enabled,
-      onSelect: (k) {
-        HapticFeedback.lightImpact();
-        onMode(k.toLowerCase());
-      },
-    );
-  }
-}
-
-class _ButtonRow extends StatelessWidget {
-  final List<String> items;
-  final String? activeKey;
-  final bool enabled;
-  final void Function(String) onSelect;
-
-  const _ButtonRow({
-    required this.items,
-    required this.activeKey,
-    required this.enabled,
-    required this.onSelect,
-  });
+  static const _modes = [
+    ('nature',  'Nature',  Icons.air),
+    ('smart',   'Smart',   Icons.auto_awesome_outlined),
+    ('reverse', 'Reverse', Icons.sync),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: items.map((k) {
-        final isActive = k == activeKey;
+      children: _modes.map(((String key, String label, IconData icon) entry) {
+        final isActive = activeMode == entry.$1;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Semantics(
             selected: isActive,
-            child: OutlinedButton(
-              onPressed: enabled ? () => onSelect(k) : null,
+            child: OutlinedButton.icon(
+              onPressed: enabled
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      onMode(entry.$1);
+                    }
+                  : null,
+              icon: Icon(entry.$3, size: 16),
+              label: Text(entry.$2),
               style: OutlinedButton.styleFrom(
                 backgroundColor: isActive ? kPrimary : null,
                 foregroundColor: isActive ? Colors.white : null,
                 side: const BorderSide(color: kPrimary),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              child: Text(k),
             ),
           ),
         );

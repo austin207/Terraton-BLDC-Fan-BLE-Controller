@@ -145,7 +145,7 @@ void main() {
 
     // Invoke the Scaffold-level onPressed directly from the ElevatedButton
     // widget reference (avoids off-screen tap offset issues).
-    final boostFinder = find.widgetWithText(ElevatedButton, 'BOOST');
+    final boostFinder = find.widgetWithText(ElevatedButton, 'BOOST MODE');
     final boostButton = tester.widget<ElevatedButton>(boostFinder);
     expect(boostButton.onPressed, isNotNull,
         reason: 'BOOST button must be enabled when connected');
@@ -169,7 +169,7 @@ void main() {
     expect(dial.enabled, false);
 
     final boostButton = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'BOOST'),
+      find.widgetWithText(ElevatedButton, 'BOOST MODE'),
     );
     expect(boostButton.onPressed, isNull);
 

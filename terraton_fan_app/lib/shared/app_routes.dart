@@ -1,5 +1,6 @@
 // lib/shared/app_routes.dart
 abstract final class AppRoutes {
+  static const splash   = '/splash';
   static const home     = '/';
   static const scanQr   = '/scan/qr';
   static const scanBle  = '/scan/ble';

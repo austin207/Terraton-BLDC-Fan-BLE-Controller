@@ -17,7 +17,8 @@ class TerratorApp extends ConsumerWidget {
     // turned off mid-session (Android only — iOS does not allow this).
     ref.listen<AsyncValue<BluetoothAdapterState>>(
       bluetoothAdapterStateProvider,
-      (_, next) {
+      (prev, next) {
+        if (prev?.hasValue != true) return; // skip initial emission to avoid double-prompt
         if (next.valueOrNull == BluetoothAdapterState.off && Platform.isAndroid) {
           unawaited(FlutterBluePlus.turnOn());
         }

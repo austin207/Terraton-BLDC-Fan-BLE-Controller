@@ -1,4 +1,5 @@
 // lib/features/onboarding/qr_scan_screen.dart
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -22,7 +23,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
   @override
   void initState() {
     super.initState();
-    _checkCamera();
+    unawaited(_checkCamera());
   }
 
   Future<void> _checkCamera() async {

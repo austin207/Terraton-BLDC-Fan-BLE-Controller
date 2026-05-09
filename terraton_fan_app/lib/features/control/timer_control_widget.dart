@@ -21,7 +21,7 @@ class TimerControlWidget extends StatelessWidget {
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: ['2H', '4H', '8H', 'OFF'].map((label) {
+      children: ['OFF', '2H', '4H', '8H'].map((label) {
         final isActive = label == activeLabel;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),

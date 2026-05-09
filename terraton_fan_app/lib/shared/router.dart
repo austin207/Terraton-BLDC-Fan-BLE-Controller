@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/features/splash/splash_screen.dart';
 import 'package:terraton_fan_app/features/home/home_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/ble_scan_screen.dart';
@@ -11,8 +12,12 @@ import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 
 final appRouter = GoRouter(
-  initialLocation: AppRoutes.home,
+  initialLocation: AppRoutes.splash,
   routes: [
+    GoRoute(
+      path: AppRoutes.splash,
+      builder: (_, __) => const SplashScreen(),
+    ),
     GoRoute(
       path: AppRoutes.home,
       builder: (_, __) => const HomeScreen(),

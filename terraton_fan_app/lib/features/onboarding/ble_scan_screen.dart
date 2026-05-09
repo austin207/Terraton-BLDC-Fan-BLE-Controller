@@ -28,7 +28,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_startScan());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startScan());
   }
 
   Future<void> _startScan() async {

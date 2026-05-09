@@ -13,10 +13,6 @@ class FanCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lastConnected = fan.lastConnectedAt == null
-        ? 'Never connected'
-        : _formatDate(fan.lastConnectedAt!);
-
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -27,25 +23,48 @@ class FanCard extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              const Icon(Icons.wind_power, size: 40, color: kPrimary),
-              const SizedBox(width: 16),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: kPrimary.withAlpha(20),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.wind_power, size: 28, color: kPrimary),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(fan.nickname,
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w600)),
+                    Text(
+                      fan.nickname,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
                     if (fan.model.isNotEmpty)
-                      Text(fan.model,
-                          style: const TextStyle(color: Colors.grey)),
-                    Text(lastConnected,
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.blueGrey)),
+                      Text(fan.model, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade400,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Disconnected',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right, color: Colors.grey.shade400),
             ],
           ),
         ),
@@ -63,21 +82,58 @@ class FanCard extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Rename'),
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.edit_outlined, size: 20),
+              ),
+              title: const Text('Rename Fan', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Change the display name of this device'),
               onTap: () {
                 Navigator.of(sheetCtx).pop();
                 _showRenameDialog(context, ref);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.delete_outline, size: 20, color: Colors.red.shade700),
+              ),
+              title: Text('Remove Device',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red.shade700)),
+              subtitle: const Text('Unpair and remove from your account'),
               onTap: () {
                 Navigator.of(sheetCtx).pop();
                 _confirmDelete(context, ref);
               },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              title: const Text(
+                'Cancel',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+              ),
+              onTap: () => Navigator.of(sheetCtx).pop(),
             ),
           ],
         ),
@@ -101,7 +157,7 @@ class FanCard extends ConsumerWidget {
     showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Delete Fan?'),
+        title: const Text('Remove Device?'),
         content: Text('Remove "${fan.nickname}" from your device?'),
         actions: [
           TextButton(
@@ -110,7 +166,7 @@ class FanCard extends ConsumerWidget {
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: const Text('Remove'),
           ),
         ],
       ),
@@ -121,18 +177,8 @@ class FanCard extends ConsumerWidget {
       }
     });
   }
-
-  String _formatDate(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1)   return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1)    return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
-  }
 }
 
-/// Stateful rename dialog — owns and disposes its TextEditingController.
 class _RenameDialog extends StatefulWidget {
   final String initialName;
   const _RenameDialog({required this.initialName});
