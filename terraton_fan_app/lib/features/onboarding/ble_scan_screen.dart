@@ -34,6 +34,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     final ble = ref.read(bleServiceProvider);
 
     await _sub?.cancel();
+    if (!mounted) return;
     _sub = ble.scanResultsStream.listen((fans) {
       if (mounted) setState(() => _results = fans);
     });

@@ -4,6 +4,16 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 8
+
+### Fixed
+- **Subscription leak after `await _sub?.cancel()` in `_startScan()`** (`ble_scan_screen.dart`) — `await _sub?.cancel()` is a yield point; if `dispose()` fires between the cancel and the `_sub = ble.scanResultsStream.listen(...)` assignment, `dispose()` has already run and the new subscription is never cancelled. Added `if (!mounted) return;` immediately after the cancel await to prevent the leak.
+
+### Added
+- **`Semantics(selected:)` on BOOST button** (`control_screen.dart`) — Pass 7 added `Semantics(selected: isActive)` to mode and timer buttons, but the `_BoostButton` was missed. When boost is active, the button's background changes to `kBoostColor` — a color-only indicator invisible to TalkBack. Now wrapped in `Semantics(selected: isBoost)` for consistency with the rest of the control panel.
+
+---
+
 ## [Unreleased] — Review Pass 7
 
 ### Fixed

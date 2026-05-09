@@ -305,17 +305,20 @@ class _BoostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: enabled
-          ? () {
-              HapticFeedback.lightImpact();
-              onBoost();
-            }
-          : null,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isBoost ? kBoostColor : null,
+    return Semantics(
+      selected: isBoost,
+      child: ElevatedButton(
+        onPressed: enabled
+            ? () {
+                HapticFeedback.lightImpact();
+                onBoost();
+              }
+            : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isBoost ? kBoostColor : null,
+        ),
+        child: const Text('BOOST'),
       ),
-      child: const Text('BOOST'),
     );
   }
 }
