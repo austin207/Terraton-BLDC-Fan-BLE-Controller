@@ -4,6 +4,17 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 6
+
+### Added
+- **`_BoostButton` widget class** (`control_screen.dart`) — extracted inline `ElevatedButton` BOOST into a private `StatelessWidget`; owns its haptic feedback call and `ElevatedButton.styleFrom` logic; matches the `_PowerButton` extraction pattern already used for the power button.
+- **`RepaintBoundary` around `CircularSpeedDial`** (`control_screen.dart`) — isolates the custom-painted speed arc from the surrounding `Column` rebuild cycle; prevents the arc from repainting when unrelated state (e.g., watts/RPM text) changes.
+
+### Changed
+- **`ConnectionBanner` retry text** (`connection_banner.dart`) — wrapped the "Tap to retry" `GestureDetector` in `Semantics(button: true, label: 'Tap to reconnect')` so TalkBack announces the interactive element correctly.
+
+---
+
 ## [Unreleased] — Review Pass 5
 
 ### Fixed

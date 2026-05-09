@@ -168,28 +168,21 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  CircularSpeedDial(
-                    currentSpeed: fanState.speed,
-                    watts: fanState.lastWatts,
-                    rpm: fanState.lastRpm,
-                    enabled: enabled,
-                    onSpeedSelected: (s) => _send(BleFrameBuilder.setSpeed(s)),
+                  RepaintBoundary(
+                    child: CircularSpeedDial(
+                      currentSpeed: fanState.speed,
+                      watts: fanState.lastWatts,
+                      rpm: fanState.lastRpm,
+                      enabled: enabled,
+                      onSpeedSelected: (s) => _send(BleFrameBuilder.setSpeed(s)),
+                    ),
                   ),
                   const SizedBox(height: 16),
 
-                  ElevatedButton(
-                    onPressed: enabled
-                        ? () {
-                            HapticFeedback.lightImpact();
-                            _send(BleFrameBuilder.setBoost());
-                          }
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: fanState.isBoost
-                          ? kBoostColor
-                          : null,
-                    ),
-                    child: const Text('BOOST'),
+                  _BoostButton(
+                    isBoost: fanState.isBoost,
+                    enabled: enabled,
+                    onBoost: () => _send(BleFrameBuilder.setBoost()),
                   ),
                   const SizedBox(height: 16),
 
@@ -295,6 +288,34 @@ class _PowerButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BoostButton extends StatelessWidget {
+  final bool isBoost;
+  final bool enabled;
+  final VoidCallback onBoost;
+
+  const _BoostButton({
+    required this.isBoost,
+    required this.enabled,
+    required this.onBoost,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: enabled
+          ? () {
+              HapticFeedback.lightImpact();
+              onBoost();
+            }
+          : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isBoost ? kBoostColor : null,
+      ),
+      child: const Text('BOOST'),
     );
   }
 }

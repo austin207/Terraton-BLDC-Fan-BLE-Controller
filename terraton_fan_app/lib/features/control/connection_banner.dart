@@ -27,10 +27,14 @@ class ConnectionBanner extends StatelessWidget {
           Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           if (showRetry) ...[
             const SizedBox(width: 12),
-            GestureDetector(
-              onTap: onRetry,
-              child: const Text('Tap to retry',
-                  style: TextStyle(color: Colors.white, decoration: TextDecoration.underline)),
+            Semantics(
+              button: true,
+              label: 'Tap to reconnect',
+              child: GestureDetector(
+                onTap: onRetry,
+                child: const Text('Tap to retry',
+                    style: TextStyle(color: Colors.white, decoration: TextDecoration.underline)),
+              ),
             ),
           ],
         ],
