@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
-import 'package:terraton_fan_app/models/fan_device.dart';
-import 'package:terraton_fan_app/objectbox.g.dart';
 import 'package:terraton_fan_app/app.dart';
 
 Future<void> main() async {
@@ -31,29 +29,9 @@ Future<void> main() async {
 
   await CommandLoader.load();
   await initObjectBox();
-  _seedDemoFan();
   await _requestPermissions();
 
   runApp(const ProviderScope(child: TerratorApp()));
-}
-
-void _seedDemoFan() {
-  const demoId = 'demo-fan-001';
-  final box = store.box<FanDevice>();
-  final q = box.query(FanDevice_.deviceId.equals(demoId)).build();
-  final alreadyExists = q.count() > 0;
-  q.close();
-  if (alreadyExists) return;
-
-  final demo = FanDevice()
-    ..deviceId = demoId
-    ..macAddress = ''
-    ..model = 'Terraton AC-05-3'
-    ..nickname = 'Living Room Fan'
-    ..fwVersion = '1.0.0'
-    ..addedAt = DateTime.now()
-    ..lastConnectedAt = DateTime.now().subtract(const Duration(hours: 2));
-  box.put(demo);
 }
 
 Future<void> _requestPermissions() async {

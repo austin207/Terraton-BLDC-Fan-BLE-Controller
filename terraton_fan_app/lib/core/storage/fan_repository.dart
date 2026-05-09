@@ -20,11 +20,31 @@ abstract class FanRepository {
 }
 
 class FanRepositoryImpl implements FanRepository {
+  FanRepositoryImpl() {
+    _ensureDemoFan();
+  }
+
   Box<FanDevice> get _fanBox => store.box<FanDevice>();
   Box<FanState>  get _stateBox => store.box<FanState>();
 
   static R _useQuery<T, R>(Query<T> q, R Function(Query<T>) fn) {
     try { return fn(q); } finally { q.close(); }
+  }
+
+  void _ensureDemoFan() {
+    const demoId = 'demo-fan-001';
+    final count = _useQuery(
+        _fanBox.query(FanDevice_.deviceId.equals(demoId)).build(),
+        (q) => q.count());
+    if (count > 0) return;
+    _fanBox.put(FanDevice()
+      ..deviceId = demoId
+      ..macAddress = ''
+      ..model = 'Terraton AC-05-3'
+      ..nickname = 'Living Room Fan'
+      ..fwVersion = '1.0.0'
+      ..addedAt = DateTime.now()
+      ..lastConnectedAt = DateTime.now().subtract(const Duration(hours: 2)));
   }
 
   @override
