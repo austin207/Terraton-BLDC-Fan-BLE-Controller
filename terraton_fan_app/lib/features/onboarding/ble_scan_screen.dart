@@ -1,6 +1,8 @@
 // lib/features/onboarding/ble_scan_screen.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
@@ -30,6 +32,16 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   }
 
   Future<void> _startScan() async {
+    if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Bluetooth is off. Please enable Bluetooth to scan for fans.'),
+        ));
+      }
+      if (Platform.isAndroid) unawaited(FlutterBluePlus.turnOn());
+      return;
+    }
+
     setState(() { _scanning = true; _timedOut = false; _results = []; });
     final ble = ref.read(bleServiceProvider);
 

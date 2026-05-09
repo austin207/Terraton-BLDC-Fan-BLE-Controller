@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
@@ -142,6 +143,21 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show a SnackBar when Bluetooth is turned off while on this screen.
+    // app.dart's listener handles the system re-enable prompt; this adds
+    // a screen-level message so the user understands why controls are dead.
+    ref.listen<AsyncValue<BluetoothAdapterState>>(
+      bluetoothAdapterStateProvider,
+      (_, next) {
+        if (next.valueOrNull == BluetoothAdapterState.off && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Bluetooth has been disabled. Please turn on Bluetooth.'),
+            duration: Duration(seconds: 4),
+          ));
+        }
+      },
+    );
+
     final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
     final connState = ref.watch(bleConnectionStateProvider).value
         ?? BleConnectionState.disconnected;
