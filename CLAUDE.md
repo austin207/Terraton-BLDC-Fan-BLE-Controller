@@ -40,6 +40,14 @@ dart run build_runner build --delete-conflicting-outputs
 
 ## Architecture
 
+### Startup sequence (`lib/main.dart`)
+
+1. `CommandLoader.load()` — loads `assets/commands.yaml` into static singleton
+2. `initObjectBox()` — opens ObjectBox store
+3. `_requestPermissions()` — requests `bluetoothScan`, `bluetoothConnect`, `locationWhenInUse`
+4. `_ensureBluetoothOn()` — Android only; calls `FlutterBluePlus.turnOn()` if adapter is off, showing the system enable-Bluetooth dialog
+5. `runApp()`
+
 ### Data flow
 
 ```
@@ -92,33 +100,47 @@ Status poll uses a fixed non-standard 7-byte frame: `[55 AA 00 00 01 00 01]`
 ### Onboarding flow
 
 `goToOnboarding(context)` in `router.dart` shows a bottom sheet with two options:
-- **Search via Bluetooth** → `/scan/ble` — BLE scan list; user picks device; 15 s timeout.
+- **Search via Bluetooth** → `/scan/ble` — BLE scan list; user picks device; 15 s timeout. `dispose()` calls `stopScan()` so the BLE hardware scan is halted when the user leaves.
 - **Scan QR Code** → `/scan/qr` — reads `device_id`, `model`, `fw_version` from QR JSON.
 
 Both paths end at `/name-fan` (receives a `FanDevice` as GoRouter `extra`), then `/control`.
 
 > **Note:** The PRD (v7) specifies a compile-time toggle via `AppConfig.onboardingMode`. The actual implementation offers both modes at runtime via a bottom sheet picker. `app_config.dart` has been removed.
 
+### Router (`lib/shared/router.dart`)
+
+`/name-fan` and `/control` both require a `FanDevice` passed via GoRouter `extra`. If `extra` is `null` (deep link or back-stack restore), a GoRouter `redirect:` sends the user to `/` rather than rendering the wrong screen at the wrong URL. Never return a fallback widget from a `builder` — use `redirect` instead.
+
+### Home screen (`lib/features/home/home_screen.dart`)
+
+Displays fans grouped by model using `_GroupedFanList`. Each model group has a section header with a count badge. The total fan count is shown above the list. When `savedFansProvider` returns an empty list (no fans saved yet), the `data:` handler falls back to `_demoFan()` so the home screen is never blank during presentations. The demo fan is pure UI — it is not persisted to ObjectBox.
+
 ### Riverpod providers (`lib/core/providers.dart`)
 
 - `bleServiceProvider` — singleton `BleServiceImpl`; one BLE connection at a time.
 - `bleConnectionStateProvider` — `StreamProvider` wrapping `connectionStateStream`.
 - `fanRepositoryProvider` — singleton `FanRepositoryImpl` (ObjectBox).
-- `savedFansProvider` — derives from repo; call `ref.invalidate(savedFansProvider)` after writes.
-- `activeFanProvider` — `StateNotifierProvider<FanDevice?>` set when user opens a fan.
-- `activeFanStateProvider` — `StateNotifierProvider<FanState>` updated by BLE notifications; mutate only through its named `update*` methods.
+- `savedFansProvider` — `FutureProvider` that returns `getAllFans()`; call `ref.invalidate(savedFansProvider)` after any write.
+- `activeFanStateProvider` — `StateNotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>`; keyed by `deviceId`; updated by BLE notifications. Mutate only through its named `update*` methods.
 
-**Riverpod 2.x constraint:** `ref.read()` is forbidden inside `dispose()`. Cache any needed service in `initState()` as a field (see `control_screen.dart:37`).
+**Riverpod 2.x constraint:** `ref.read()` is forbidden inside `dispose()`. Cache any needed service in `initState()` as a field (see `control_screen.dart`).
 
 ### Storage
 
 ObjectBox entities: `FanDevice` (identity/metadata) and `FanState` (last-known control state).
 `FanDevice.deviceId` is the stable primary key assigned at onboarding. `macAddress` starts empty and is filled by `FanRepository.updateMac()` on first successful BLE connection.
+`FanState.==` and `hashCode` include `deviceId` — states from different fans must not compare equal.
 `objectbox.g.dart` is generated — do not edit manually. Run `build_runner` after changing either model.
+
+### BLE service implementation notes (`lib/core/ble/ble_service.dart`)
+
+- `writeFrame` copies `_writeChar` to a local variable before the null check to eliminate a TOCTOU race between the check and the write.
+- On connection failure, `_connStateSub` is cancelled before retrying so a stale listener cannot spawn a concurrent retry chain.
+- `startScan` clears `_discovered` on every call — scan results briefly empty when the user hits Refresh.
 
 ### Commands YAML (`assets/commands.yaml`)
 
-Single source of truth for all BLE command bytes. Adding a new command or filling in pending lighting bytes requires only a YAML edit — no Dart changes needed. `CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates the `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. Lighting commands are currently `null` — pending values from Terraton.
+Single source of truth for all BLE command bytes. Adding a new command or filling in pending lighting bytes requires only a YAML edit — no Dart changes needed. `CommandLoader._safeGet()` returns `null` gracefully for missing keys and is typed `YamlMap?` (not `dynamic`); `BleFrameBuilder` propagates the `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. Lighting commands are currently `null` — pending values from Terraton.
 
 **To add a new command:** add it to `commands.yaml`, then call `CommandLoader.custom(['commands', 'your_section', 'action'], [0xXX])` or add a named method to `BleFrameBuilder`.
 
@@ -126,7 +148,7 @@ Single source of truth for all BLE command bytes. Adding a new command or fillin
 
 ### Control screen telemetry
 
-Polls every 3 seconds after connect: `queryPower` frame → 200 ms delay → `querySpeed` frame. Responses arrive on `notifyStream` and are dispatched by command byte (`0x02`–`0x24`) to the appropriate `ActiveFanStateNotifier.update*()` method.
+Polls every 3 seconds after connect: `queryPower` frame → 200 ms delay → `querySpeed` frame. A `mounted` check runs after the delay before the second write. Responses arrive on `notifyStream` and are dispatched by command byte (`0x02`–`0x24`) to the appropriate `ActiveFanStateNotifier.update*()` method.
 
 ### Speed dial colours (AC-05-3)
 
