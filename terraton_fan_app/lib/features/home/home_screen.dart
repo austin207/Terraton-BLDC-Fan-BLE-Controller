@@ -27,7 +27,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: fansAsync.when(
-        data: (fans) => _FanList(fans: fans.isNotEmpty ? fans : [_demoFan()]),
+        data: (fans) => _GroupedFanList(fans: fans.isNotEmpty ? fans : [_demoFan()]),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, __) => const Center(child: Text('Could not load fans')),
       ),
@@ -48,60 +48,70 @@ FanDevice _demoFan() => FanDevice()
   ..addedAt = DateTime(2026, 5, 9)
   ..lastConnectedAt = DateTime(2026, 5, 9, 13, 30);
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A56A0).withAlpha(20),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.wind_power, size: 52, color: Color(0xFF1A56A0)),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'No fans added yet',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.black87),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap the + button to pair your Terraton fan via Bluetooth or QR code.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 28),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add Fan'),
-              onPressed: () => goToOnboarding(context),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FanList extends StatelessWidget {
+class _GroupedFanList extends StatelessWidget {
   final List<FanDevice> fans;
-  const _FanList({required this.fans});
+  const _GroupedFanList({required this.fans});
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: fans.length,
-      itemBuilder: (_, i) => FanCard(key: ValueKey(fans[i].deviceId), fan: fans[i]),
+    // Group fans by model, preserving insertion order.
+    final grouped = <String, List<FanDevice>>{};
+    for (final fan in fans) {
+      final model = fan.model.isNotEmpty ? fan.model : 'Other';
+      grouped.putIfAbsent(model, () => []).add(fan);
+    }
+
+    final totalCount = fans.length;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      children: [
+        // ── Fan count ──────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            '$totalCount fan${totalCount == 1 ? '' : 's'}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.blueGrey[500],
+            ),
+          ),
+        ),
+
+        // ── Grouped sections ───────────────────────────────────────────
+        for (final entry in grouped.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+            child: Row(
+              children: [
+                Text(
+                  entry.key,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.blueGrey[600],
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${entry.value.length}',
+                    style: TextStyle(fontSize: 11, color: Colors.blueGrey[700], fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...entry.value.map((fan) => FanCard(key: ValueKey(fan.deviceId), fan: fan)),
+        ],
+      ],
     );
   }
 }
