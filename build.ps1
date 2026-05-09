@@ -16,6 +16,7 @@ if (Test-Path $BuildsDir) {
 Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 Set-Location $AppDir
 
+flutter clean | Out-Null
 flutter build apk --release --split-per-abi
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed." -ForegroundColor Red
