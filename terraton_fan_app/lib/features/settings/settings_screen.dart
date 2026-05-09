@@ -41,8 +41,13 @@ class SettingsScreen extends ConsumerWidget {
     await tmp.writeAsString(json);
     try {
       await Share.shareXFiles([XFile(tmp.path)], text: 'Terraton Fan Export');
+    } on Object catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Export failed. Please try again.')),
+        );
+      }
     } finally {
-      // Delete temp file after sharing regardless of outcome.
       if (await tmp.exists()) await tmp.delete();
     }
   }

@@ -157,6 +157,7 @@ class _SegmentPainter extends CustomPainter {
   }
 
   @override
+  // color/startAngle/sweepAngle/speedIndex are constant per speed step and never change.
   bool shouldRepaint(_SegmentPainter old) =>
       old.active != active || old.enabled != enabled;
 }

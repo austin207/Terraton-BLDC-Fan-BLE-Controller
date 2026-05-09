@@ -20,21 +20,8 @@ final fanRepositoryProvider = Provider<FanRepository>((ref) => FanRepositoryImpl
 
 // ObjectBox queries are synchronous by design and run in microseconds.
 // FutureProvider keeps the query off the build-call stack.
-// If no real fans are saved yet, inject a demo fan so the home screen
-// is never empty during presentations.
-final savedFansProvider = FutureProvider<List<FanDevice>>((ref) async {
-  final fans = ref.watch(fanRepositoryProvider).getAllFans();
-  if (fans.isNotEmpty) return fans;
-  return [
-    FanDevice()
-      ..deviceId = 'demo-fan-001'
-      ..model = 'Terraton AC-05-3'
-      ..nickname = 'Living Room Fan'
-      ..fwVersion = '1.0.0'
-      ..addedAt = DateTime(2026, 5, 9)
-      ..lastConnectedAt = DateTime(2026, 5, 9, 13, 30),
-  ];
-});
+final savedFansProvider = FutureProvider<List<FanDevice>>((ref) async =>
+    ref.watch(fanRepositoryProvider).getAllFans());
 
 // ── Active fan state (mirrors ObjectBox + live BLE updates) ─────────────────
 // Uses .family so each fan's notifier is independent and not torn down

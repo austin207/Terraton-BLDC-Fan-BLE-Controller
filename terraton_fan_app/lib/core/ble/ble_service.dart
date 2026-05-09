@@ -63,6 +63,8 @@ class BleServiceImpl implements BleService {
   @override
   Future<void> startScan({String? targetMac, int timeoutSeconds = 10}) async {
     _targetMac = targetMac;
+    // Clears previous results so the list doesn't grow unboundedly across
+    // multiple scans. Side-effect: scan results briefly empty on Refresh.
     _discovered.clear();
     _setState(app.BleConnectionState.scanning);
 
@@ -132,6 +134,10 @@ class BleServiceImpl implements BleService {
       try { await target.disconnect(); } on Object catch (_) {}
       if (_retryCount < _maxRetries) {
         _retryCount++;
+        // Cancel stale connection-state subscription so a previous listener
+        // cannot trigger a concurrent retry chain on the same device.
+        await _connStateSub?.cancel();
+        _connStateSub = null;
         await Future<void>.delayed(_retryDelay);
         return _doConnect();
       }
@@ -191,8 +197,9 @@ class BleServiceImpl implements BleService {
 
   @override
   Future<void> writeFrame(List<int> frame) async {
-    if (_writeChar == null) return;
-    await _writeChar!.write(frame, withoutResponse: false);
+    final char = _writeChar;
+    if (char == null) return;
+    await char.write(frame, withoutResponse: false);
   }
 
   @override

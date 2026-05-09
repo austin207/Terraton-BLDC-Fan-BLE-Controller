@@ -27,20 +27,15 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.nameFan,
-      builder: (context, state) {
-        // Redirect to home if extra is missing (e.g. deep link or back-stack restore).
-        final fan = state.extra as FanDevice?;
-        if (fan == null) return const HomeScreen();
-        return NameFanScreen(fan: fan);
-      },
+      // Deep links and back-stack restores arrive without a FanDevice extra;
+      // redirect to home so the URL reflects where the user actually lands.
+      redirect: (_, state) => state.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => NameFanScreen(fan: state.extra! as FanDevice),
     ),
     GoRoute(
       path: AppRoutes.control,
-      builder: (context, state) {
-        final fan = state.extra as FanDevice?;
-        if (fan == null) return const HomeScreen();
-        return ControlScreen(fan: fan);
-      },
+      redirect: (_, state) => state.extra == null ? AppRoutes.home : null,
+      builder: (_, state) => ControlScreen(fan: state.extra! as FanDevice),
     ),
     GoRoute(
       path: AppRoutes.settings,

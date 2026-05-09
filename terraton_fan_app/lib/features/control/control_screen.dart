@@ -116,6 +116,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final sFrame = BleFrameBuilder.querySpeed();
       if (pFrame != null) await _ble.writeFrame(pFrame);
       await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (!mounted) return;
       if (sFrame != null) await _ble.writeFrame(sFrame);
     });
   }
@@ -263,28 +264,34 @@ class _PowerButton extends StatelessWidget {
       button: true,
       label: 'Power',
       value: isPowered ? 'on' : 'off',
-      child: GestureDetector(
-        onTap: enabled
-            ? () {
-                HapticFeedback.lightImpact();
-                onPower(!isPowered);
-              }
-            : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isPowered ? kPrimary : Colors.grey.shade300,
-            boxShadow: isPowered
-                ? [BoxShadow(color: kPrimary.withAlpha(100), blurRadius: 16)]
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isPowered ? kPrimary : Colors.grey.shade300,
+          boxShadow: isPowered
+              ? [BoxShadow(color: kPrimary.withAlpha(100), blurRadius: 16)]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: enabled
+                ? () {
+                    HapticFeedback.lightImpact();
+                    onPower(!isPowered);
+                  }
                 : null,
-          ),
-          child: Icon(
-            Icons.power_settings_new,
-            size: 36,
-            color: isPowered ? Colors.white : Colors.grey.shade600,
+            child: Icon(
+              Icons.power_settings_new,
+              size: 36,
+              color: isPowered ? Colors.white : Colors.grey.shade600,
+            ),
           ),
         ),
       ),

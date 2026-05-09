@@ -51,6 +51,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   void dispose() {
     _sub?.cancel();
     _timeout?.cancel();
+    ref.read(bleServiceProvider).stopScan();
     super.dispose();
   }
 

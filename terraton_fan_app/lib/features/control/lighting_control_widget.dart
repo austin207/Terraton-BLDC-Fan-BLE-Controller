@@ -75,6 +75,8 @@ class LightingControlWidget extends StatelessWidget {
                 value: colorTempValue,
                 min: 0,
                 max: 1,
+                semanticFormatterCallback: (_) =>
+                    'Colour temperature ${(colorTempValue * 100).round()}%',
                 onChanged: enabled ? onColorTemp : null,
               ),
             ),

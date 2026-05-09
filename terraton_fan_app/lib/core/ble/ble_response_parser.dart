@@ -37,9 +37,6 @@ class BleResponseParser {
     return s >= 1 && s <= 6 ? s : null;
   }
 
-  static int?  parseMode(FanResponse r) =>
-      r.command == 0x21 && r.data.isNotEmpty ? r.data[0] : null;
-
   static int?  parseTimer(FanResponse r) =>
       r.command == 0x22 && r.data.isNotEmpty ? r.data[0] : null;
 

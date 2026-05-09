@@ -21,6 +21,7 @@ class FanState {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is FanState &&
+          deviceId == other.deviceId &&
           speed == other.speed &&
           isBoost == other.isBoost &&
           activeMode == other.activeMode &&
@@ -31,7 +32,7 @@ class FanState {
 
   @override
   int get hashCode => Object.hash(
-      speed, isBoost, activeMode, activeTimerCode, isPowered, lastWatts, lastRpm);
+      deviceId, speed, isBoost, activeMode, activeTimerCode, isPowered, lastWatts, lastRpm);
 }
 
 // Nullable fields that may need explicit null use a getter param: () => null
