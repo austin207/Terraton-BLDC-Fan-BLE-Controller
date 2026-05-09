@@ -4,6 +4,20 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — PRD Audit & AC-06-4 Telemetry Timeout
+
+### Added
+- **`clearWatts()` / `clearRpm()`** in `ActiveFanStateNotifier` (`providers.dart`) — explicit methods to reset telemetry values to null, used by the 5-second stale-data timeout.
+
+### Changed
+- **`FanStateCopyWith` extension** (`fan_state.dart`) — `lastWatts` and `lastRpm` parameters changed from `int?` to `int? Function()?` (getter pattern), matching the existing pattern for `activeMode` and `activeTimerCode`. Enables explicit null assignment via `copyWith(lastWatts: () => null)`.
+- **`updateWatts(int)` / `updateRpm(int)`** in `ActiveFanStateNotifier` (`providers.dart`) — updated call sites from `copyWith(lastWatts: watts)` to `copyWith(lastWatts: () => watts)` to match new getter-pattern signature.
+
+### Fixed
+- **AC-06-4: Telemetry 5-second timeout** (`control_screen.dart`) — `_lastWattsAt` and `_lastRpmAt` `DateTime?` fields now track when each telemetry value was last received. Each 3-second telemetry timer tick checks whether either timestamp is older than 5 seconds; if so, calls `notifier.clearWatts()` / `notifier.clearRpm()` and resets the timestamp to null. This ensures the dial centre shows `--` for any value that has not been refreshed within 5 seconds, satisfying PRD AC-06-4.
+
+---
+
 ## [Unreleased] — Review Pass 4
 
 ### Changed (Pass 4)

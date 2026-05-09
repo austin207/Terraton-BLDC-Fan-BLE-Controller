@@ -54,9 +54,10 @@ class ActiveFanStateNotifier extends StateNotifier<FanState> {
     activeTimerCode: () => timerCode == 0 ? null : timerCode,
   ));
 
-  void updateWatts(int watts) => update(state.copyWith(lastWatts: watts));
-
-  void updateRpm(int rpm) => update(state.copyWith(lastRpm: rpm));
+  void updateWatts(int watts) => update(state.copyWith(lastWatts: () => watts));
+  void updateRpm(int rpm)     => update(state.copyWith(lastRpm:   () => rpm));
+  void clearWatts()           => update(state.copyWith(lastWatts: () => null));
+  void clearRpm()             => update(state.copyWith(lastRpm:   () => null));
 }
 
 // autoDispose releases the notifier when no widget is watching it,

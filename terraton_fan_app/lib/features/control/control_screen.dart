@@ -29,6 +29,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   StreamSubscription<List<int>>? _notifySub;
   double _colorTempValue = 0.5;
   late BleService _ble;
+  DateTime? _lastWattsAt;
+  DateTime? _lastRpmAt;
 
   @override
   void initState() {
@@ -84,10 +86,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           if (v != null) notifier.updateTimer(v);
         case 0x23:
           final v = BleResponseParser.parsePowerWatts(response);
-          if (v != null) notifier.updateWatts(v);
+          if (v != null) { notifier.updateWatts(v); _lastWattsAt = DateTime.now(); }
         case 0x24:
           final v = BleResponseParser.parseRpm(response);
-          if (v != null) notifier.updateRpm(v);
+          if (v != null) { notifier.updateRpm(v); _lastRpmAt = DateTime.now(); }
       }
     });
   }
@@ -97,6 +99,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _telemetryTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (!mounted) return;
       if (_ble.currentState != BleConnectionState.connected) return;
+
+      // AC-06-4: clear stale telemetry values if no response within 5 seconds.
+      final now = DateTime.now();
+      final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+      if (_lastWattsAt != null && now.difference(_lastWattsAt!) > const Duration(seconds: 5)) {
+        notifier.clearWatts();
+        _lastWattsAt = null;
+      }
+      if (_lastRpmAt != null && now.difference(_lastRpmAt!) > const Duration(seconds: 5)) {
+        notifier.clearRpm();
+        _lastRpmAt = null;
+      }
+
       final pFrame = BleFrameBuilder.queryPower();
       final sFrame = BleFrameBuilder.querySpeed();
       if (pFrame != null) await _ble.writeFrame(pFrame);

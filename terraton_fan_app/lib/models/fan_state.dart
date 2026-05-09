@@ -42,17 +42,17 @@ extension FanStateCopyWith on FanState {
     String? Function()? activeMode,
     int? Function()? activeTimerCode,
     bool? isPowered,
-    int? lastWatts,
-    int? lastRpm,
+    int? Function()? lastWatts,
+    int? Function()? lastRpm,
   }) =>
       FanState()
-        ..id             = id
-        ..deviceId       = deviceId
-        ..speed          = speed           ?? this.speed
-        ..isBoost        = isBoost         ?? this.isBoost
-        ..activeMode     = activeMode      != null ? activeMode()      : this.activeMode
-        ..activeTimerCode = activeTimerCode != null ? activeTimerCode() : this.activeTimerCode
-        ..isPowered      = isPowered       ?? this.isPowered
-        ..lastWatts      = lastWatts       ?? this.lastWatts
-        ..lastRpm        = lastRpm         ?? this.lastRpm;
+        ..id              = id
+        ..deviceId        = deviceId
+        ..speed           = speed            ?? this.speed
+        ..isBoost         = isBoost          ?? this.isBoost
+        ..activeMode      = activeMode       != null ? activeMode()       : this.activeMode
+        ..activeTimerCode = activeTimerCode  != null ? activeTimerCode()  : this.activeTimerCode
+        ..isPowered       = isPowered        ?? this.isPowered
+        ..lastWatts       = lastWatts        != null ? lastWatts()        : this.lastWatts
+        ..lastRpm         = lastRpm          != null ? lastRpm()          : this.lastRpm;
 }
