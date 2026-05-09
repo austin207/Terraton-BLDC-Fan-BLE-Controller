@@ -47,21 +47,39 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.wind_power, size: 80, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('No fans added yet',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('Add Fan'),
-            onPressed: () => goToOnboarding(context),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A56A0).withAlpha(20),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.wind_power, size: 52, color: Color(0xFF1A56A0)),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'No fans added yet',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Tap the + button to pair your Terraton fan via Bluetooth or QR code.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('Add Fan'),
+              onPressed: () => goToOnboarding(context),
+            ),
+          ],
+        ),
       ),
     );
   }

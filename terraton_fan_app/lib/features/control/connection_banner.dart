@@ -10,11 +10,13 @@ class ConnectionBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isConnecting = state == BleConnectionState.connecting ||
+        state == BleConnectionState.scanning;
     final (Color bg, String label, bool showRetry) = switch (state) {
-      BleConnectionState.connected      => (Colors.green.shade600,  'Connected',     false),
+      BleConnectionState.connected    => (Colors.green.shade600, 'Connected',    false),
       BleConnectionState.connecting ||
-      BleConnectionState.scanning       => (Colors.amber.shade700,  'Connecting…',   false),
-      BleConnectionState.disconnected   => (Colors.red.shade600,    'Disconnected',  true),
+      BleConnectionState.scanning     => (Colors.amber.shade700, 'Connecting…',  false),
+      BleConnectionState.disconnected => (Colors.red.shade600,   'Disconnected', true),
     };
 
     return Container(
@@ -24,6 +26,14 @@ class ConnectionBanner extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          if (isConnecting) ...[
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 8),
+          ],
           Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           if (showRetry) ...[
             const SizedBox(width: 12),

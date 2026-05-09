@@ -105,10 +105,10 @@ class _SegmentPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centre = Offset(size.width / 2, size.height / 2);
-    final outerR = size.width / 2 - 4;
-    final innerR = outerR * 0.55;
-    final c      = enabled ? color : color.withAlpha(80);
+    final centre  = Offset(size.width / 2, size.height / 2);
+    final outerR  = size.width / 2 - 4 + (active ? 6 : 0);
+    final innerR  = (size.width / 2 - 4) * 0.55;
+    final c       = enabled ? color : color.withAlpha(80);
 
     final outerRect = Rect.fromCircle(center: centre, radius: outerR);
     final innerRect = Rect.fromCircle(center: centre, radius: innerR);
@@ -117,6 +117,16 @@ class _SegmentPainter extends CustomPainter {
       ..arcTo(outerRect, startAngle, sweepAngle, false)
       ..arcTo(innerRect, startAngle + sweepAngle, -sweepAngle, false)
       ..close();
+
+    if (active) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = c.withAlpha(90)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+      );
+    }
 
     canvas.drawPath(
       path,

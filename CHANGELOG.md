@@ -4,6 +4,20 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — UI Polish + README
+
+### Changed
+- **Lighting section "Coming soon" badge** (`lighting_control_widget.dart`) — replaced silent SnackBar-only behaviour with a visible amber "Coming soon" chip next to the Lighting header, so users understand at a glance why those controls are present but pending.
+- **Home screen empty state** (`home_screen.dart`) — replaced plain grey icon with a branded blue-tinted circle container, larger headline, and a descriptive subtitle explaining how to pair.
+- **Connection banner connecting animation** (`connection_banner.dart`) — added a small `CircularProgressIndicator` (14 px, white, 2 px stroke) next to "Connecting…" so the in-progress state feels live rather than static.
+- **Speed dial active segment glow + pop** (`circular_speed_dial.dart`) — active arc segment now extends 6 px outward and renders a blurred glow shadow beneath it (`MaskFilter.blur`, alpha 90), making the selected speed visually distinct without changing the inactive state.
+- **Rounded bottom sheets** (`router.dart`, `fan_card.dart`) — both `showModalBottomSheet` calls now use `shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20)))` for a modern Material 3 appearance.
+
+### Added
+- **README.md** — full project readme covering features, architecture diagram, BLE protocol table, project structure, build instructions, development workflow, hard constraints, and roadmap.
+
+---
+
 ## [Unreleased] — Review Pass 10
 
 ### Fixed
