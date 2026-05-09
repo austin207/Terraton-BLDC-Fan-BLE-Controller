@@ -4,6 +4,13 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 10
+
+### Fixed
+- **`_showOptions()` bottom sheet missing `SafeArea`** (`fan_card.dart`) — the long-press options sheet (Rename / Delete) rendered its `Column` directly without a `SafeArea` wrapper. On Android gesture-navigation devices the bottom list item could be occluded by the system navigation bar. Wrapped the `Column` in `SafeArea`, matching the identical pattern already used in `router.dart`'s `goToOnboarding()` bottom sheet.
+
+---
+
 ## [Unreleased] — Review Pass 9
 
 ### Fixed

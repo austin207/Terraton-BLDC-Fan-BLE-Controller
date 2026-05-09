@@ -56,26 +56,28 @@ class FanCard extends ConsumerWidget {
   void _showOptions(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
-      builder: (sheetCtx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text('Rename'),
-            onTap: () {
-              Navigator.of(sheetCtx).pop();
-              _showRenameDialog(context, ref);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete, color: Colors.red),
-            title: const Text('Delete', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              Navigator.of(sheetCtx).pop();
-              _confirmDelete(context, ref);
-            },
-          ),
-        ],
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Rename'),
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _showRenameDialog(context, ref);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _confirmDelete(context, ref);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
