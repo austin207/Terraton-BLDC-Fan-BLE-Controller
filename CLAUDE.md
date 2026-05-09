@@ -156,6 +156,77 @@ Speed 1 `#1E8449` · Speed 2 `#1A56A0` · Speed 3 `#7D3C98` · Speed 4 `#D4AC0D`
 
 ---
 
+## UI Design Reference (`uiDesigns/tera1–4.jpg`)
+
+These are the approved Figma-exported designs. Use them as the source of truth for any UI work. Current implementation diverges from the designs in several areas — those gaps are marked **[NOT YET BUILT]** or **[DIFFERS]**.
+
+### Splash Screen *(tera1 — V1)* **[NOT YET BUILT]**
+- Terraton fan logo (rounded blue square with fan propeller icon) centred on a light-grey background.
+- "TERRATON" in bold, "SMART BLDC FAN CONTROL" subtitle beneath.
+- Three dot page indicators at the bottom.
+- No splash screen exists in the current implementation; the app launches directly to home.
+
+### Home Screen — Empty State *(tera1 — V4)* **[DIFFERS]**
+- Title: "My Fans". Settings gear icon in AppBar.
+- Empty state: large faded fan icon, "No Fans Added Yet", subtitle "Scan your Terraton fan QR code to begin controlling your environment."
+- Full-width "Scan to Add Fan" button with search icon.
+- FAB (+) in bottom-right corner.
+- **Current implementation** falls back to `_demoFan()` instead of showing the empty state. Design intent is a proper empty state — remove the demo fan fallback when building production UI.
+
+### Home Screen — Fan Cards *(tera1 — V3)* **[DIFFERS]**
+- Title: "My Fans" with "Welcome back, User" subtitle.
+- Each card shows: fan icon, nickname (bold), model (e.g. "Terraton X1"), live status badge (dot + label).
+- Status badge colours: green "Connected", grey "Disconnected", amber "Connecting…".
+- Chevron right on each card. FAB (+) in bottom-right.
+- **Current implementation** groups by model with a count badge header and shows last-connected time instead of live status. Cards do not yet show the connection-status badge.
+
+### Home Screen — Long Press (options sheet) *(tera2 — V1)*
+- Bottom sheet on long-press of a fan card.
+- Two options: **Rename Fan** (pencil icon, "Change the display name of this device") and **Remove Device** (trash icon, "Unpair and remove from your account").
+- **Cancel** button at the bottom.
+- Matches current implementation. Note: design labels say "Rename Fan" / "Remove Device" — code currently uses "Rename" / "Delete".
+
+### Name Your Fan Screen *(tera2 — V2)* **[DIFFERS]**
+- Fan icon in a circle with a green "DETECTED" pill badge.
+- "Name Your Fan" heading. Subtitle: "Terraton X1 detected! Give it a nickname to easily identify it later."
+- Text field with placeholder "Living Room Fan" and character counter "15 / 30".
+- Green info card: "Nickname Requirements" with checkmark icon listing the three rules.
+- Full-width "Save & Continue" button.
+- **Current implementation** has a plain `TextFormField` form; missing the detected badge, requirements info card, and uses "Save" instead of "Save & Continue".
+
+### Control Screen — Active *(tera3 — V20)*
+- AppBar: back arrow, fan nickname, settings gear, "• CONNECTED" green status label below the title.
+- **Power button**: blue filled circle with power icon, centred at the top.
+- **Telemetry arc**: smooth rainbow-gradient arc (decorative display only, NOT interactive). Shows watts (e.g. "28 W") and RPM (e.g. "360 RPM") in the centre of the arc.
+- **Speed selector**: 6 rectangular buttons in a 2-row × 3-column grid. Active speed button is filled blue.
+- **Boost**: full-width dark-blue button labelled "⚡ BOOST MODE".
+- **Operating Modes**: section header "OPERATING MODES" in small caps; Nature / Smart / Reverse chip-style buttons.
+- **Sleep Timer**: section header "SLEEP TIMER"; OFF / 2H / 4H / 8H buttons.
+- **Mood Lighting**: card row with sun icon, "Mood Lighting" label, and a single ON/OFF toggle switch (not two separate buttons). Below: "WARM" ← slider → "COOL" colour temperature slider.
+
+> **Speed selector design vs current**: The design uses a decorative arc (display only) plus a 3×2 button grid for speed selection. The current implementation uses `CircularSpeedDial` where the arc segments themselves are tappable. When refactoring: separate the arc visual from speed selection buttons.
+
+> **Mood Lighting design vs current**: Design uses a `Switch` widget for ON/OFF. Current uses two `OutlinedButton` widgets.
+
+### Control Screen — Disconnected *(tera4 — V2)* **[DIFFERS]**
+- AppBar shows "DISCONNECTED" (grey, no dot).
+- All controls are visually ghosted/disabled. Arc shows "-- W" / "-- RPM".
+- **Connection Lost card**: bottom-anchored card (not a banner) with a clock icon, "Connection Lost" heading, "Fan not found. Is it powered on and within range?" body, and a "Retry Connection" full-width blue button.
+- **Current implementation** uses `ConnectionBanner` — a coloured strip pinned to the top of the screen. Design intent is a bottom card overlay.
+
+### Settings Screen *(tera4 — V1)* **[DIFFERS]**
+- Back arrow, "Settings" title (centred, bold).
+- **DATA MANAGEMENT** section: "Export Fans Data" (upload icon), "Import Fans Data" (download icon) — matches current implementation.
+- **ABOUT** section **[NOT YET BUILT]**:
+  - App Version — display current version + build number (e.g. "v2.4.0 (Build 108)")
+  - Firmware Support — show "Up to Date" or last checked timestamp
+  - BLE Protocol — static "BLE 5.2"
+- **SUPPORT** section **[NOT YET BUILT]**:
+  - User Manual — opens an external URL (launches browser)
+- Terraton fan logo centred at the bottom of the screen.
+
+---
+
 ## Hard Constraints (from PRD §6.1)
 
 - UUID constants live only in `ble_constants.dart`. Never written elsewhere.
