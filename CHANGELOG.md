@@ -4,6 +4,18 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 5
+
+### Fixed
+- **`_SegmentPainter.paint()` TextPainter leak** (`circular_speed_dial.dart`) — `TextPainter` created inside `paint()` was never disposed; added `tp.dispose()` immediately after `tp.paint()` to release the underlying `Paragraph` native object on every repaint.
+- **Per-item DB queries in BLE scan list** (`ble_scan_screen.dart`) — `repo.getFanByMac(mac)` (a full ObjectBox query) was called for every list item inside `ListView.builder`, producing N queries per build. Replaced with a `Set<String>` derived from `ref.watch(savedFansProvider)` before the builder; the "already added" check is now an O(1) set lookup with zero extra queries.
+- **`unawaited()` missing in `initState`** (`ble_scan_screen.dart`) — `_startScan()` was called without `unawaited()` in `initState`, inconsistent with the codebase convention established in Passes 1–3. Wrapped with `unawaited(_startScan())`.
+
+### Added
+- **Accessibility semantics on speed arc segments** (`circular_speed_dial.dart`) — each `GestureDetector` arc segment is now wrapped in `Semantics(button: true, label: 'Speed N')` so TalkBack/screen-readers can identify and activate individual speed steps.
+
+---
+
 ## [Unreleased] — PRD Audit & AC-06-4 Telemetry Timeout
 
 ### Added

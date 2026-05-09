@@ -35,22 +35,26 @@ class CircularSpeedDial extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           for (int i = 0; i < 6; i++)
-            GestureDetector(
-              onTap: enabled
-                  ? () {
-                      HapticFeedback.lightImpact();
-                      onSpeedSelected(i + 1);
-                    }
-                  : null,
-              child: CustomPaint(
-                size: const Size(260, 260),
-                painter: _SegmentPainter(
-                  speedIndex: i,
-                  color: kSpeedColors[i],
-                  startAngle: _startAngle + i * (segAngle + _gap),
-                  sweepAngle: segAngle,
-                  active: currentSpeed == i + 1,
-                  enabled: enabled,
+            Semantics(
+              button: true,
+              label: 'Speed ${i + 1}',
+              child: GestureDetector(
+                onTap: enabled
+                    ? () {
+                        HapticFeedback.lightImpact();
+                        onSpeedSelected(i + 1);
+                      }
+                    : null,
+                child: CustomPaint(
+                  size: const Size(260, 260),
+                  painter: _SegmentPainter(
+                    speedIndex: i,
+                    color: kSpeedColors[i],
+                    startAngle: _startAngle + i * (segAngle + _gap),
+                    sweepAngle: segAngle,
+                    active: currentSpeed == i + 1,
+                    enabled: enabled,
+                  ),
                 ),
               ),
             ),
@@ -139,6 +143,7 @@ class _SegmentPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, Offset(lx - tp.width / 2, ly - tp.height / 2));
+    tp.dispose();
   }
 
   @override

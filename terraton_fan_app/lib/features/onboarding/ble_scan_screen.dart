@@ -26,7 +26,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   @override
   void initState() {
     super.initState();
-    _startScan();
+    unawaited(_startScan());
   }
 
   Future<void> _startScan() async {
@@ -55,7 +55,10 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = ref.watch(fanRepositoryProvider);
+    final savedMacs = {
+      for (final f in ref.watch(savedFansProvider).value ?? const <FanDevice>[])
+        if (f.macAddress.isNotEmpty) f.macAddress,
+    };
 
     return Scaffold(
       appBar: AppBar(
@@ -103,7 +106,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
           itemCount: _results.length,
           itemBuilder: (_, i) {
             final fan = _results[i];
-            final alreadyAdded = repo.getFanByMac(fan.macAddress) != null;
+            final alreadyAdded = savedMacs.contains(fan.macAddress);
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.wind_power, color: kPrimary),
