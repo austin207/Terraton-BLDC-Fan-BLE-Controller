@@ -1,5 +1,7 @@
 // lib/main.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
@@ -30,6 +32,7 @@ Future<void> main() async {
   await CommandLoader.load();
   await initObjectBox();
   await _requestPermissions();
+  await _ensureBluetoothOn();
 
   runApp(const ProviderScope(child: TerratorApp()));
 }
@@ -40,4 +43,10 @@ Future<void> _requestPermissions() async {
     Permission.bluetoothConnect,
     Permission.locationWhenInUse,
   ].request();
+}
+
+Future<void> _ensureBluetoothOn() async {
+  if (!Platform.isAndroid) return;
+  if (FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on) return;
+  await FlutterBluePlus.turnOn();
 }
