@@ -4,6 +4,16 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 9
+
+### Fixed
+- **Removed unused `riverpod_generator` dev dependency** (`pubspec.yaml`) — `@riverpod` code generation was removed in Pass 1 (which removed `riverpod_annotation` from runtime dependencies), but `riverpod_generator` was never cleaned from `dev_dependencies`. Removed the orphaned entry and ran `flutter pub get` to update the lock file.
+
+### Added
+- **Unit tests for `ActiveFanStateNotifier`** (`test/unit/active_fan_state_notifier_test.dart`) — 14 tests covering all 8 update methods in `providers.dart`. Previously the notifier was the only business-logic class with zero direct unit coverage. Tests specifically exercise the non-trivial paths: `updateMode('boost')` → `isBoost=true` + `activeMode=null`; `updateMode(null)` → both cleared; `updateTimer(0)` → `activeTimerCode=null`; `clearWatts`/`clearRpm` → explicit null via getter-pattern `copyWith`. A minimal `_FakeRepo` provides in-memory storage to avoid the ObjectBox native library in unit tests.
+
+---
+
 ## [Unreleased] — Review Pass 8
 
 ### Fixed
