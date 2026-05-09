@@ -50,14 +50,17 @@ class _ButtonRow extends StatelessWidget {
         final isActive = k == activeKey;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: OutlinedButton(
-            onPressed: enabled ? () => onSelect(k) : null,
-            style: OutlinedButton.styleFrom(
-              backgroundColor: isActive ? kPrimary : null,
-              foregroundColor: isActive ? Colors.white : null,
-              side: const BorderSide(color: kPrimary),
+          child: Semantics(
+            selected: isActive,
+            child: OutlinedButton(
+              onPressed: enabled ? () => onSelect(k) : null,
+              style: OutlinedButton.styleFrom(
+                backgroundColor: isActive ? kPrimary : null,
+                foregroundColor: isActive ? Colors.white : null,
+                side: const BorderSide(color: kPrimary),
+              ),
+              child: Text(k),
             ),
-            child: Text(k),
           ),
         );
       }).toList(),

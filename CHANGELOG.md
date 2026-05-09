@@ -4,6 +4,17 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Review Pass 7
+
+### Fixed
+- **`BleResponseParser.parseSpeed()` out-of-range byte** (`ble_response_parser.dart`) — raw `r.data[0]` from hardware was returned without bounds checking. `CircularSpeedDial` indexes `kSpeedColors[currentSpeed - 1]`; a byte outside 1–6 (e.g., firmware bug or unknown response) would panic with a `RangeError`. Added explicit range guard: returns `null` for any byte not in 1–6, which the dial renders as "no speed selected" instead of crashing. Two new unit tests cover the 0x00 and 0x07 out-of-range cases.
+
+### Added
+- **`Semantics(selected:)` on mode buttons** (`mode_control_widget.dart`) — each mode button (`NATURE`, `SMART`, `REVERSE`) is now wrapped in `Semantics(selected: isActive)` so TalkBack announces "selected" when a mode is active, rather than relying on the background-color change alone.
+- **`Semantics(selected:)` on timer buttons** (`timer_control_widget.dart`) — same pattern applied to the `2H`, `4H`, `8H`, `OFF` timer buttons; active timer is now announced as "selected" by screen readers.
+
+---
+
 ## [Unreleased] — Review Pass 6
 
 ### Added

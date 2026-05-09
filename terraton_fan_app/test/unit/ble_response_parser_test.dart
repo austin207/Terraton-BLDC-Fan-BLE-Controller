@@ -40,6 +40,18 @@ void main() {
       expect(BleResponseParser.parseSpeed(r!), 3);
     });
 
+    test('parseSpeed returns null for out-of-range byte 0x00', () {
+      // 0x07+0x04+0x01+0x00 = 0x0C
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x04, 0x01, 0x00, 0x0C]);
+      expect(BleResponseParser.parseSpeed(r!), isNull);
+    });
+
+    test('parseSpeed returns null for out-of-range byte 0x07', () {
+      // 0x07+0x04+0x01+0x07 = 0x13
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x04, 0x01, 0x07, 0x13]);
+      expect(BleResponseParser.parseSpeed(r!), isNull);
+    });
+
     test('parses watt response', () {
       // 0x07+0x23+0x01+0x1C = 7+35+1+28 = 71 = 0x47 (28W)
       final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x23, 0x01, 0x1C, 0x47]);

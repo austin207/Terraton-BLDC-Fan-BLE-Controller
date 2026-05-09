@@ -31,8 +31,11 @@ class BleResponseParser {
   static bool? parsePowerState(FanResponse r) =>
       r.command == 0x02 && r.data.isNotEmpty ? r.data[0] == 0x01 : null;
 
-  static int?  parseSpeed(FanResponse r) =>
-      r.command == 0x04 && r.data.isNotEmpty ? r.data[0] : null;
+  static int? parseSpeed(FanResponse r) {
+    if (r.command != 0x04 || r.data.isEmpty) return null;
+    final s = r.data[0];
+    return s >= 1 && s <= 6 ? s : null;
+  }
 
   static int?  parseMode(FanResponse r) =>
       r.command == 0x21 && r.data.isNotEmpty ? r.data[0] : null;

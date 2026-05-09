@@ -25,19 +25,22 @@ class TimerControlWidget extends StatelessWidget {
         final isActive = label == activeLabel;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: OutlinedButton(
-            onPressed: enabled
-                ? () {
-                    HapticFeedback.lightImpact();
-                    onTimer(label.toLowerCase());
-                  }
-                : null,
-            style: OutlinedButton.styleFrom(
-              backgroundColor: isActive ? kPrimary : null,
-              foregroundColor: isActive ? Colors.white : null,
-              side: const BorderSide(color: kPrimary),
+          child: Semantics(
+            selected: isActive,
+            child: OutlinedButton(
+              onPressed: enabled
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      onTimer(label.toLowerCase());
+                    }
+                  : null,
+              style: OutlinedButton.styleFrom(
+                backgroundColor: isActive ? kPrimary : null,
+                foregroundColor: isActive ? Colors.white : null,
+                side: const BorderSide(color: kPrimary),
+              ),
+              child: Text(label),
             ),
-            child: Text(label),
           ),
         );
       }).toList(),
