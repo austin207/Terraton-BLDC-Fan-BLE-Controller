@@ -27,8 +27,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: fansAsync.when(
-        data: (fans) =>
-            fans.isEmpty ? const _EmptyState() : _FanList(fans: fans),
+        data: (fans) => _FanList(fans: fans.isNotEmpty ? fans : [_demoFan()]),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, __) => const Center(child: Text('Could not load fans')),
       ),
@@ -40,6 +39,14 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 }
+
+FanDevice _demoFan() => FanDevice()
+  ..deviceId = 'demo-fan-001'
+  ..model = 'Terraton AC-05-3'
+  ..nickname = 'Living Room Fan'
+  ..fwVersion = '1.0.0'
+  ..addedAt = DateTime(2026, 5, 9)
+  ..lastConnectedAt = DateTime(2026, 5, 9, 13, 30);
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
