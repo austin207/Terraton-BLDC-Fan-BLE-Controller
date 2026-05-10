@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -13,87 +14,116 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
+      backgroundColor: kBackground,
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: kBackground,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w800)),
         centerTitle: true,
       ),
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          const _SectionHeader('DATA MANAGEMENT'),
-          _SettingsTile(
-            icon: Icons.upload_rounded,
-            iconBg: Colors.blue.shade50,
-            iconColor: Colors.blue.shade600,
-            title: 'Export Fans Data',
-            onTap: () => _export(context, ref),
-          ),
-          _SettingsTile(
-            icon: Icons.download_rounded,
-            iconBg: Colors.green.shade50,
-            iconColor: Colors.green.shade600,
-            title: 'Import Fans Data',
-            onTap: () => _import(context, ref),
-          ),
+          // ── DATA MANAGEMENT ───────────────────────────────────────────────
+          const _SectionLabel('DATA MANAGEMENT'),
+          _TileGroup(tiles: [
+            _TileData(
+              icon: Icons.upload_rounded,
+              iconBg: const Color(0xFFEFF6FF),
+              iconColor: const Color(0xFF3B82F6),
+              title: 'Export Fans Data',
+              onTap: () => _export(context, ref),
+            ),
+            _TileData(
+              icon: Icons.download_rounded,
+              iconBg: const Color(0xFFF0FDF4),
+              iconColor: const Color(0xFF22C55E),
+              title: 'Import Fans Data',
+              onTap: () => _import(context, ref),
+            ),
+          ]),
 
-          const _SectionHeader('ABOUT'),
-          _SettingsTile(
-            icon: Icons.info_outline_rounded,
-            iconBg: Colors.grey.shade100,
-            iconColor: Colors.grey.shade600,
-            title: 'App Version',
-            trailing: const Text('v1.0.0 (Build 1)',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
-          ),
-          _SettingsTile(
-            icon: Icons.devices_rounded,
-            iconBg: Colors.grey.shade100,
-            iconColor: Colors.grey.shade600,
-            title: 'Firmware Support',
-            trailing: Text('Up to Date',
-                style: TextStyle(fontSize: 13, color: Colors.green.shade600, fontWeight: FontWeight.w600)),
-          ),
-          _SettingsTile(
-            icon: Icons.bluetooth_rounded,
-            iconBg: Colors.grey.shade100,
-            iconColor: Colors.grey.shade600,
-            title: 'BLE Protocol',
-            trailing: const Text('BLE 5.2',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
-          ),
+          // ── ABOUT ─────────────────────────────────────────────────────────
+          const _SectionLabel('ABOUT'),
+          const _TileGroup(tiles: [
+            _TileData(
+              icon: Icons.info_outline_rounded,
+              iconBg: Color(0xFFF8FAFC),
+              iconColor: Color(0xFF64748B),
+              title: 'App Version',
+              trailingText: 'v1.0.0 (Build 1)',
+            ),
+            _TileData(
+              icon: Icons.devices_rounded,
+              iconBg: Color(0xFFF8FAFC),
+              iconColor: Color(0xFF64748B),
+              title: 'Firmware Support',
+              trailingWidget: Text(
+                'Up to Date',
+                style: TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.w600),
+              ),
+            ),
+            _TileData(
+              icon: Icons.bluetooth_rounded,
+              iconBg: Color(0xFFF8FAFC),
+              iconColor: Color(0xFF64748B),
+              title: 'BLE Protocol',
+              trailingText: 'BLE 5.2',
+            ),
+          ]),
 
-          const _SectionHeader('SUPPORT'),
-          _SettingsTile(
-            icon: Icons.menu_book_rounded,
-            iconBg: Colors.amber.shade50,
-            iconColor: Colors.amber.shade700,
-            title: 'User Manual',
-            trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
+          // ── SUPPORT ───────────────────────────────────────────────────────
+          const _SectionLabel('SUPPORT'),
+          _TileGroup(tiles: [
+            _TileData(
+              icon: Icons.menu_book_rounded,
+              iconBg: const Color(0xFFFFFBEB),
+              iconColor: const Color(0xFFD97706),
+              title: 'User Manual',
+              trailingWidget: const Icon(Icons.open_in_new_rounded, size: 16, color: Color(0xFF94A3B8)),
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('User Manual coming soon.')),
-              );
-            },
-          ),
+              ),
+            ),
+          ]),
 
-          const SizedBox(height: 48),
+          // ── Terraton footer ───────────────────────────────────────────────
+          const SizedBox(height: 56),
           Center(
             child: Column(
               children: [
-                Icon(Icons.wind_power, size: 36, color: Colors.grey.shade300),
-                const SizedBox(height: 6),
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: kPrimary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.wind_power_rounded, color: Colors.white, size: 26),
+                ),
+                const SizedBox(height: 10),
                 Text(
                   'TERRATON',
                   style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 3,
-                    color: Colors.grey.shade400,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    letterSpacing: 3.5,
+                    color: Colors.blueGrey.shade400,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'SMART BLDC FAN CONTROL',
+                  style: TextStyle(
+                    fontSize: 9,
+                    letterSpacing: 1.5,
+                    color: Colors.blueGrey.shade300,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 32),
         ],
       ),
     );
@@ -143,64 +173,131 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
+// ── Section label ─────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
   final String label;
-  const _SectionHeader(this.label);
+  const _SectionLabel(this.label);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 4),
+      padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
       child: Text(
         label,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Colors.blueGrey.shade500,
-          letterSpacing: 1.2,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF6B7F95),
+          letterSpacing: 1.4,
         ),
       ),
     );
   }
 }
 
-class _SettingsTile extends StatelessWidget {
+// ── Grouped tile container ─────────────────────────────────────────────────────
+
+class _TileData {
   final IconData icon;
   final Color iconBg;
   final Color iconColor;
   final String title;
-  final Widget? trailing;
+  final String? trailingText;
+  final Widget? trailingWidget;
   final VoidCallback? onTap;
 
-  const _SettingsTile({
+  const _TileData({
     required this.icon,
     required this.iconBg,
     required this.iconColor,
     required this.title,
-    this.trailing,
+    this.trailingText,
+    this.trailingWidget,
     this.onTap,
   });
+}
+
+class _TileGroup extends StatelessWidget {
+  final List<_TileData> tiles;
+  const _TileGroup({required this.tiles});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-          child: Icon(icon, color: iconColor, size: 20),
+      child: Column(
+        children: [
+          for (int i = 0; i < tiles.length; i++) ...[
+            _SettingsTile(data: tiles[i], isFirst: i == 0, isLast: i == tiles.length - 1),
+            if (i < tiles.length - 1)
+              const Divider(height: 1, indent: 68, endIndent: 0, color: Color(0xFFF1F5F9)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final _TileData data;
+  final bool isFirst;
+  final bool isLast;
+
+  const _SettingsTile({required this.data, required this.isFirst, required this.isLast});
+
+  @override
+  Widget build(BuildContext context) {
+    final borderRadius = BorderRadius.vertical(
+      top:    isFirst ? const Radius.circular(16) : Radius.zero,
+      bottom: isLast  ? const Radius.circular(16) : Radius.zero,
+    );
+
+    Widget trailing;
+    if (data.trailingWidget != null) {
+      trailing = data.trailingWidget!;
+    } else if (data.trailingText != null) {
+      trailing = Text(
+        data.trailingText!,
+        style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+      );
+    } else if (data.onTap != null) {
+      trailing = const Icon(Icons.chevron_right_rounded, color: Color(0xFFCBD5E1), size: 22);
+    } else {
+      trailing = const SizedBox.shrink();
+    }
+
+    return InkWell(
+      onTap: data.onTap,
+      borderRadius: borderRadius,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(color: data.iconBg, shape: BoxShape.circle),
+              child: Icon(data.icon, color: data.iconColor, size: 19),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                data.title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ),
+            trailing,
+          ],
         ),
-        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-        trailing: trailing ?? (onTap != null ? Icon(Icons.chevron_right, color: Colors.grey.shade400) : null),
-        onTap: onTap,
       ),
     );
   }

@@ -21,19 +21,24 @@ class LightingControlWidget extends StatelessWidget {
     required this.onColorTemp,
   });
 
+  static const _warmColor = Color(0xFFF97316); // orange
+  static const _coolColor = Color(0xFF60A5FA); // blue
+
   @override
   Widget build(BuildContext context) {
+    final thumbColor = Color.lerp(_warmColor, _coolColor, colorTempValue)!;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row: icon + label + ON/OFF toggle
+          // ── Header row: sun icon + label + ON/OFF toggle ──────────────────
           Row(
             children: [
               Container(
@@ -58,87 +63,88 @@ class LightingControlWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              // ON / OFF segmented toggle
+              // Segmented ON / OFF toggle
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(8),
                 ),
+                padding: const EdgeInsets.all(2),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _ToggleBtn(
-                      label: 'ON',
-                      active: isLightOn,
-                      isLeft: true,
-                      enabled: enabled,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        onLightOn();
-                      },
-                    ),
-                    _ToggleBtn(
-                      label: 'OFF',
-                      active: !isLightOn,
-                      isLeft: false,
-                      enabled: enabled,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        onLightOff();
-                      },
-                    ),
+                    _ToggleBtn(label: 'ON',  active: isLightOn,  isLeft: true,  enabled: enabled, onTap: () { HapticFeedback.lightImpact(); onLightOn();  }),
+                    _ToggleBtn(label: 'OFF', active: !isLightOn, isLeft: false, enabled: enabled, onTap: () { HapticFeedback.lightImpact(); onLightOff(); }),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
 
-          // WARM ←——— slider ———→ COOL
+          const SizedBox(height: 14),
+
+          // ── WARM ←—[gradient track]—→ COOL ───────────────────────────────
           Row(
             children: [
-              Text(
+              const Text(
                 'WARM',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.orange.shade700,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFEA580C),
                 ),
               ),
               Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 5,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-                    activeTrackColor: Color.lerp(
-                      const Color(0xFFF97316),
-                      const Color(0xFF60A5FA),
-                      colorTempValue,
-                    ),
-                    inactiveTrackColor: const Color(0xFFE2E8F0),
-                    thumbColor: Color.lerp(
-                      const Color(0xFFF97316),
-                      const Color(0xFF60A5FA),
-                      colorTempValue,
-                    ),
-                  ),
-                  child: Slider(
-                    value: colorTempValue,
-                    min: 0,
-                    max: 1,
-                    semanticFormatterCallback: (_) =>
-                        'Colour temperature ${(colorTempValue * 100).round()}%',
-                    onChanged: enabled ? onColorTemp : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Gradient track always visible end-to-end
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          height: 5,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [_warmColor, Color(0xFFFBBF24), _coolColor],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Slider with transparent track — only the thumb shows
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 5,
+                          activeTrackColor: Colors.transparent,
+                          inactiveTrackColor: Colors.transparent,
+                          disabledActiveTrackColor: Colors.transparent,
+                          disabledInactiveTrackColor: Colors.transparent,
+                          thumbColor: thumbColor,
+                          disabledThumbColor: thumbColor.withAlpha(120),
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                          overlayColor: thumbColor.withAlpha(30),
+                        ),
+                        child: Slider(
+                          value: colorTempValue,
+                          min: 0,
+                          max: 1,
+                          semanticFormatterCallback: (_) =>
+                              'Colour temperature ${(colorTempValue * 100).round()}%',
+                          onChanged: enabled ? onColorTemp : null,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Text(
+              const Text(
                 'COOL',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.blue.shade600,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2563EB),
                 ),
               ),
             ],
@@ -167,14 +173,14 @@ class _ToggleBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.horizontal(
-      left: isLeft ? const Radius.circular(7) : Radius.zero,
-      right: !isLeft ? const Radius.circular(7) : Radius.zero,
+      left:  isLeft  ? const Radius.circular(6) : Radius.zero,
+      right: !isLeft ? const Radius.circular(6) : Radius.zero,
     );
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
         decoration: BoxDecoration(
           color: active ? kPrimary : Colors.transparent,
           borderRadius: radius,

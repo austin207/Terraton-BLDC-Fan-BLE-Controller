@@ -1,5 +1,6 @@
 // lib/features/onboarding/name_fan_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
@@ -124,29 +125,34 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Text field with live character counter
+                // Text field — character counter shown as inline suffix
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _ctrl,
                   builder: (context, value, _) {
                     return TextFormField(
                       controller: _ctrl,
                       maxLength: 30,
+                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
                       buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
-                          Text(
-                            '$currentLength / ${maxLength ?? 30}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                          ),
+                          const SizedBox.shrink(), // hide the default below-field counter
                       decoration: InputDecoration(
-                        hintText: 'e.g., Living Room Fan',
+                        hintText: 'Living Room Fan',
+                        hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: const Color(0xFFF8FAFC),
+                        suffixText: '${value.text.length} / 30',
+                        suffixStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w500,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade200),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade200),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -154,7 +160,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                         ),
                         errorBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Colors.red),
+                          borderSide: const BorderSide(color: Color(0xFFEF4444)),
                         ),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       ),
