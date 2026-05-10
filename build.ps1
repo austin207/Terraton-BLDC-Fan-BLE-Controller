@@ -12,9 +12,17 @@ if (Test-Path $BuildsDir) {
     Write-Host "Cleared old APKs from builds/" -ForegroundColor DarkGray
 }
 
-# ── 1. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
-Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
+# ── 1. Regenerate launcher icons from assets/icon/icon.png ───────────────────
+Write-Host "Regenerating launcher icons..." -ForegroundColor Cyan
 Set-Location $AppDir
+dart run flutter_launcher_icons
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Launcher icon generation failed." -ForegroundColor Red
+    exit 1
+}
+
+# ── 2. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
+Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 
 flutter clean | Out-Null
 flutter build apk --release --split-per-abi
@@ -35,7 +43,7 @@ if (-not (Test-Path $Arm64)) {
     exit 1
 }
 
-# ── 2. Save timestamped copies locally ───────────────────────────────────────
+# ── 3. Save timestamped copies locally ───────────────────────────────────────
 $Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
 $Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
 $Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
@@ -49,7 +57,7 @@ Write-Host "Saved arm64 : $Arm64Local" -ForegroundColor Green
 if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Local;  Write-Host "Saved arm7  : $Arm7Local"  -ForegroundColor Green }
 if (Test-Path $X86)   { Copy-Item $X86  $X86Local;   Write-Host "Saved x86_64: $X86Local"   -ForegroundColor Green }
 
-# ── 3. Publish to GitHub Releases (tag: latest) ───────────────────────────────
+# ── 4. Publish to GitHub Releases (tag: latest) ───────────────────────────────
 Write-Host ""
 Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
 Set-Location $ProjectRoot
