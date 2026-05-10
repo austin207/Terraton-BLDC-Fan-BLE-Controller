@@ -83,7 +83,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                           color: Colors.grey.shade100,
                           border: Border.all(color: Colors.grey.shade200, width: 1.5),
                         ),
-                        child: const FanIcon(size: 60, color: kPrimary),
+                        child: const FanIcon(size: 60),
                       ),
                       Positioned(
                         bottom: -6,

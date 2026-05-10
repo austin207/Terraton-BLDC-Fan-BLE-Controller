@@ -100,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
                     color: kPrimary,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const FanIcon(size: 26, color: Colors.white),
+                  child: const FanIcon(size: 26),
                 ),
                 const SizedBox(height: 10),
                 Text(

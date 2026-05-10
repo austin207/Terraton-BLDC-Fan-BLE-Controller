@@ -32,7 +32,7 @@ class FanCard extends ConsumerWidget {
                   color: kPrimary.withAlpha(20),
                   shape: BoxShape.circle,
                 ),
-                child: const FanIcon(size: 28, color: kPrimary),
+                child: const FanIcon(size: 28),
               ),
               const SizedBox(width: 14),
               Expanded(

@@ -47,7 +47,7 @@ class _SplashScreenState extends State<SplashScreen> {
                         ),
                       ],
                     ),
-                    child: const FanIcon(size: 54, color: Colors.white),
+                    child: const FanIcon(size: 54),
                   ),
                   const SizedBox(height: 28),
                   const Text(
