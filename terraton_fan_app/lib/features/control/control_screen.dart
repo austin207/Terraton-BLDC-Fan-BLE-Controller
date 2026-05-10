@@ -53,7 +53,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     try {
       final returnedMac = await _ble.connect();
       if (!mounted) return;
-      if (widget.fan.macAddress.isEmpty) {
+      if (widget.fan.macAddress.isEmpty && widget.fan.deviceId != '__demo__') {
         await repo.updateMac(widget.fan.deviceId, returnedMac);
         if (!mounted) return;
         ref.invalidate(savedFansProvider);

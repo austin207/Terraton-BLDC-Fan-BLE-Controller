@@ -8,6 +8,14 @@ import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/router.dart';
 import 'package:terraton_fan_app/features/home/fan_card.dart';
 
+FanDevice _demoFan() => FanDevice()
+  ..deviceId   = '__demo__'
+  ..macAddress = ''
+  ..nickname   = 'Living Room Fan'
+  ..model      = 'Terraton X1'
+  ..fwVersion  = '1.0'
+  ..addedAt    = DateTime(2026, 1, 1);
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -27,7 +35,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: fansAsync.when(
-        data: (fans) => fans.isEmpty ? _EmptyState() : _FanList(fans: fans),
+        data: (fans) => _FanList(fans: fans, showDemo: fans.isEmpty),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, __) => const Center(child: Text('Could not load fans')),
       ),
@@ -40,65 +48,15 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.wind_power, size: 60, color: Colors.grey.shade300),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'No Fans Added Yet',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Scan your Terraton fan QR code to begin\ncontrolling your environment.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.search),
-                label: const Text('Scan to Add Fan',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () => goToOnboarding(context),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _FanList extends StatelessWidget {
   final List<FanDevice> fans;
-  const _FanList({required this.fans});
+  final bool showDemo;
+  const _FanList({required this.fans, this.showDemo = false});
 
   @override
   Widget build(BuildContext context) {
+    final displayFans = showDemo ? [_demoFan()] : fans;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
@@ -113,7 +71,21 @@ class _FanList extends StatelessWidget {
             ),
           ),
         ),
-        ...fans.map((fan) => FanCard(key: ValueKey(fan.deviceId), fan: fan)),
+        if (showDemo)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(Icons.science_outlined, size: 14, color: Colors.amber.shade700),
+                const SizedBox(width: 4),
+                Text(
+                  'Demo fan — add a real fan to replace this',
+                  style: TextStyle(fontSize: 12, color: Colors.amber.shade700),
+                ),
+              ],
+            ),
+          ),
+        ...displayFans.map((fan) => FanCard(key: ValueKey(fan.deviceId), fan: fan)),
       ],
     );
   }
