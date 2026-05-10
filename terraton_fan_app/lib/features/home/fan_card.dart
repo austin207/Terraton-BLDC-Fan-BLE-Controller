@@ -1,5 +1,6 @@
 // lib/features/home/fan_card.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
@@ -142,9 +143,14 @@ class FanCard extends ConsumerWidget {
   }
 
   void _showRenameDialog(BuildContext context, WidgetRef ref) {
-    showDialog<String>(
+    showModalBottomSheet<String>(
       context: context,
-      builder: (_) => _RenameDialog(initialName: fan.nickname),
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _RenameSheet(initialName: fan.nickname),
     ).then((name) async {
       if (name != null && name.isNotEmpty && context.mounted) {
         await ref.read(fanRepositoryProvider).renameFan(fan.deviceId, name);
@@ -179,16 +185,18 @@ class FanCard extends ConsumerWidget {
   }
 }
 
-class _RenameDialog extends StatefulWidget {
+class _RenameSheet extends StatefulWidget {
   final String initialName;
-  const _RenameDialog({required this.initialName});
+  const _RenameSheet({required this.initialName});
 
   @override
-  State<_RenameDialog> createState() => _RenameDialogState();
+  State<_RenameSheet> createState() => _RenameSheetState();
 }
 
-class _RenameDialogState extends State<_RenameDialog> {
+class _RenameSheetState extends State<_RenameSheet> {
   late final TextEditingController _ctrl;
+  final _formKey = GlobalKey<FormState>();
+  static final _nameRegex = RegExp(r'^[a-zA-Z0-9 ]+$');
 
   @override
   void initState() {
@@ -202,24 +210,117 @@ class _RenameDialogState extends State<_RenameDialog> {
     super.dispose();
   }
 
+  String? _validate(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Name cannot be empty';
+    if (v.length > 30) return 'Max 30 characters';
+    if (!_nameRegex.hasMatch(v)) return 'Alphanumeric characters and spaces only';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Rename Fan'),
-      content: TextField(
-        controller: _ctrl,
-        decoration: const InputDecoration(labelText: 'Nickname'),
-        maxLength: 30,
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 20,
+        right: 20,
+        top: 12,
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel')),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()),
-          child: const Text('Save'),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Rename Fan',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _ctrl,
+              builder: (context, value, _) {
+                return TextFormField(
+                  controller: _ctrl,
+                  maxLength: 30,
+                  maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                  autofocus: true,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
+                      const SizedBox.shrink(),
+                  decoration: InputDecoration(
+                    hintText: 'Living Room Fan',
+                    hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    suffixText: '${value.text.length} / 30',
+                    suffixStyle: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF94A3B8),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: kPrimary, width: 1.5),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFEF4444)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  validator: _validate,
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () {
+                  if (_formKey.currentState!.validate()) {
+                    Navigator.of(context).pop(_ctrl.text.trim());
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(fontSize: 15, color: Color(0xFF64748B)),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

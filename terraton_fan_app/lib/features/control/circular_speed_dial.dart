@@ -96,7 +96,7 @@ class CircularSpeedDial extends StatelessWidget {
             childAspectRatio: 1.8,
             children: List.generate(6, (i) {
               final speed    = i + 1;
-              final isActive = currentSpeed == speed;
+              final isActive = speed <= currentSpeed;
               return Semantics(
                 button: true,
                 label: 'Speed $speed',
@@ -166,8 +166,8 @@ class _DecorativeArcPainter extends CustomPainter {
     final radius   = size.width / 2 - 16;
 
     for (int i = 0; i < 6; i++) {
-      final start    = _startAngle + i * (segAngle + _segGap);
-      final isActive = currentSpeed == i + 1;
+      final start     = _startAngle + i * (segAngle + _segGap);
+      final isFilled  = currentSpeed > 0 && i + 1 <= currentSpeed;
       final baseColor = kSpeedColors[i];
       final color     = enabled ? baseColor : baseColor.withAlpha(70);
 
@@ -177,10 +177,10 @@ class _DecorativeArcPainter extends CustomPainter {
         segAngle,
         false,
         Paint()
-          ..style      = PaintingStyle.stroke
-          ..strokeWidth = isActive ? 15.0 : 8.0
-          ..strokeCap  = StrokeCap.round
-          ..color      = isActive ? color : color.withAlpha(enabled ? 130 : 55),
+          ..style       = PaintingStyle.stroke
+          ..strokeWidth = isFilled ? 13.0 : 7.0
+          ..strokeCap   = StrokeCap.round
+          ..color       = isFilled ? color : color.withAlpha(enabled ? 90 : 40),
       );
     }
   }
@@ -188,4 +188,5 @@ class _DecorativeArcPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DecorativeArcPainter old) =>
       old.currentSpeed != currentSpeed || old.enabled != enabled;
+
 }

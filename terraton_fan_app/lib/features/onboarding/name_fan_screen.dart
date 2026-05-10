@@ -181,7 +181,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.check_circle_outline, color: Color(0xFF1DB954), size: 22),
+                      const Icon(Icons.check_circle, color: Color(0xFF1DB954), size: 22),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
