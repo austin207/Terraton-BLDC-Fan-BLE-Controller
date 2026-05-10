@@ -13,13 +13,27 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _dotCtrl;
+
   @override
   void initState() {
     super.initState();
+    _dotCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) context.go(AppRoutes.home);
     });
+  }
+
+  @override
+  void dispose() {
+    _dotCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -75,19 +89,27 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 52),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(3, (i) {
-                return Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: i == 0 ? kPrimary : Colors.grey.shade300,
-                    shape: BoxShape.circle,
-                  ),
+            child: AnimatedBuilder(
+              animation: _dotCtrl,
+              builder: (_, __) {
+                final active = (_dotCtrl.value * 3).floor() % 3;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (i) {
+                    final isActive = i == active;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: isActive ? 22 : 8,
+                      height: 8,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: isActive ? kPrimary : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  }),
                 );
-              }),
+              },
             ),
           ),
         ],

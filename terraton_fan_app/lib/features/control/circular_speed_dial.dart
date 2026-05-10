@@ -9,6 +9,7 @@ class CircularSpeedDial extends StatelessWidget {
   final int? watts;
   final int? rpm;
   final bool enabled;
+  final bool isBoost;
   final void Function(int speed) onSpeedSelected;
 
   const CircularSpeedDial({
@@ -17,6 +18,7 @@ class CircularSpeedDial extends StatelessWidget {
     required this.watts,
     required this.rpm,
     required this.enabled,
+    required this.isBoost,
     required this.onSpeedSelected,
   });
 
@@ -41,19 +43,22 @@ class CircularSpeedDial extends StatelessWidget {
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withAlpha(18),
-                      blurRadius: 14,
+                      color: isBoost
+                          ? const Color(0xFFFF6600).withAlpha(60)
+                          : Colors.black.withAlpha(18),
+                      blurRadius: isBoost ? 28 : 14,
                       offset: const Offset(0, 3),
                     ),
                   ],
                 ),
               ),
-              // Rainbow arc — gap opens at the BOTTOM
+              // Arc — gap opens at the BOTTOM
               CustomPaint(
                 size: const Size(260, 260),
                 painter: _DecorativeArcPainter(
                   currentSpeed: currentSpeed,
                   enabled: enabled,
+                  isBoost: isBoost,
                 ),
               ),
               // Telemetry text centred in the disc
@@ -65,7 +70,9 @@ class CircularSpeedDial extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
-                      color: enabled ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1),
+                      color: isBoost
+                          ? const Color(0xFFFF6600)
+                          : (enabled ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1)),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -74,7 +81,9 @@ class CircularSpeedDial extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: enabled ? const Color(0xFF94A3B8) : const Color(0xFFE2E8F0),
+                      color: isBoost
+                          ? const Color(0xFFFF8C00).withAlpha(180)
+                          : (enabled ? const Color(0xFF94A3B8) : const Color(0xFFE2E8F0)),
                     ),
                   ),
                 ],
@@ -86,17 +95,17 @@ class CircularSpeedDial extends StatelessWidget {
 
         // ── 3×2 speed button grid ─────────────────────────────────────────────
         SizedBox(
-          width: 288,
+          width: 300,
           child: GridView.count(
             crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
-            childAspectRatio: 1.8,
+            childAspectRatio: 2.0,
             children: List.generate(6, (i) {
               final speed    = i + 1;
-              final isActive = speed <= currentSpeed;
+              final isActive = speed == currentSpeed; // exclusive single-button selection
               return Semantics(
                 button: true,
                 label: 'Speed $speed',
@@ -147,17 +156,30 @@ class CircularSpeedDial extends StatelessWidget {
 class _DecorativeArcPainter extends CustomPainter {
   final int currentSpeed;
   final bool enabled;
+  final bool isBoost;
 
-  const _DecorativeArcPainter({required this.currentSpeed, required this.enabled});
+  const _DecorativeArcPainter({
+    required this.currentSpeed,
+    required this.enabled,
+    required this.isBoost,
+  });
 
   // Gap centred at the bottom (π/2 = 6 o'clock).
   // Gap width ≈ 110°  →  arc sweeps ≈ 250°
-  // Start at 145° from 3-o'clock (lower-left), sweep clockwise 250°,
-  // end at 35° from 3-o'clock (lower-right). Gap goes from 35° to 145°.
-  static const double _gapDeg   = 110.0;
-  static const double _startAngle = (90 + _gapDeg / 2) * math.pi / 180; // 145°
-  static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180; // 250°
-  static const double _segGap     = 0.04; // radians between segments
+  static const double _gapDeg    = 110.0;
+  static const double _startAngle = (90 + _gapDeg / 2) * math.pi / 180;
+  static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180;
+  static const double _segGap     = 0.04;
+
+  // Energetic warm gradient used when boost is active
+  static const List<Color> _boostColors = [
+    Color(0xFFFFB300),
+    Color(0xFFFF8C00),
+    Color(0xFFFF6600),
+    Color(0xFFFF4500),
+    Color(0xFFFF3300),
+    Color(0xFFDC2626),
+  ];
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -166,10 +188,24 @@ class _DecorativeArcPainter extends CustomPainter {
     final radius   = size.width / 2 - 16;
 
     for (int i = 0; i < 6; i++) {
-      final start     = _startAngle + i * (segAngle + _segGap);
-      final isFilled  = currentSpeed > 0 && i + 1 <= currentSpeed;
-      final baseColor = kSpeedColors[i];
-      final color     = enabled ? baseColor : baseColor.withAlpha(70);
+      final start = _startAngle + i * (segAngle + _segGap);
+
+      Color segColor;
+      bool  isFilled;
+
+      if (isBoost) {
+        isFilled = true;
+        final c  = _boostColors[i];
+        segColor = enabled ? c : c.withAlpha(70);
+      } else {
+        isFilled = currentSpeed > 0 && i + 1 <= currentSpeed; // progressive fill
+        final c  = kSpeedColors[i];
+        if (isFilled) {
+          segColor = enabled ? c : c.withAlpha(70);
+        } else {
+          segColor = c.withAlpha(enabled ? 90 : 40);
+        }
+      }
 
       canvas.drawArc(
         Rect.fromCircle(center: centre, radius: radius),
@@ -180,13 +216,14 @@ class _DecorativeArcPainter extends CustomPainter {
           ..style       = PaintingStyle.stroke
           ..strokeWidth = isFilled ? 13.0 : 7.0
           ..strokeCap   = StrokeCap.round
-          ..color       = isFilled ? color : color.withAlpha(enabled ? 90 : 40),
+          ..color       = segColor,
       );
     }
   }
 
   @override
   bool shouldRepaint(_DecorativeArcPainter old) =>
-      old.currentSpeed != currentSpeed || old.enabled != enabled;
-
+      old.currentSpeed != currentSpeed ||
+      old.enabled != enabled ||
+      old.isBoost != isBoost;
 }

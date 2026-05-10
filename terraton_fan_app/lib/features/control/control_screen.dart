@@ -239,6 +239,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     watts: fanState.lastWatts,
                     rpm: fanState.lastRpm,
                     enabled: enabled,
+                    isBoost: fanState.isBoost,
                     onSpeedSelected: (s) => _send(BleFrameBuilder.setSpeed(s)),
                   ),
                 ),
@@ -257,6 +258,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   activeMode: fanState.activeMode,
                   enabled: enabled,
                   onMode: (m) {
+                    if (fanState.activeMode == m) {
+                      // Toggle off — no protocol command exists to cancel a mode;
+                      // clear local state so the button deselects visually.
+                      ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                          .updateMode(null);
+                      return;
+                    }
                     final frame = switch (m) {
                       'nature'  => BleFrameBuilder.setNature(),
                       'reverse' => BleFrameBuilder.setReverse(),
@@ -411,7 +419,7 @@ class _PowerButton extends StatelessWidget {
   }
 }
 
-class _BoostButton extends StatelessWidget {
+class _BoostButton extends StatefulWidget {
   final bool isBoost;
   final bool enabled;
   final VoidCallback onBoost;
@@ -423,40 +431,108 @@ class _BoostButton extends StatelessWidget {
   });
 
   @override
+  State<_BoostButton> createState() => _BoostButtonState();
+}
+
+class _BoostButtonState extends State<_BoostButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _glow = Tween<double>(begin: 8.0, end: 32.0).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+    if (widget.isBoost) _pulseCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_BoostButton old) {
+    super.didUpdateWidget(old);
+    if (widget.isBoost && !old.isBoost) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!widget.isBoost && old.isBoost) {
+      _pulseCtrl.animateTo(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Semantics(
-      selected: isBoost,
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          onPressed: enabled
-              ? () {
-                  HapticFeedback.lightImpact();
-                  onBoost();
-                }
-              : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1A2F5E),
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey.shade200,
-            disabledForegroundColor: Colors.grey.shade400,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            side: isBoost ? const BorderSide(color: Color(0xFF4A9FE8), width: 2) : null,
-            elevation: isBoost ? 4 : 0,
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.bolt, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'BOOST MODE',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.8),
+      selected: widget.isBoost,
+      child: AnimatedBuilder(
+        animation: _glow,
+        builder: (context, _) {
+          return GestureDetector(
+            key: const ValueKey('boost_button'),
+            onTap: widget.enabled
+                ? () {
+                    HapticFeedback.lightImpact();
+                    widget.onBoost();
+                  }
+                : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: double.infinity,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: widget.isBoost && widget.enabled
+                    ? const LinearGradient(
+                        colors: [Color(0xFFFF8C00), Color(0xFFDC2626)],
+                      )
+                    : null,
+                color: widget.isBoost && widget.enabled
+                    ? null
+                    : (widget.enabled
+                        ? const Color(0xFF1A2F5E)
+                        : Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: widget.isBoost && widget.enabled
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFFFF6600).withAlpha(160),
+                          blurRadius: _glow.value,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
               ),
-            ],
-          ),
-        ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.bolt,
+                    size: 20,
+                    color: widget.enabled ? Colors.white : Colors.grey.shade400,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'BOOST MODE',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: widget.enabled ? Colors.white : Colors.grey.shade400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

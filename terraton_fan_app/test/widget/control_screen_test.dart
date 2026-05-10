@@ -143,13 +143,12 @@ void main() {
     final dial = tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
     expect(dial.enabled, true, reason: 'dial must be enabled in connected state');
 
-    // Invoke the Scaffold-level onPressed directly from the ElevatedButton
-    // widget reference (avoids off-screen tap offset issues).
-    final boostFinder = find.widgetWithText(ElevatedButton, 'BOOST MODE');
-    final boostButton = tester.widget<ElevatedButton>(boostFinder);
-    expect(boostButton.onPressed, isNotNull,
+    final boostGesture = tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('boost_button')),
+    );
+    expect(boostGesture.onTap, isNotNull,
         reason: 'BOOST button must be enabled when connected');
-    boostButton.onPressed!();
+    boostGesture.onTap!();
     await tester.pump();
 
     verify(
@@ -168,10 +167,10 @@ void main() {
     final dial = tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
     expect(dial.enabled, false);
 
-    final boostButton = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'BOOST MODE'),
+    final boostGesture = tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('boost_button')),
     );
-    expect(boostButton.onPressed, isNull);
+    expect(boostGesture.onTap, isNull);
 
     verifyNever(() => mockBle.writeFrame(any()));
   });
