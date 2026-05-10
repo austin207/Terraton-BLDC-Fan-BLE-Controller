@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
@@ -123,7 +124,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             final alreadyAdded = savedMacs.contains(fan.macAddress);
             return Card(
               child: ListTile(
-                leading: const Icon(Icons.wind_power, color: kPrimary),
+                leading: const FanIcon(size: 24, color: kPrimary),
                 title: Text(fan.name),
                 subtitle: Text(fan.macAddress),
                 trailing: alreadyAdded

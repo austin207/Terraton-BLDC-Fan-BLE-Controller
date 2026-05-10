@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class NameFanScreen extends ConsumerStatefulWidget {
@@ -82,7 +83,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                           color: Colors.grey.shade100,
                           border: Border.all(color: Colors.grey.shade200, width: 1.5),
                         ),
-                        child: const Icon(Icons.wind_power, size: 60, color: kPrimary),
+                        child: const FanIcon(size: 60, color: kPrimary),
                       ),
                       Positioned(
                         bottom: -6,

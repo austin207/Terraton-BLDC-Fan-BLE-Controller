@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class FanCard extends ConsumerWidget {
@@ -31,7 +32,7 @@ class FanCard extends ConsumerWidget {
                   color: kPrimary.withAlpha(20),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.wind_power, size: 28, color: kPrimary),
+                child: const FanIcon(size: 28, color: kPrimary),
               ),
               const SizedBox(width: 14),
               Expanded(

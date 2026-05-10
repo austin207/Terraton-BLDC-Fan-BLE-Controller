@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -99,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
                     color: kPrimary,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.wind_power_rounded, color: Colors.white, size: 26),
+                  child: const FanIcon(size: 26, color: Colors.white),
                 ),
                 const SizedBox(height: 10),
                 Text(
