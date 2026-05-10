@@ -164,10 +164,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: kPrimary,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.fan.nickname, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            Text(widget.fan.nickname, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.white)),
             _connectionStatusLabel(connState),
           ],
         ),

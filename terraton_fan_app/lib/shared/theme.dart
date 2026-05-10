@@ -23,10 +23,12 @@ ThemeData buildAppTheme() {
       surface: kBackground,
     ),
     scaffoldBackgroundColor: kBackground,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: kPrimary,
-      foregroundColor: Colors.white,
+    appBarTheme: AppBarTheme(
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
       elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.black.withAlpha(20),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(

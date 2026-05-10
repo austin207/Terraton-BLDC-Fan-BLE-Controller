@@ -32,6 +32,22 @@ class CircularSpeedDial extends StatelessWidget {
           child: Stack(
             alignment: Alignment.center,
             children: [
+              // White disc behind the arc — gives a "speedometer" look
+              Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(18),
+                      blurRadius: 12,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
               CustomPaint(
                 size: const Size(260, 260),
                 painter: _DecorativeArcPainter(
