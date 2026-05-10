@@ -47,17 +47,17 @@ class FanCard extends ConsumerWidget {
                     Row(
                       children: [
                         Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade400,
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF94A3B8),
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 5),
-                        Text(
+                        const Text(
                           'Disconnected',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                          style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                         ),
                       ],
                     ),

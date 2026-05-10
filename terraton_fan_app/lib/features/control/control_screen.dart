@@ -30,17 +30,21 @@ class ControlScreen extends ConsumerStatefulWidget {
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
   StreamSubscription<List<int>>? _notifySub;
-  double _colorTempValue = 0.5;
+  double _colorTempValue = 0.3;
   bool _isLightOn = false;
   late BleService _ble;
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
 
+  bool get _isDemo => widget.fan.deviceId == '__demo__';
+
   @override
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
+    if (!_isDemo) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
+    }
   }
 
   Future<void> _connect() async {
@@ -53,7 +57,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     try {
       final returnedMac = await _ble.connect();
       if (!mounted) return;
-      if (widget.fan.macAddress.isEmpty && widget.fan.deviceId != '__demo__') {
+      if (widget.fan.macAddress.isEmpty && !_isDemo) {
         await repo.updateMac(widget.fan.deviceId, returnedMac);
         if (!mounted) return;
         ref.invalidate(savedFansProvider);
@@ -126,16 +130,43 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void dispose() {
     _telemetryTimer?.cancel();
     _notifySub?.cancel();
-    unawaited(_ble.disconnect());
+    if (!_isDemo) unawaited(_ble.disconnect());
     super.dispose();
+  }
+
+  // In demo mode: apply the frame directly to local state instead of writing BLE.
+  // Frame format: [0x55, 0xAA, 0x06, cmd, dataLen, data..., checksum]
+  void _applyDemoFrame(List<int> frame) {
+    if (frame.length < 6) return;
+    final cmd  = frame[3];
+    final data = frame[5];
+    final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+    switch (cmd) {
+      case 0x02: notifier.updatePower(data == 0x01);
+      case 0x04: notifier.updateSpeed(data);
+      case 0x21:
+        notifier.updateMode(switch (data) {
+          0x01 => 'boost',
+          0x02 => 'nature',
+          0x03 => 'reverse',
+          0x04 => 'smart',
+          _    => null,
+        });
+      case 0x22: notifier.updateTimer(data);
+    }
   }
 
   Future<void> _send(List<int>? frame, {String? pendingMsg}) async {
     if (frame == null) {
-      if (pendingMsg != null && mounted) {
+      // Suppress snackbars in demo mode (lighting is locally toggled via setState)
+      if (pendingMsg != null && mounted && !_isDemo) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(pendingMsg)));
       }
+      return;
+    }
+    if (_isDemo) {
+      _applyDemoFrame(frame);
       return;
     }
     await _ble.writeFrame(frame);
@@ -146,7 +177,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     ref.listen<AsyncValue<BluetoothAdapterState>>(
       bluetoothAdapterStateProvider,
       (prev, next) {
-        if (prev?.hasValue != true) return; // skip initial emission
+        if (prev?.hasValue != true) return;
+        if (_isDemo) return;
         if (next.valueOrNull == BluetoothAdapterState.off && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Bluetooth has been disabled. Please turn on Bluetooth.'),
@@ -159,18 +191,21 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
     final connState = ref.watch(bleConnectionStateProvider).value
         ?? BleConnectionState.disconnected;
-    final enabled   = connState == BleConnectionState.connected;
-    final isDisconnected = connState == BleConnectionState.disconnected;
+    final enabled       = _isDemo || connState == BleConnectionState.connected;
+    final isDisconnected = !_isDemo && connState == BleConnectionState.disconnected;
 
     return Scaffold(
+      backgroundColor: kBackground,
       appBar: AppBar(
-        backgroundColor: kPrimary,
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: kBackground,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: Colors.black87,
+        iconTheme: const IconThemeData(color: Colors.black54),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.fan.nickname, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.white)),
+            Text(widget.fan.nickname,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.black87)),
             _connectionStatusLabel(connState),
           ],
         ),
@@ -256,32 +291,26 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   colorTempValue: _colorTempValue,
                   onLightOn: () {
                     setState(() => _isLightOn = true);
-                    _send(
-                      BleFrameBuilder.lightOn(),
-                      pendingMsg: 'Lighting commands pending from Terraton',
-                    );
+                    _send(BleFrameBuilder.lightOn(),
+                        pendingMsg: 'Lighting commands pending from Terraton');
                   },
                   onLightOff: () {
                     setState(() => _isLightOn = false);
-                    _send(
-                      BleFrameBuilder.lightOff(),
-                      pendingMsg: 'Lighting commands pending from Terraton',
-                    );
+                    _send(BleFrameBuilder.lightOff(),
+                        pendingMsg: 'Lighting commands pending from Terraton');
                   },
                   onColorTemp: (v) {
                     setState(() => _colorTempValue = v);
                     final byte = (v * 255).round();
-                    _send(
-                      BleFrameBuilder.lightColorTemp(byte),
-                      pendingMsg: 'Lighting commands pending from Terraton',
-                    );
+                    _send(BleFrameBuilder.lightColorTemp(byte),
+                        pendingMsg: 'Lighting commands pending from Terraton');
                   },
                 ),
+                const SizedBox(height: 8),
               ],
             ),
           ),
 
-          // Connection lost card — anchored to the bottom when disconnected
           if (isDisconnected)
             Positioned(
               bottom: 0,
@@ -295,11 +324,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   Widget _connectionStatusLabel(BleConnectionState state) {
+    if (_isDemo) {
+      return Text('● DEMO MODE',
+          style: TextStyle(fontSize: 11, color: Colors.amber.shade700, letterSpacing: 0.5));
+    }
     final (String text, Color color) = switch (state) {
-      BleConnectionState.connected    => ('● CONNECTED',     Colors.greenAccent.shade200),
+      BleConnectionState.connected    => ('● CONNECTED',    const Color(0xFF16A34A)),
       BleConnectionState.connecting ||
-      BleConnectionState.scanning     => ('● CONNECTING…',  Colors.amber.shade200),
-      BleConnectionState.disconnected => ('DISCONNECTED',   Colors.white54),
+      BleConnectionState.scanning     => ('● CONNECTING…', const Color(0xFFF59E0B)),
+      BleConnectionState.disconnected => ('DISCONNECTED',  Colors.black45),
     };
     return Text(text, style: TextStyle(fontSize: 11, color: color, letterSpacing: 0.5));
   }
@@ -315,10 +348,10 @@ class _SectionHeader extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         label,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: Colors.blueGrey.shade500,
+          color: Color(0xFF6B7F95),
           letterSpacing: 1.2,
         ),
       ),
@@ -345,13 +378,13 @@ class _PowerButton extends StatelessWidget {
       value: isPowered ? 'on' : 'off',
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 80,
-        height: 80,
+        width: 72,
+        height: 72,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isPowered ? kPrimary : Colors.grey.shade300,
           boxShadow: isPowered
-              ? [BoxShadow(color: kPrimary.withAlpha(100), blurRadius: 16)]
+              ? [BoxShadow(color: kPrimary.withAlpha(80), blurRadius: 20, spreadRadius: 2)]
               : null,
         ),
         child: Material(
@@ -368,8 +401,8 @@ class _PowerButton extends StatelessWidget {
                 : null,
             child: Icon(
               Icons.power_settings_new,
-              size: 36,
-              color: isPowered ? Colors.white : Colors.grey.shade600,
+              size: 32,
+              color: isPowered ? Colors.white : Colors.grey.shade500,
             ),
           ),
         ),
@@ -406,9 +439,11 @@ class _BoostButton extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF1A2F5E),
             foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey.shade300,
+            disabledBackgroundColor: Colors.grey.shade200,
+            disabledForegroundColor: Colors.grey.shade400,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             side: isBoost ? const BorderSide(color: Color(0xFF4A9FE8), width: 2) : null,
+            elevation: isBoost ? 4 : 0,
           ),
           child: const Row(
             mainAxisSize: MainAxisSize.min,

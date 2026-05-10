@@ -20,26 +20,48 @@ class TimerControlWidget extends StatelessWidget {
     final activeLabel = _codeToLabel(activeTimerCode);
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: ['OFF', '2H', '4H', '8H'].map((label) {
         final isActive = label == activeLabel;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Semantics(
-            selected: isActive,
-            child: OutlinedButton(
-              onPressed: enabled
-                  ? () {
-                      HapticFeedback.lightImpact();
-                      onTimer(label.toLowerCase());
-                    }
-                  : null,
-              style: OutlinedButton.styleFrom(
-                backgroundColor: isActive ? kPrimary : null,
-                foregroundColor: isActive ? Colors.white : null,
-                side: const BorderSide(color: kPrimary),
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Semantics(
+              selected: isActive,
+              child: GestureDetector(
+                onTap: enabled
+                    ? () {
+                        HapticFeedback.lightImpact();
+                        onTimer(label.toLowerCase());
+                      }
+                    : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: isActive ? kPrimary : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isActive ? kPrimary : const Color(0xFFE2E8F0),
+                      width: 1.5,
+                    ),
+                    boxShadow: isActive
+                        ? [BoxShadow(color: kPrimary.withAlpha(40), blurRadius: 8, offset: const Offset(0, 2))]
+                        : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isActive
+                            ? Colors.white
+                            : (enabled ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              child: Text(label),
             ),
           ),
         );

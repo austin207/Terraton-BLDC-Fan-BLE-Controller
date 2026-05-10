@@ -23,32 +23,48 @@ class LightingControlWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.wb_sunny_rounded, color: Colors.amber.shade600, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Mood Lighting',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row: icon + label + ON/OFF toggle
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [Color(0xFFFDE68A), Color(0xFFF59E0B)],
                   ),
                 ),
-                // ON / OFF segmented buttons
-                Row(
+                child: const Icon(Icons.wb_sunny_rounded, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Mood Lighting',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+              // ON / OFF segmented toggle
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _ToggleBtn(
@@ -73,29 +89,61 @@ class LightingControlWidget extends StatelessWidget {
                     ),
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            // Colour temperature slider
-            Row(
-              children: [
-                Text('WARM', style: TextStyle(fontSize: 11, color: Colors.orange.shade700, fontWeight: FontWeight.w600)),
-                Expanded(
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // WARM ←——— slider ———→ COOL
+          Row(
+            children: [
+              Text(
+                'WARM',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 5,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                    activeTrackColor: Color.lerp(
+                      const Color(0xFFF97316),
+                      const Color(0xFF60A5FA),
+                      colorTempValue,
+                    ),
+                    inactiveTrackColor: const Color(0xFFE2E8F0),
+                    thumbColor: Color.lerp(
+                      const Color(0xFFF97316),
+                      const Color(0xFF60A5FA),
+                      colorTempValue,
+                    ),
+                  ),
                   child: Slider(
                     value: colorTempValue,
                     min: 0,
                     max: 1,
-                    activeColor: Color.lerp(Colors.orange.shade400, Colors.lightBlue.shade300, colorTempValue),
                     semanticFormatterCallback: (_) =>
                         'Colour temperature ${(colorTempValue * 100).round()}%',
                     onChanged: enabled ? onColorTemp : null,
                   ),
                 ),
-                Text('COOL', style: TextStyle(fontSize: 11, color: Colors.lightBlue.shade700, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ],
-        ),
+              ),
+              Text(
+                'COOL',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blue.shade600,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -119,24 +167,26 @@ class _ToggleBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.horizontal(
-      left: isLeft ? const Radius.circular(8) : Radius.zero,
-      right: !isLeft ? const Radius.circular(8) : Radius.zero,
+      left: isLeft ? const Radius.circular(7) : Radius.zero,
+      right: !isLeft ? const Radius.circular(7) : Radius.zero,
     );
     return GestureDetector(
       onTap: enabled ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
         decoration: BoxDecoration(
-          color: active ? kPrimary : Colors.grey.shade100,
+          color: active ? kPrimary : Colors.transparent,
           borderRadius: radius,
-          border: Border.all(color: Colors.grey.shade300),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
-            color: active ? Colors.white : (enabled ? Colors.grey.shade600 : Colors.grey.shade400),
+            color: active
+                ? Colors.white
+                : (enabled ? const Color(0xFF64748B) : const Color(0xFFCBD5E1)),
           ),
         ),
       ),
