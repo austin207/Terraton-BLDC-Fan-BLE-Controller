@@ -222,7 +222,7 @@ class _RenameSheetState extends State<_RenameSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
         left: 20,
         right: 20,
         top: 12,

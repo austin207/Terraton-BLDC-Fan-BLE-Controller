@@ -30,7 +30,10 @@ class ModeControlWidget extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Semantics(
+              button: true,
+              label: '${entry.$2} mode',
               selected: isActive,
+              enabled: enabled,
               child: GestureDetector(
                 onTap: enabled
                     ? () {

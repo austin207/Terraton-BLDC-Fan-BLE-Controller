@@ -120,7 +120,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Terraton X1 detected! Give it a nickname to easily identify it later.',
+                  '${widget.fan.model.isNotEmpty ? widget.fan.model : 'Fan'} detected! Give it a nickname to easily identify it later.',
                   style: TextStyle(fontSize: 14, color: Colors.grey[600], height: 1.5),
                   textAlign: TextAlign.center,
                 ),

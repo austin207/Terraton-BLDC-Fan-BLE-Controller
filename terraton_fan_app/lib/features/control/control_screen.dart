@@ -123,6 +123,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
       if (sFrame != null) await _ble.writeFrame(sFrame);
+      if (!mounted) return;
     });
   }
 
@@ -137,7 +138,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   // In demo mode: apply the frame directly to local state instead of writing BLE.
   // Frame format: [0x55, 0xAA, 0x06, cmd, dataLen, data..., checksum]
   void _applyDemoFrame(List<int> frame) {
-    if (frame.length < 6) return;
+    if (frame.length < 7) return;
     final cmd  = frame[3];
     final data = frame[5];
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
@@ -170,6 +171,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
     await _ble.writeFrame(frame);
+    if (!mounted) return;
   }
 
   @override
@@ -477,32 +479,35 @@ class _BoostButtonState extends State<_BoostButton>
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final label = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.bolt,
-          size: 20,
+  Widget _buildLabel() => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(
+        Icons.bolt,
+        size: 20,
+        color: widget.enabled ? Colors.white : Colors.grey.shade400,
+      ),
+      const SizedBox(width: 8),
+      Text(
+        'BOOST MODE',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
           color: widget.enabled ? Colors.white : Colors.grey.shade400,
         ),
-        const SizedBox(width: 8),
-        Text(
-          'BOOST MODE',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: widget.enabled ? Colors.white : Colors.grey.shade400,
-          ),
-        ),
-      ],
-    );
+      ),
+    ],
+  );
 
+  @override
+  Widget build(BuildContext context) {
     return Semantics(
-      selected: widget.isBoost,
+      button: true,
+      label: 'Boost mode',
+      value: widget.isBoost ? 'active' : 'inactive',
+      enabled: widget.enabled,
       child: GestureDetector(
         key: const ValueKey('boost_button'),
         onTap: widget.enabled
@@ -528,7 +533,7 @@ class _BoostButtonState extends State<_BoostButton>
                       borderRadius: BorderRadius.circular(14),
                     ),
                     alignment: Alignment.center,
-                    child: label,
+                    child: _buildLabel(),
                   );
                 }
 
@@ -575,7 +580,7 @@ class _BoostButtonState extends State<_BoostButton>
                           ),
                         ),
                       ),
-                      Positioned.fill(child: Center(child: label)),
+                      Positioned.fill(child: Center(child: _buildLabel())),
                     ],
                   ),
                 );

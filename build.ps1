@@ -21,10 +21,33 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# ── 2. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
+# ── 2. Clean all caches ──────────────────────────────────────────────────────
+Set-Location $AppDir
+
+Write-Host "Running flutter clean..." -ForegroundColor Cyan
+flutter clean
+if ($LASTEXITCODE -ne 0) { Write-Host "flutter clean failed." -ForegroundColor Red; exit 1 }
+
+# Gradle project cache — flutter clean covers this on 3.7+ but be explicit
+$GradleCache = Join-Path $AppDir "android\.gradle"
+if (Test-Path $GradleCache) {
+    Remove-Item $GradleCache -Recurse -Force
+    Write-Host "Cleared android/.gradle/" -ForegroundColor DarkGray
+}
+
+# Restore packages after clean wipes .dart_tool/
+Write-Host "Running flutter pub get..." -ForegroundColor Cyan
+flutter pub get
+if ($LASTEXITCODE -ne 0) { Write-Host "flutter pub get failed." -ForegroundColor Red; exit 1 }
+
+# Regenerate ObjectBox + Riverpod .g.dart files — stale generated code silently breaks builds
+Write-Host "Regenerating ObjectBox / Riverpod code..." -ForegroundColor Cyan
+dart run build_runner build --delete-conflicting-outputs
+if ($LASTEXITCODE -ne 0) { Write-Host "build_runner failed." -ForegroundColor Red; exit 1 }
+
+# ── 3. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
 Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 
-flutter clean | Out-Null
 flutter build apk --release --split-per-abi
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed." -ForegroundColor Red
@@ -43,7 +66,7 @@ if (-not (Test-Path $Arm64)) {
     exit 1
 }
 
-# ── 3. Save timestamped copies locally ───────────────────────────────────────
+# ── 4. Save timestamped copies locally ───────────────────────────────────────
 $Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
 $Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
 $Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
@@ -57,7 +80,7 @@ Write-Host "Saved arm64 : $Arm64Local" -ForegroundColor Green
 if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Local;  Write-Host "Saved arm7  : $Arm7Local"  -ForegroundColor Green }
 if (Test-Path $X86)   { Copy-Item $X86  $X86Local;   Write-Host "Saved x86_64: $X86Local"   -ForegroundColor Green }
 
-# ── 4. Publish to GitHub Releases (tag: latest) ───────────────────────────────
+# ── 5. Publish to GitHub Releases (tag: latest) ───────────────────────────────
 Write-Host ""
 Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
 Set-Location $ProjectRoot

@@ -31,8 +31,8 @@ class _SplashScreenState extends State<SplashScreen>
       final scanGranted    = await Permission.bluetoothScan.status;
       final connectGranted = await Permission.bluetoothConnect.status;
       if (!mounted) return;
-      final granted = scanGranted.isGranted    || scanGranted.isLimited ||
-                      connectGranted.isGranted || connectGranted.isLimited;
+      final granted = (scanGranted.isGranted    || scanGranted.isLimited) &&
+                      (connectGranted.isGranted || connectGranted.isLimited);
       context.go(granted ? AppRoutes.home : AppRoutes.permissionRequired);
     });
   }

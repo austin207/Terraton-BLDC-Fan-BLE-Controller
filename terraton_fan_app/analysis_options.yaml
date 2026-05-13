@@ -1,6 +1,9 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  exclude:
+    - lib/objectbox.g.dart
+    - lib/objectbox-model.json
   language:
     strict-casts: true
     strict-inference: true
@@ -16,3 +19,5 @@ linter:
     unawaited_futures: true
     avoid_catches_without_on_clauses: true
     always_use_package_imports: true
+    cancel_subscriptions: true
+    close_sinks: true

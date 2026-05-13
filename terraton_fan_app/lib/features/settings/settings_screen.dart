@@ -46,15 +46,19 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── ABOUT ─────────────────────────────────────────────────────────
           const _SectionLabel('ABOUT'),
-          const _TileGroup(tiles: [
+          _TileGroup(tiles: [
             _TileData(
               icon: Icons.info_outline_rounded,
-              iconBg: Color(0xFFF8FAFC),
-              iconColor: Color(0xFF64748B),
+              iconBg: const Color(0xFFF8FAFC),
+              iconColor: const Color(0xFF64748B),
               title: 'App Version',
-              trailingText: 'v1.0.0 (Build 1)',
+              trailingText: ref.watch(packageInfoProvider).when(
+                data: (info) => 'v${info.version} (Build ${info.buildNumber})',
+                loading: () => '…',
+                error: (_, __) => 'v—',
+              ),
             ),
-            _TileData(
+            const _TileData(
               icon: Icons.devices_rounded,
               iconBg: Color(0xFFF8FAFC),
               iconColor: Color(0xFF64748B),
@@ -64,7 +68,7 @@ class SettingsScreen extends ConsumerWidget {
                 style: TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.w600),
               ),
             ),
-            _TileData(
+            const _TileData(
               icon: Icons.bluetooth_rounded,
               iconBg: Color(0xFFF8FAFC),
               iconColor: Color(0xFF64748B),
@@ -158,6 +162,7 @@ class SettingsScreen extends ConsumerWidget {
     final json = await File(result.files.single.path!).readAsString();
     try {
       final count = await ref.read(fanRepositoryProvider).importFromJson(json);
+      if (!context.mounted) return;
       ref.invalidate(savedFansProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

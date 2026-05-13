@@ -114,12 +114,13 @@ class CommandLoader {
   }
 
   static YamlMap? _safeGet(List<String> path) {
+    if (path.isEmpty) return null;
     Object? node = config;
     for (final key in path) {
       if (node is! YamlMap || !node.containsKey(key)) return null;
       node = node[key] as Object?;
     }
-    return node as YamlMap?;
+    return node is YamlMap ? node : null;
   }
 
   static List<int>? _toIntList(Object? yaml) {

@@ -23,7 +23,6 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
   static const _required = [
     Permission.bluetoothScan,
     Permission.bluetoothConnect,
-    Permission.locationWhenInUse,
   ];
 
   Future<void> _request() async {
@@ -97,8 +96,8 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
               const SizedBox(height: 12),
 
               Text(
-                'Terraton Fan Controller needs Bluetooth and Location '
-                'permissions to scan for and connect to your fan.',
+                'Terraton Fan Controller needs Bluetooth permissions '
+                'to scan for and connect to your fan.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
@@ -113,11 +112,6 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                 icon: Icons.bluetooth,
                 label: 'Bluetooth Scan & Connect',
                 description: 'To find and pair with your fan',
-              ),
-              const _PermissionRow(
-                icon: Icons.location_on_outlined,
-                label: 'Location (Nearby Devices)',
-                description: 'Required by Android for BLE scanning',
               ),
 
               const SizedBox(height: 28),

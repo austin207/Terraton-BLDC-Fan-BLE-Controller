@@ -103,7 +103,13 @@ class _FakeRepo implements FanRepository {
       final macAddress = f['mac_address'] as String? ?? '';
       final nickname   = f['nickname']    as String? ?? '';
       if (deviceId.isEmpty || nickname.isEmpty) continue;
+      if (deviceId.length > 64 || macAddress.length > 17 ||
+          nickname.length > 30 || (f['model'] as String? ?? '').length > 64 ||
+          (f['fw_version'] as String? ?? '').length > 32) {
+        continue;
+      }
       if (getFanByDeviceId(deviceId) != null) continue;
+      if (macAddress.isNotEmpty && getFanByMac(macAddress) != null) continue;
       final fan = FanDevice()
         ..deviceId   = deviceId
         ..macAddress = macAddress
@@ -427,6 +433,60 @@ void main() {
       });
       expect(await repo.importFromJson(json), 1);
       expect(repo.getAllFans(), hasLength(2));
+    });
+
+    test('skips fan with device_id exceeding 64 chars', () async {
+      final longId = 'A' * 65;
+      final json = jsonEncode({
+        'version': 1,
+        'fans': [
+          {
+            'device_id':   longId,
+            'mac_address': 'AA:BB:CC:DD:EE:FF',
+            'nickname':    'Fan',
+            'model':       '',
+            'fw_version':  '',
+            'added_at':    '2026-01-01T00:00:00Z',
+          }
+        ],
+      });
+      expect(await repo.importFromJson(json), 0);
+    });
+
+    test('skips fan with nickname exceeding 30 chars', () async {
+      final longName = 'N' * 31;
+      final json = jsonEncode({
+        'version': 1,
+        'fans': [
+          {
+            'device_id':   'TT-001',
+            'mac_address': 'AA:BB:CC:DD:EE:FF',
+            'nickname':    longName,
+            'model':       '',
+            'fw_version':  '',
+            'added_at':    '2026-01-01T00:00:00Z',
+          }
+        ],
+      });
+      expect(await repo.importFromJson(json), 0);
+    });
+
+    test('skips fan with duplicate MAC address', () async {
+      await repo.saveFan(_makeFan(id: 'TT-001', mac: 'AA:BB:CC:DD:EE:FF'));
+      final json = jsonEncode({
+        'version': 1,
+        'fans': [
+          {
+            'device_id':   'TT-002',
+            'mac_address': 'AA:BB:CC:DD:EE:FF',
+            'nickname':    'Other Fan',
+            'model':       '',
+            'fw_version':  '',
+            'added_at':    '2026-01-01T00:00:00Z',
+          }
+        ],
+      });
+      expect(await repo.importFromJson(json), 0);
     });
 
     test('export → import round-trip preserves fan data', () async {

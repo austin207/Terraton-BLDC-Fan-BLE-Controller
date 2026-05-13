@@ -118,13 +118,17 @@ class BleServiceImpl implements BleService {
       sub = FlutterBluePlus.scanResults.listen((results) {
         if (results.isNotEmpty && !completer.isCompleted) {
           completer.complete(results.first.device);
-          sub?.cancel();
         }
       });
       await startScan(timeoutSeconds: 10);
-      target = await completer.future.timeout(const Duration(seconds: 12), onTimeout: () {
-        throw TimeoutException('No fan found during scan.');
-      });
+      try {
+        target = await completer.future.timeout(const Duration(seconds: 12), onTimeout: () {
+          throw TimeoutException('No fan found during scan.');
+        });
+      } finally {
+        await sub?.cancel();
+        sub = null;
+      }
     }
 
     try {

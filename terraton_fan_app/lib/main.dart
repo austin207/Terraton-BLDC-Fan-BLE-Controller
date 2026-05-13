@@ -41,7 +41,6 @@ Future<void> _requestPermissions() async {
   await [
     Permission.bluetoothScan,
     Permission.bluetoothConnect,
-    Permission.locationWhenInUse,
   ].request();
 }
 

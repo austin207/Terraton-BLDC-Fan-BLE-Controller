@@ -26,7 +26,10 @@ class TimerControlWidget extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Semantics(
+              button: true,
+              label: label == 'OFF' ? 'Timer off' : '$label timer',
               selected: isActive,
+              enabled: enabled,
               child: GestureDetector(
                 onTap: enabled
                     ? () {

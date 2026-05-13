@@ -93,6 +93,11 @@ class _QrScanScreenState extends State<QrScanScreen>
         _showInvalidSnack();
         return;
       }
+      if (deviceId.isEmpty || deviceId == '__demo__' ||
+          deviceId.length > 64 || model.length > 64 || fwVersion.length > 32) {
+        _showInvalidSnack();
+        return;
+      }
 
       _handled = true;
       final fan = FanDevice()
@@ -239,7 +244,7 @@ class _QrScanScreenState extends State<QrScanScreen>
             GestureDetector(
               onTap: () {
                 setState(() => _torchOn = !_torchOn);
-                _ctrl.toggleTorch();
+                unawaited(_ctrl.toggleTorch());
               },
               child: Container(
                 width: 52,

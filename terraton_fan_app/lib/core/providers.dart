@@ -2,11 +2,15 @@
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
+
+final packageInfoProvider = FutureProvider<PackageInfo>(
+    (_) => PackageInfo.fromPlatform());
 
 final bluetoothAdapterStateProvider = StreamProvider<BluetoothAdapterState>(
     (_) => FlutterBluePlus.adapterState);

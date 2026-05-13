@@ -124,7 +124,13 @@ class FanRepositoryImpl implements FanRepository {
         final macAddress = f['mac_address'] as String? ?? '';
         final nickname   = f['nickname']    as String? ?? '';
         if (deviceId.isEmpty || nickname.isEmpty) continue;
+        if (deviceId.length > 64 || macAddress.length > 17 ||
+            nickname.length > 30 || (f['model'] as String? ?? '').length > 64 ||
+            (f['fw_version'] as String? ?? '').length > 32) {
+          continue;
+        }
         if (getFanByDeviceId(deviceId) != null) continue;
+        if (macAddress.isNotEmpty && getFanByMac(macAddress) != null) continue;
         final fan = FanDevice()
           ..deviceId   = deviceId
           ..macAddress = macAddress

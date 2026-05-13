@@ -168,12 +168,31 @@ class _DecorativeArcPainter extends CustomPainter {
   static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180;
   static const double _segGap     = 0.04;
 
-  // Warm energy gradient for boost mode arc
+  // Full-circle speed gradient: 6 arc colours + Green repeated at 360° so the
+  // StrokeCap.round start cap (~6.23 rad) is never clamped to Red by TileMode.clamp.
+  static const List<Color> _speedGradientColors = [
+    Color(0xFF22C55E), // Green
+    Color(0xFF06B6D4), // Cyan
+    Color(0xFF3B82F6), // Blue
+    Color(0xFF8B5CF6), // Violet
+    Color(0xFFF97316), // Orange
+    Color(0xFFEF4444), // Red — arc end (~250°)
+    Color(0xFF22C55E), // Green — 360° gap fill, clamps start cap to green
+  ];
+  static const List<double> _speedGradientStops = [
+    0.0, 0.139, 0.278, 0.417, 0.556, 0.694, 1.0,
+  ];
+
+  // Full-circle boost gradient: 4 colours + Amber repeated at 360°
   static const List<Color> _boostGradientColors = [
-    Color(0xFFFFAA00),
-    Color(0xFFFF6600),
-    Color(0xFFFF3300),
-    Color(0xFFDC2626),
+    Color(0xFFFFAA00), // Amber
+    Color(0xFFFF6600), // Orange
+    Color(0xFFFF3300), // Red-orange
+    Color(0xFFDC2626), // Red — arc end (~250°)
+    Color(0xFFFFAA00), // Amber — 360° gap fill, clamps start cap to amber
+  ];
+  static const List<double> _boostGradientStops = [
+    0.0, 0.231, 0.463, 0.694, 1.0,
   ];
 
   @override
@@ -209,20 +228,22 @@ class _DecorativeArcPainter extends CustomPainter {
     // shader alignment is preserved.
     if (isBoost || currentSpeed > 0) {
       final filledSweep = isBoost
-          ? _totalSweep
+          ? _totalSweep - _segGap   // matches the last segment end, same as speed 6
           : currentSpeed * segAngle + (currentSpeed - 1) * _segGap;
 
       final gradient = isBoost
           ? const SweepGradient(
-              startAngle: -0.08,
-              endAngle: _totalSweep,
+              startAngle: 0,
+              endAngle: math.pi * 2,
               colors: _boostGradientColors,
+              stops: _boostGradientStops,
               tileMode: TileMode.clamp,
             )
           : const SweepGradient(
-              startAngle: -0.08,
-              endAngle: _totalSweep,
-              colors: kSpeedColors,
+              startAngle: 0,
+              endAngle: math.pi * 2,
+              colors: _speedGradientColors,
+              stops: _speedGradientStops,
               tileMode: TileMode.clamp,
             );
 

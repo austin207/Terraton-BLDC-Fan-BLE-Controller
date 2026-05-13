@@ -150,7 +150,7 @@ Single source of truth for all BLE command bytes. Adding a new command or fillin
 
 ### Permission handling (`lib/features/permission/ble_permission_screen.dart`)
 
-`SplashScreen` waits 2 s, then checks `bluetoothScan` + `bluetoothConnect` via `permission_handler`. If either is not granted, it navigates to `/permission-required` (`BlePermissionScreen`). That screen requests all 3 permissions, offers "Open App Settings" when permanently denied, and has a "Use Demo Mode Instead" escape hatch that goes home without permissions.
+`SplashScreen` waits 2 s, then checks `bluetoothScan` + `bluetoothConnect` via `permission_handler`. Both must be granted (AND logic) — if either is missing, it navigates to `/permission-required` (`BlePermissionScreen`). That screen requests both permissions, offers "Open App Settings" when permanently denied, and has a "Use Demo Mode Instead" escape hatch that goes home without permissions. `locationWhenInUse` is NOT requested — `BLUETOOTH_SCAN` is declared with `neverForLocation` in the manifest, making location unnecessary on API 31+.
 
 `_ensureBluetoothOn()` in `main.dart` and the mid-session `FlutterBluePlus.turnOn()` call in `app.dart` are both wrapped in `try/on Object catch (_)` — a denied `BLUETOOTH_CONNECT` permission would otherwise crash.
 
@@ -158,12 +158,12 @@ Single source of truth for all BLE command bytes. Adding a new command or fillin
 
 The arc spans 145° → 395° (crosses the 360° boundary). Using `SweepGradient(startAngle: 145°, endAngle: 395°)` triggers a 2π wrap bug: `TileMode.clamp` pins any angular position < `startAngle` (i.e. 0°–35° = the bottom-right end of the arc) to the first gradient colour (Green), making the arc look backwards.
 
-**Fix:** rotate the canvas by `−_startAngle`, draw the arc from 0 to `filledSweep`, use `SweepGradient(startAngle: 0, endAngle: _totalSweep)`. This keeps the entire arc within the gradient's 0–_totalSweep window with no wrapping.
+**Fix:** rotate the canvas by `+_startAngle`, draw the arc from 0 to `filledSweep`, use `SweepGradient(startAngle: 0, endAngle: _totalSweep)`. This places the arc start at screen angle `_startAngle` and keeps the entire arc within the gradient's 0–_totalSweep window with no wrapping. Note: `canvas.rotate(+_startAngle)` is correct — positive rotation places local angle 0 at screen angle `_startAngle`. The negative sign was incorrect and produced a gap on the left instead of at the bottom.
 
 ```dart
 canvas.save();
 canvas.translate(centre.dx, centre.dy);
-canvas.rotate(-_startAngle);
+canvas.rotate(_startAngle);  // positive — places arc start at screen angle _startAngle
 canvas.translate(-centre.dx, -centre.dy);
 canvas.drawArc(arcRect, 0, filledSweep, false, paint);
 canvas.restore();

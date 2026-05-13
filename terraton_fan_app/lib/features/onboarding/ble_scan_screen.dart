@@ -57,13 +57,14 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     });
 
     await ble.startScan(timeoutSeconds: 15);
+    if (!mounted) return;
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _timeout?.cancel();
-    ref.read(bleServiceProvider).stopScan();
+    unawaited(ref.read(bleServiceProvider).stopScan());
     super.dispose();
   }
 
