@@ -20,7 +20,7 @@ class TerratorApp extends ConsumerWidget {
       (prev, next) {
         if (prev?.hasValue != true) return; // skip initial emission to avoid double-prompt
         if (next.valueOrNull == BluetoothAdapterState.off && Platform.isAndroid) {
-          unawaited(FlutterBluePlus.turnOn());
+          unawaited(FlutterBluePlus.turnOn().onError((_, __) {}));
         }
       },
     );

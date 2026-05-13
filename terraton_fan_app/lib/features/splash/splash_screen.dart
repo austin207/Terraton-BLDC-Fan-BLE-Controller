@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -25,8 +26,14 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat();
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) context.go(AppRoutes.home);
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      final scanGranted    = await Permission.bluetoothScan.status;
+      final connectGranted = await Permission.bluetoothConnect.status;
+      if (!mounted) return;
+      final granted = scanGranted.isGranted    || scanGranted.isLimited ||
+                      connectGranted.isGranted || connectGranted.isLimited;
+      context.go(granted ? AppRoutes.home : AppRoutes.permissionRequired);
     });
   }
 

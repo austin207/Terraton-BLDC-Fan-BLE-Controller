@@ -42,15 +42,13 @@ class LightingControlWidget extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [Color(0xFFFDE68A), Color(0xFFF59E0B)],
-                  ),
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.wb_sunny_rounded, color: Colors.white, size: 22),
+                child: const Icon(Icons.light_mode_outlined, color: Color(0xFFF59E0B), size: 20),
               ),
               const SizedBox(width: 12),
               const Expanded(

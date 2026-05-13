@@ -111,6 +111,8 @@ Both paths end at `/name-fan` (receives a `FanDevice` as GoRouter `extra`), then
 
 `/name-fan` and `/control` both require a `FanDevice` passed via GoRouter `extra`. If `extra` is `null` (deep link or back-stack restore), a GoRouter `redirect:` sends the user to `/` rather than rendering the wrong screen at the wrong URL. Never return a fallback widget from a `builder` — use `redirect` instead.
 
+Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`). The `/permission-required` route (`AppRoutes.permissionRequired`) renders `BlePermissionScreen` — it has no `extra` requirement and can be navigated to from anywhere.
+
 ### Home screen (`lib/features/home/home_screen.dart`)
 
 Displays fans grouped by model using `_GroupedFanList`. Each model group has a section header with a count badge. The total fan count is shown above the list. When `savedFansProvider` returns an empty list (no fans saved yet), the `data:` handler falls back to `_demoFan()` so the home screen is never blank during presentations. The demo fan is pure UI — it is not persisted to ObjectBox.
@@ -146,13 +148,48 @@ Single source of truth for all BLE command bytes. Adding a new command or fillin
 
 **Phase 2 (approved, not yet built):** Remote command loading — app fetches `commands.yaml` from a hosted URL on launch, compares `version` field, updates local cache if newer, falls back to bundled asset on failure. No app update needed to deploy new command bytes.
 
+### Permission handling (`lib/features/permission/ble_permission_screen.dart`)
+
+`SplashScreen` waits 2 s, then checks `bluetoothScan` + `bluetoothConnect` via `permission_handler`. If either is not granted, it navigates to `/permission-required` (`BlePermissionScreen`). That screen requests all 3 permissions, offers "Open App Settings" when permanently denied, and has a "Use Demo Mode Instead" escape hatch that goes home without permissions.
+
+`_ensureBluetoothOn()` in `main.dart` and the mid-session `FlutterBluePlus.turnOn()` call in `app.dart` are both wrapped in `try/on Object catch (_)` — a denied `BLUETOOTH_CONNECT` permission would otherwise crash.
+
+### Arc gradient in `CircularSpeedDial`
+
+The arc spans 145° → 395° (crosses the 360° boundary). Using `SweepGradient(startAngle: 145°, endAngle: 395°)` triggers a 2π wrap bug: `TileMode.clamp` pins any angular position < `startAngle` (i.e. 0°–35° = the bottom-right end of the arc) to the first gradient colour (Green), making the arc look backwards.
+
+**Fix:** rotate the canvas by `−_startAngle`, draw the arc from 0 to `filledSweep`, use `SweepGradient(startAngle: 0, endAngle: _totalSweep)`. This keeps the entire arc within the gradient's 0–_totalSweep window with no wrapping.
+
+```dart
+canvas.save();
+canvas.translate(centre.dx, centre.dy);
+canvas.rotate(-_startAngle);
+canvas.translate(-centre.dx, -centre.dy);
+canvas.drawArc(arcRect, 0, filledSweep, false, paint);
+canvas.restore();
+```
+
+The same canvas-rotation trick is applied to the boost overlay arc (uses a 4-colour warm gradient: amber → orange → red-orange → deep red).
+
+### Boost button animation (`_BoostButton` in `control_screen.dart`)
+
+`_BoostButton` is a `StatefulWidget` with a single `AnimationController` (`_shimmerCtrl`, 2000 ms linear repeat). When boost is active it renders:
+
+1. A `ClipRRect(radius: 14)` wrapping a `Stack`
+2. A `Positioned.fill` `DecoratedBox` with a `LinearGradient([0xFFBF2600, 0xFFFF5500, 0xFFCC2200])`
+3. A 90 dp wide `Positioned` shimmer stripe that sweeps left→right via `_shimmerCtrl.value * (width + shimmerW) - shimmerW`
+
+No `BackdropFilter` or `BoxShadow` blur — edges stay sharp. Tapping active boost calls `updateMode(null)` (no BLE frame) to deactivate; tapping inactive boost sends the boost frame.
+
 ### Control screen telemetry
 
 Polls every 3 seconds after connect: `queryPower` frame → 200 ms delay → `querySpeed` frame. A `mounted` check runs after the delay before the second write. Responses arrive on `notifyStream` and are dispatched by command byte (`0x02`–`0x24`) to the appropriate `ActiveFanStateNotifier.update*()` method.
 
 ### Speed dial colours (AC-05-3)
 
-Speed 1 `#1E8449` · Speed 2 `#1A56A0` · Speed 3 `#7D3C98` · Speed 4 `#D4AC0D` · Speed 5 `#D35400` · Speed 6 `#C0392B`
+Speed 1 `#22C55E` (Green) · Speed 2 `#06B6D4` (Cyan) · Speed 3 `#3B82F6` (Blue) · Speed 4 `#8B5CF6` (Violet) · Speed 5 `#F97316` (Orange) · Speed 6 `#EF4444` (Red)
+
+These are defined in `kSpeedColors` (`lib/shared/theme.dart`) and used as the arc gradient colour stops in the same order — so Speed 1 is always at the arc start (green) and Speed 6 at the end (red).
 
 ---
 
@@ -160,11 +197,11 @@ Speed 1 `#1E8449` · Speed 2 `#1A56A0` · Speed 3 `#7D3C98` · Speed 4 `#D4AC0D`
 
 These are the approved Figma-exported designs. Use them as the source of truth for any UI work. Current implementation diverges from the designs in several areas — those gaps are marked **[NOT YET BUILT]** or **[DIFFERS]**.
 
-### Splash Screen *(tera1 — V1)* **[NOT YET BUILT]**
+### Splash Screen *(tera1 — V1)*
 - Terraton fan logo (rounded blue square with fan propeller icon) centred on a light-grey background.
 - "TERRATON" in bold, "SMART BLDC FAN CONTROL" subtitle beneath.
-- Three dot page indicators at the bottom.
-- No splash screen exists in the current implementation; the app launches directly to home.
+- Three dot page indicators at the bottom (animated — `AnimationController` 900 ms repeat).
+- **Current implementation** (`lib/features/splash/splash_screen.dart`): splash exists; logo, title, and animated dots match the design. After a 2 s delay, checks `bluetoothScan` + `bluetoothConnect` permissions — routes to `/permission-required` if denied, else to `/home`.
 
 ### Home Screen — Empty State *(tera1 — V4)* **[DIFFERS]**
 - Title: "My Fans". Settings gear icon in AppBar.
@@ -208,21 +245,17 @@ These are the approved Figma-exported designs. Use them as the source of truth f
 
 > **Mood Lighting design vs current**: Design uses a `Switch` widget for ON/OFF. Current uses two `OutlinedButton` widgets.
 
-### Control Screen — Disconnected *(tera4 — V2)* **[DIFFERS]**
+### Control Screen — Disconnected *(tera4 — V2)*
 - AppBar shows "DISCONNECTED" (grey, no dot).
 - All controls are visually ghosted/disabled. Arc shows "-- W" / "-- RPM".
-- **Connection Lost card**: bottom-anchored card (not a banner) with a clock icon, "Connection Lost" heading, "Fan not found. Is it powered on and within range?" body, and a "Retry Connection" full-width blue button.
-- **Current implementation** uses `ConnectionBanner` — a coloured strip pinned to the top of the screen. Design intent is a bottom card overlay.
+- **Connection Lost card**: bottom-anchored card with a clock icon, "Connection Lost" heading, "Fan not found. Is it powered on and within range?" body, and a "Retry Connection" full-width blue button.
+- **Current implementation** (`connection_banner.dart`) renders the `ConnectionLostCard` as a bottom-anchored overlay — matches the design intent.
 
 ### Settings Screen *(tera4 — V1)* **[DIFFERS]**
 - Back arrow, "Settings" title (centred, bold).
 - **DATA MANAGEMENT** section: "Export Fans Data" (upload icon), "Import Fans Data" (download icon) — matches current implementation.
-- **ABOUT** section **[NOT YET BUILT]**:
-  - App Version — display current version + build number (e.g. "v2.4.0 (Build 108)")
-  - Firmware Support — show "Up to Date" or last checked timestamp
-  - BLE Protocol — static "BLE 5.2"
-- **SUPPORT** section **[NOT YET BUILT]**:
-  - User Manual — opens an external URL (launches browser)
+- **ABOUT** section — built; displays App Version (from `package_info_plus`), and static "BLE 5.2" protocol string.
+- **SUPPORT** section — stub only; "User Manual" row present but URL not yet provided by Terraton.
 - Terraton fan logo centred at the bottom of the screen.
 
 ---
@@ -247,3 +280,4 @@ These are the approved Figma-exported designs. Use them as the source of truth f
 - `StreamProvider` in widget tests needs **4 pump cycles** to deliver a connection state change: `pump()` ×2 (postFrameCallback + microtask drain), add event to stream, `pump()` ×2 (stream delivery + widget rebuild).
 - `CircularSpeedDial` stacks 6 `GestureDetector`s at the same centre — `tester.tap()` is intercepted by the overlaid `Column`. Invoke `dial.onSpeedSelected(n)` directly in tests.
 - `LightingControlWidget` and the BOOST button sit below the 600 px test viewport — obtain the widget with `tester.widget<...>(find.byType(...))` and call its callback directly.
+- `_BoostButton` is a `StatefulWidget` (owns `_shimmerCtrl`). In tests, find it via `find.byType(_BoostButton)` or by the `ValueKey('boost_button')` on its root `GestureDetector`, then invoke the `onBoost` callback directly.

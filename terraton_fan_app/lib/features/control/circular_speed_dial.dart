@@ -94,18 +94,16 @@ class CircularSpeedDial extends StatelessWidget {
         const SizedBox(height: 12),
 
         // ── 3×2 speed button grid ─────────────────────────────────────────────
-        SizedBox(
-          width: 300,
-          child: GridView.count(
+        GridView.count(
             crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
+            crossAxisSpacing: 12,
             mainAxisSpacing: 10,
             childAspectRatio: 2.0,
             children: List.generate(6, (i) {
               final speed    = i + 1;
-              final isActive = speed == currentSpeed; // exclusive single-button selection
+              final isActive = speed == currentSpeed;
               return Semantics(
                 button: true,
                 label: 'Speed $speed',
@@ -146,7 +144,6 @@ class CircularSpeedDial extends StatelessWidget {
                 ),
               );
             }),
-          ),
         ),
       ],
     );
@@ -171,53 +168,83 @@ class _DecorativeArcPainter extends CustomPainter {
   static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180;
   static const double _segGap     = 0.04;
 
-  // Energetic warm gradient used when boost is active
-  static const List<Color> _boostColors = [
-    Color(0xFFFFB300),
-    Color(0xFFFF8C00),
+  // Warm energy gradient for boost mode arc
+  static const List<Color> _boostGradientColors = [
+    Color(0xFFFFAA00),
     Color(0xFFFF6600),
-    Color(0xFFFF4500),
     Color(0xFFFF3300),
     Color(0xFFDC2626),
   ];
 
   @override
   void paint(Canvas canvas, Size size) {
-    final segAngle = (_totalSweep - _segGap * 6) / 6;
-    final centre   = Offset(size.width / 2, size.height / 2);
-    final radius   = size.width / 2 - 16;
+    final segAngle   = (_totalSweep - _segGap * 6) / 6;
+    final centre     = Offset(size.width / 2, size.height / 2);
+    final radius     = size.width / 2 - 16;
+    final arcRect    = Rect.fromCircle(center: centre, radius: radius);
+    final shaderRect = Offset.zero & size;
 
+    // ── Background track: thin dimmed rings always visible ────────────────
     for (int i = 0; i < 6; i++) {
       final start = _startAngle + i * (segAngle + _segGap);
-
-      Color segColor;
-      bool  isFilled;
-
-      if (isBoost) {
-        isFilled = true;
-        final c  = _boostColors[i];
-        segColor = enabled ? c : c.withAlpha(70);
-      } else {
-        isFilled = currentSpeed > 0 && i + 1 <= currentSpeed; // progressive fill
-        final c  = kSpeedColors[i];
-        if (isFilled) {
-          segColor = enabled ? c : c.withAlpha(70);
-        } else {
-          segColor = c.withAlpha(enabled ? 90 : 40);
-        }
-      }
-
       canvas.drawArc(
-        Rect.fromCircle(center: centre, radius: radius),
-        start,
-        segAngle,
-        false,
+        arcRect, start, segAngle, false,
         Paint()
           ..style       = PaintingStyle.stroke
-          ..strokeWidth = isFilled ? 13.0 : 7.0
+          ..strokeWidth = 6.0
           ..strokeCap   = StrokeCap.round
-          ..color       = segColor,
+          ..color       = kSpeedColors[i].withAlpha(enabled ? 38 : 20),
       );
+    }
+
+    // ── Filled overlay: ONE continuous arc with smooth gradient ──────────
+    // The arc runs from _startAngle to _startAngle + filledSweep on screen,
+    // but that range crosses the 2π wrap (395° > 360°). SweepGradient with
+    // TileMode.clamp would pin any angle < startAngle to the first colour,
+    // making the final segment show green instead of red.
+    //
+    // Fix: rotate the canvas by −_startAngle so the arc spans [0, filledSweep]
+    // in the rotated system. SweepGradient(0, _totalSweep) then maps cleanly
+    // without crossing 2π. The rotation is around the sweep centre so the
+    // shader alignment is preserved.
+    if (isBoost || currentSpeed > 0) {
+      final filledSweep = isBoost
+          ? _totalSweep
+          : currentSpeed * segAngle + (currentSpeed - 1) * _segGap;
+
+      final gradient = isBoost
+          ? const SweepGradient(
+              startAngle: -0.08,
+              endAngle: _totalSweep,
+              colors: _boostGradientColors,
+              tileMode: TileMode.clamp,
+            )
+          : const SweepGradient(
+              startAngle: -0.08,
+              endAngle: _totalSweep,
+              colors: kSpeedColors,
+              tileMode: TileMode.clamp,
+            );
+
+      final paint = Paint()
+        ..style       = PaintingStyle.stroke
+        ..strokeWidth = 13.0
+        ..strokeCap   = StrokeCap.round;
+
+      if (enabled) {
+        paint.shader = gradient.createShader(shaderRect);
+      } else {
+        paint.color = isBoost
+            ? const Color(0xFFFF6600).withAlpha(55)
+            : kSpeedColors[currentSpeed - 1].withAlpha(55);
+      }
+
+      canvas.save();
+      canvas.translate(centre.dx, centre.dy);
+      canvas.rotate(_startAngle);
+      canvas.translate(-centre.dx, -centre.dy);
+      canvas.drawArc(arcRect, 0, filledSweep, false, paint);
+      canvas.restore();
     }
   }
 

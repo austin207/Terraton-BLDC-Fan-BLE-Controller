@@ -8,10 +8,11 @@ An Android app for controlling the Terraton BLDC ceiling fan over Bluetooth Low 
 
 - **Pair fans** via Bluetooth scan or QR code
 - **Manage multiple fans** from a single home screen
-- **Full fan control** — power, 6 speed steps, boost, nature/reverse/smart modes, 2/4/8-hour timers
+- **Full fan control** — power, 6 speed steps, boost (toggle on/off), nature/reverse/smart modes, 2/4/8-hour timers
 - **Live telemetry** — real-time watts and RPM polled every 3 seconds
 - **Persistent storage** — fan metadata and last-known state saved with ObjectBox
 - **Export / import** — back up and restore fan list as JSON
+- **Bluetooth permission handling** — guided permission screen with retry, app-settings deep-link, and demo-mode fallback
 
 ---
 
@@ -94,7 +95,9 @@ terraton_fan_app/
 │   │   ├── control/           # ControlScreen, CircularSpeedDial, mode/timer/lighting widgets
 │   │   ├── home/              # HomeScreen, FanCard
 │   │   ├── onboarding/        # BleScanScreen, QrScanScreen, NameFanScreen
-│   │   └── settings/          # SettingsScreen (export/import)
+│   │   ├── permission/        # BlePermissionScreen — handles denied/revoked BT permissions
+│   │   ├── settings/          # SettingsScreen (export/import, about, support stub)
+│   │   └── splash/            # SplashScreen — animated dots, permission routing
 │   ├── models/                # FanDevice, FanState (ObjectBox entities)
 │   └── shared/                # AppRoutes, GoRouter config, theme
 └── test/
@@ -176,6 +179,7 @@ dart run build_runner build --delete-conflicting-outputs
 | 1 | Core BLE control (power, speed, modes, timer, telemetry) | ✅ Complete |
 | 1 | Multi-fan management & persistence | ✅ Complete |
 | 1 | QR + BLE onboarding | ✅ Complete |
+| 1 | Splash screen + BT permission screen | ✅ Complete |
 | 2 | Lighting control | ⏳ Pending command bytes from Terraton |
 | 2 | Remote command loading (fetch updated `commands.yaml` from URL) | 📋 Planned |
 

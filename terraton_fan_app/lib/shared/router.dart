@@ -8,6 +8,7 @@ import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/ble_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/name_fan_screen.dart';
 import 'package:terraton_fan_app/features/control/control_screen.dart';
+import 'package:terraton_fan_app/features/permission/ble_permission_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 
@@ -21,6 +22,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.home,
       builder: (_, __) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.permissionRequired,
+      builder: (_, __) => const BlePermissionScreen(),
     ),
     GoRoute(
       path: AppRoutes.scanQr,

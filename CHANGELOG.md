@@ -4,6 +4,30 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — UI Polish V2 + BT Permission Screen
+
+### Added
+- **`BlePermissionScreen`** (`lib/features/permission/ble_permission_screen.dart`) — new screen that requests all three BLE permissions (`bluetoothScan`, `bluetoothConnect`, `locationWhenInUse`). Shows contextual guidance per permission state: denied → retry button, permanently denied → "Open App Settings", all granted → turns BT on and navigates home. Includes a "Use Demo Mode Instead" escape hatch. `AppRoutes.permissionRequired` (`/permission-required`) added to `app_routes.dart` and `router.dart`.
+
+### Changed
+- **Splash screen permission routing** (`splash_screen.dart`) — after the 2 s logo delay, checks `bluetoothScan` + `bluetoothConnect` status; navigates to `/permission-required` if either is not granted, else continues to `/home`. Animated dots (900 ms `AnimationController` repeat) added to the splash layout.
+- **`_ensureBluetoothOn()` crash fix** (`main.dart`) — `FlutterBluePlus.turnOn()` call wrapped in `try/on Object catch (_)` so a denied `BLUETOOTH_CONNECT` permission no longer crashes at startup.
+- **`app.dart` BT re-prompt** — mid-session `FlutterBluePlus.turnOn()` chained with `.onError((_, __) {})` to suppress unhandled exceptions when BT permission is revoked while the app is running.
+
+### Changed (arc + speed dial)
+- **Arc gradient — 2π wrap fix** (`circular_speed_dial.dart`) — replaced per-segment `SweepGradient` approach with a single continuous arc. Canvas is rotated by `−_startAngle` before drawing, and `SweepGradient(startAngle: 0, endAngle: _totalSweep)` is used — this keeps the entire drawn arc within the gradient's coordinate window and prevents `TileMode.clamp` from pinning the last segment to the first colour (Green). Same fix applied to the boost overlay arc.
+- **Speed dial colour order** (`circular_speed_dial.dart` + `theme.dart`) — `kSpeedColors` updated to `[#22C55E, #06B6D4, #3B82F6, #8B5CF6, #F97316, #EF4444]` (Green → Red). The arc now reads green at low speed and red at max, matching the design intent.
+- **Speed buttons full-width** (`circular_speed_dial.dart`) — removed the `SizedBox(width: 300)` wrapper around the speed button grid; buttons now expand to fill available width. `crossAxisSpacing` adjusted from 10 to 12.
+
+### Changed (boost button)
+- **Boost shimmer animation** (`control_screen.dart`) — replaced the `BoxShadow` glow+blur effect with a sharp shimmer stripe. Active boost renders a fire-gradient background (`0xFFBF2600 → 0xFFFF5500 → 0xFFCC2200`) inside a `ClipRRect(radius: 14)` with a 90 dp translucent white stripe sweeping left-to-right via a 2 s linear `AnimationController`. No `BackdropFilter` — edges stay sharp.
+- **Boost toggle-off** (`control_screen.dart`) — tapping the boost button while boost is active now calls `notifier.updateMode(null)` to deactivate it locally without sending a BLE frame. Previously the toggle was one-directional (on only).
+
+### Changed (lighting icon)
+- **Lighting icon** (`lighting_control_widget.dart`) — replaced the gradient bubble icon with a flat `Icons.light_mode_outlined` in an amber `#FFF7ED` rounded square (38×38, radius 10). Simpler and consistent with the rest of the section icons.
+
+---
+
 ## [Unreleased] — UI Polish + README
 
 ### Changed

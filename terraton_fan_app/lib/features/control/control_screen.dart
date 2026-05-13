@@ -248,7 +248,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 _BoostButton(
                   isBoost: fanState.isBoost,
                   enabled: enabled,
-                  onBoost: () => _send(BleFrameBuilder.setBoost()),
+                  onBoost: () {
+                    if (fanState.isBoost) {
+                      // Toggle off — no protocol cancel command; clear local state.
+                      ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                          .updateMode(null);
+                    } else {
+                      _send(BleFrameBuilder.setBoost());
+                    }
+                  },
                 ),
                 const SizedBox(height: 20),
 
@@ -436,103 +444,145 @@ class _BoostButton extends StatefulWidget {
 
 class _BoostButtonState extends State<_BoostButton>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _glow;
+  late final AnimationController _shimmerCtrl;
+
+  bool get _showShimmer => widget.isBoost && widget.enabled;
 
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
+    _shimmerCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 2000),
     );
-    _glow = Tween<double>(begin: 8.0, end: 32.0).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-    if (widget.isBoost) _pulseCtrl.repeat(reverse: true);
+    if (_showShimmer) _shimmerCtrl.repeat();
   }
 
   @override
   void didUpdateWidget(_BoostButton old) {
     super.didUpdateWidget(old);
-    if (widget.isBoost && !old.isBoost) {
-      _pulseCtrl.repeat(reverse: true);
-    } else if (!widget.isBoost && old.isBoost) {
-      _pulseCtrl.animateTo(0);
+    final wasShimmer = old.isBoost && old.enabled;
+    if (_showShimmer && !wasShimmer) {
+      _shimmerCtrl.repeat();
+    } else if (!_showShimmer && wasShimmer) {
+      _shimmerCtrl
+        ..stop()
+        ..reset();
     }
   }
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
+    _shimmerCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final label = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.bolt,
+          size: 20,
+          color: widget.enabled ? Colors.white : Colors.grey.shade400,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'BOOST MODE',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            color: widget.enabled ? Colors.white : Colors.grey.shade400,
+          ),
+        ),
+      ],
+    );
+
     return Semantics(
       selected: widget.isBoost,
-      child: AnimatedBuilder(
-        animation: _glow,
-        builder: (context, _) {
-          return GestureDetector(
-            key: const ValueKey('boost_button'),
-            onTap: widget.enabled
-                ? () {
-                    HapticFeedback.lightImpact();
-                    widget.onBoost();
-                  }
-                : null,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: double.infinity,
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: widget.isBoost && widget.enabled
-                    ? const LinearGradient(
-                        colors: [Color(0xFFFF8C00), Color(0xFFDC2626)],
-                      )
-                    : null,
-                color: widget.isBoost && widget.enabled
-                    ? null
-                    : (widget.enabled
-                        ? const Color(0xFF1A2F5E)
-                        : Colors.grey.shade200),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: widget.isBoost && widget.enabled
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFFFF6600).withAlpha(160),
-                          blurRadius: _glow.value,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.bolt,
-                    size: 20,
-                    color: widget.enabled ? Colors.white : Colors.grey.shade400,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'BOOST MODE',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: widget.enabled ? Colors.white : Colors.grey.shade400,
+      child: GestureDetector(
+        key: const ValueKey('boost_button'),
+        onTap: widget.enabled
+            ? () {
+                HapticFeedback.lightImpact();
+                widget.onBoost();
+              }
+            : null,
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: LayoutBuilder(
+            builder: (_, constraints) => AnimatedBuilder(
+              animation: _shimmerCtrl,
+              builder: (_, __) {
+                if (!_showShimmer) {
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    decoration: BoxDecoration(
+                      color: widget.enabled
+                          ? const Color(0xFF1A2F5E)
+                          : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(14),
                     ),
+                    alignment: Alignment.center,
+                    child: label,
+                  );
+                }
+
+                // Sharp gradient background + moving shimmer stripe
+                const shimmerW = 90.0;
+                final shimX = _shimmerCtrl.value *
+                    (constraints.maxWidth + shimmerW) -
+                    shimmerW;
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Stack(
+                    children: [
+                      const Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0xFFBF2600),
+                                Color(0xFFFF5500),
+                                Color(0xFFCC2200),
+                              ],
+                              begin: Alignment(-1, -0.5),
+                              end: Alignment(1, 0.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: shimX,
+                        top: 0,
+                        bottom: 0,
+                        width: shimmerW,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Colors.white.withAlpha(0),
+                                Colors.white.withAlpha(45),
+                                Colors.white.withAlpha(0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(child: Center(child: label)),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
