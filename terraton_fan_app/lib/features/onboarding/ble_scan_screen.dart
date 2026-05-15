@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
   const BleScanScreen({super.key});
@@ -20,15 +22,29 @@ class BleScanScreen extends ConsumerStatefulWidget {
 
 class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   List<DiscoveredFan> _results = [];
-  bool _scanning = true;
+  bool _scanning = false;
   bool _timedOut = false;
+  // null = not yet checked, false = denied, true = granted
+  bool? _permissionGranted;
   StreamSubscription<List<DiscoveredFan>>? _sub;
   Timer? _timeout;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startScan());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionAndScan());
+  }
+
+  Future<void> _checkPermissionAndScan() async {
+    final scanStatus    = await Permission.bluetoothScan.status;
+    final connectStatus = await Permission.bluetoothConnect.status;
+    if (!mounted) return;
+
+    final granted = (scanStatus.isGranted    || scanStatus.isLimited) &&
+                    (connectStatus.isGranted || connectStatus.isLimited);
+
+    setState(() => _permissionGranted = granted);
+    if (granted) await _startScan();
   }
 
   Future<void> _startScan() async {
@@ -84,14 +100,25 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
       appBar: AppBar(
         title: const Text('Select Your Fan'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh scan',
-            onPressed: _startScan,
-          ),
+          if (_permissionGranted == true)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh scan',
+              onPressed: _startScan,
+            ),
         ],
       ),
       body: Builder(builder: (_) {
+        // Permission not yet checked — brief pause before postFrameCallback fires
+        if (_permissionGranted == null) {
+          return const SizedBox.shrink();
+        }
+
+        // Permission denied — static page, no scan spinner
+        if (_permissionGranted == false) {
+          return _buildPermissionDenied();
+        }
+
         if (_scanning && _results.isEmpty) {
           return const Center(child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -165,6 +192,74 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
           },
         );
       }),
+    );
+  }
+
+  Widget _buildPermissionDenied() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: kPrimary,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: kPrimary.withAlpha(60),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: const FanIcon(size: 42),
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'Bluetooth Permission Required',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1A2C4E),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Terraton Fan Controller needs Bluetooth Scan and Connect '
+            'permissions to search for nearby fans.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.5,
+              color: Colors.blueGrey.shade600,
+            ),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: openAppSettings,
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Open App Settings'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: OutlinedButton.icon(
+              onPressed: _checkPermissionAndScan,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Try Again'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
