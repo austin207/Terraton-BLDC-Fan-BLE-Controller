@@ -26,7 +26,7 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat();
 
-    Future.delayed(const Duration(seconds: 2), () async {
+    unawaited(Future.delayed(const Duration(seconds: 2), () async {
       if (!mounted) return;
       final scanGranted    = await Permission.bluetoothScan.status;
       final connectGranted = await Permission.bluetoothConnect.status;
@@ -34,7 +34,7 @@ class _SplashScreenState extends State<SplashScreen>
       final granted = (scanGranted.isGranted    || scanGranted.isLimited) &&
                       (connectGranted.isGranted || connectGranted.isLimited);
       context.go(granted ? AppRoutes.home : AppRoutes.permissionRequired);
-    });
+    }));
   }
 
   @override

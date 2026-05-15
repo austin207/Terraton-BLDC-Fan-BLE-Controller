@@ -59,6 +59,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       if (!mounted) return;
       if (widget.fan.macAddress.isEmpty && !_isDemo) {
         await repo.updateMac(widget.fan.deviceId, returnedMac);
+        widget.fan.macAddress = returnedMac; // keep in-memory copy in sync for retry attempts
         if (!mounted) return;
         ref.invalidate(savedFansProvider);
       }
@@ -72,6 +73,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   void _subscribeNotify() {
+    _notifySub?.cancel();
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
       final response = BleResponseParser.parse(bytes);
@@ -479,28 +481,6 @@ class _BoostButtonState extends State<_BoostButton>
     super.dispose();
   }
 
-  Widget _buildLabel() => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(
-        Icons.bolt,
-        size: 20,
-        color: widget.enabled ? Colors.white : Colors.grey.shade400,
-      ),
-      const SizedBox(width: 8),
-      Text(
-        'BOOST MODE',
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-          color: widget.enabled ? Colors.white : Colors.grey.shade400,
-        ),
-      ),
-    ],
-  );
-
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -522,7 +502,9 @@ class _BoostButtonState extends State<_BoostButton>
           child: LayoutBuilder(
             builder: (_, constraints) => AnimatedBuilder(
               animation: _shimmerCtrl,
-              builder: (_, __) {
+              // child is built once per _BoostButtonState rebuild (not per frame)
+              child: _BoostLabel(enabled: widget.enabled),
+              builder: (_, child) {
                 if (!_showShimmer) {
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
@@ -533,7 +515,7 @@ class _BoostButtonState extends State<_BoostButton>
                       borderRadius: BorderRadius.circular(14),
                     ),
                     alignment: Alignment.center,
-                    child: _buildLabel(),
+                    child: child,
                   );
                 }
 
@@ -580,7 +562,7 @@ class _BoostButtonState extends State<_BoostButton>
                           ),
                         ),
                       ),
-                      Positioned.fill(child: Center(child: _buildLabel())),
+                      Positioned.fill(child: Center(child: child)),
                     ],
                   ),
                 );
@@ -589,6 +571,28 @@ class _BoostButtonState extends State<_BoostButton>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BoostLabel extends StatelessWidget {
+  final bool enabled;
+  const _BoostLabel({required this.enabled});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled ? Colors.white : Colors.grey.shade400;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.bolt, size: 20, color: color),
+        const SizedBox(width: 8),
+        Text(
+          'BOOST MODE',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: color),
+        ),
+      ],
     );
   }
 }

@@ -107,7 +107,15 @@ class _QrScanScreenState extends State<QrScanScreen>
         ..nickname  = model
         ..addedAt   = DateTime.now();
 
-      if (mounted) context.push(AppRoutes.nameFan, extra: fan);
+      if (mounted) {
+        // Reset _handled when NameFanScreen is popped so the user can re-scan
+        // if they navigate back (e.g. scanned the wrong QR code).
+        unawaited(
+          context.push(AppRoutes.nameFan, extra: fan).then((_) {
+            if (mounted) setState(() => _handled = false);
+          }),
+        );
+      }
     } on FormatException {
       _showInvalidSnack();
     }

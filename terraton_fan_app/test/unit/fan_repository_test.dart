@@ -94,6 +94,7 @@ class _FakeRepo implements FanRepository {
 
   @override
   Future<int> importFromJson(String json) async {
+    try {
     final map = jsonDecode(json) as Map<String, dynamic>;
     if (map['version'] != 1) throw const FormatException('Unsupported export version.');
     final fans = (map['fans'] as List).cast<Map<String, dynamic>>();
@@ -121,6 +122,11 @@ class _FakeRepo implements FanRepository {
       imported++;
     }
     return imported;
+    } on FormatException {
+      rethrow;
+    } on Object catch (e) {
+      throw FormatException('Malformed backup file: $e');
+    }
   }
 }
 
@@ -487,6 +493,11 @@ void main() {
         ],
       });
       expect(await repo.importFromJson(json), 0);
+    });
+
+    test('throws FormatException when fans field is not a list', () {
+      final bad = jsonEncode({'version': 1, 'fans': 'not-a-list'});
+      expect(repo.importFromJson(bad), throwsA(isA<FormatException>()));
     });
 
     test('export → import round-trip preserves fan data', () async {

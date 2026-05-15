@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class TimerControlWidget extends StatelessWidget {
-  final int? activeTimerCode; // 0x02, 0x04, 0x08, or null (OFF)
+  final int? activeTimerCode; // 0x02, 0x04, 0x08, null, or 0x00 — all mean OFF
   final bool enabled;
   final void Function(String action) onTimer;
 

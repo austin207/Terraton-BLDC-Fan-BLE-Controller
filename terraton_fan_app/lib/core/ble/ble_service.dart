@@ -33,6 +33,13 @@ class BleServiceImpl implements BleService {
   static const int           _maxRetries = 3;
   static const Duration      _retryDelay = Duration(seconds: 5);
 
+  bool _disposed = false;
+
+  // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
+  static final _serviceGuid = Guid(kServiceUUID);
+  static final _writeGuid   = Guid(kWriteCharUUID);
+  static final _notifyGuid  = Guid(kNotifyCharUUID);
+
   // Stored so they can be cancelled before re-subscribing and on dispose.
   StreamSubscription<List<ScanResult>>? _scanResultsSub;
   StreamSubscription<bool>?             _isScanSub;
@@ -56,6 +63,7 @@ class BleServiceImpl implements BleService {
   app.BleConnectionState          get currentState        => _currentState;
 
   void _setState(app.BleConnectionState s) {
+    if (_disposed) return;
     _currentState = s;
     _stateController.add(s);
   }
@@ -74,7 +82,7 @@ class BleServiceImpl implements BleService {
     await _isScanSub?.cancel();
 
     await FlutterBluePlus.startScan(
-      withServices: [Guid(kServiceUUID)],
+      withServices: [_serviceGuid],
       timeout: Duration(seconds: timeoutSeconds),
     );
 
@@ -106,6 +114,7 @@ class BleServiceImpl implements BleService {
   }
 
   Future<String> _doConnect() async {
+    if (_disposed) throw StateError('BleService disposed');
     _setState(app.BleConnectionState.connecting);
 
     BluetoothDevice? target;
@@ -126,7 +135,7 @@ class BleServiceImpl implements BleService {
           throw TimeoutException('No fan found during scan.');
         });
       } finally {
-        await sub?.cancel();
+        await sub.cancel();
         sub = null;
       }
     }
@@ -153,10 +162,10 @@ class BleServiceImpl implements BleService {
 
     final services = await target.discoverServices();
     for (final svc in services) {
-      if (svc.serviceUuid == Guid(kServiceUUID)) {
+      if (svc.serviceUuid == _serviceGuid) {
         for (final c in svc.characteristics) {
-          if (c.characteristicUuid == Guid(kWriteCharUUID))  _writeChar  = c;
-          if (c.characteristicUuid == Guid(kNotifyCharUUID)) _notifyChar = c;
+          if (c.characteristicUuid == _writeGuid)  _writeChar  = c;
+          if (c.characteristicUuid == _notifyGuid) _notifyChar = c;
         }
       }
     }
@@ -208,6 +217,8 @@ class BleServiceImpl implements BleService {
 
   @override
   Future<void> dispose() async {
+    _disposed = true;
+    try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
     await _scanResultsSub?.cancel();
     await _isScanSub?.cancel();
     await _connStateSub?.cancel();

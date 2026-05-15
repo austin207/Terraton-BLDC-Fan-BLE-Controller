@@ -174,7 +174,12 @@ class _ToggleBtn extends StatelessWidget {
       left:  isLeft  ? const Radius.circular(6) : Radius.zero,
       right: !isLeft ? const Radius.circular(6) : Radius.zero,
     );
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '$label light',
+      selected: active,
+      enabled: enabled,
+      child: GestureDetector(
       onTap: enabled ? onTap : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -194,6 +199,7 @@ class _ToggleBtn extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

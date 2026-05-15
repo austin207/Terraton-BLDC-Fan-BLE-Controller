@@ -56,7 +56,12 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
       if (mounted) setState(() { _scanning = false; _timedOut = _results.isEmpty; });
     });
 
-    await ble.startScan(timeoutSeconds: 15);
+    try {
+      await ble.startScan(timeoutSeconds: 15);
+    } on Object catch (_) {
+      if (mounted) setState(() { _scanning = false; _timedOut = true; });
+      return;
+    }
     if (!mounted) return;
   }
 
