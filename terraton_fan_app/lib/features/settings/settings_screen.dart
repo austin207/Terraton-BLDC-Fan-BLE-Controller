@@ -294,7 +294,7 @@ class _TileGroup extends StatelessWidget {
           for (int i = 0; i < tiles.length; i++) ...[
             _SettingsTile(data: tiles[i], isFirst: i == 0, isLast: i == tiles.length - 1),
             if (i < tiles.length - 1)
-              const Divider(height: 1, indent: 68, endIndent: 0, color: Color(0xFFF1F5F9)),
+              const Divider(height: 1, indent: 70, endIndent: 0, color: Color(0xFFF1F5F9)),
           ],
         ],
       ),
