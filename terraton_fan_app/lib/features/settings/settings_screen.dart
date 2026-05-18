@@ -1,4 +1,5 @@
 // lib/features/settings/settings_screen.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -29,7 +30,7 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
           // ── DATA MANAGEMENT ───────────────────────────────────────────────
-          const _SectionLabel('DATA MANAGEMENT'),
+          const _SectionLabel('DATA MANAGEMENT', isFirst: true),
           _TileGroup(tiles: [
             _TileData(
               icon: Icons.upload_rounded,
@@ -56,7 +57,7 @@ class SettingsScreen extends ConsumerWidget {
               iconColor: const Color(0xFF64748B),
               title: 'App Version',
               trailingText: ref.watch(packageInfoProvider).when(
-                data: (info) => 'v${info.version} (Build ${info.buildNumber})',
+                data: (info) => 'v${info.version} (${info.buildNumber})',
                 loading: () => '…',
                 error: (_, __) => 'v—',
               ),
@@ -66,17 +67,25 @@ class SettingsScreen extends ConsumerWidget {
               iconBg: Color(0xFFF8FAFC),
               iconColor: Color(0xFF64748B),
               title: 'Firmware Support',
-              trailingWidget: Text(
-                'Up to Date',
-                style: TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.w600),
+              trailingWidget: _PillBadge(
+                label: 'Up to Date',
+                icon: Icons.check_circle_rounded,
+                textColor: Color(0xFF16A34A),
+                bg: Color(0xFFF0FDF4),
+                border: Color(0xFFBBF7D0),
               ),
             ),
             const _TileData(
               icon: Icons.bluetooth_rounded,
-              iconBg: Color(0xFFF8FAFC),
-              iconColor: Color(0xFF64748B),
+              iconBg: Color(0xFFEFF6FF),
+              iconColor: Color(0xFF3B82F6),
               title: 'BLE Protocol',
-              trailingText: 'BLE 5.2',
+              trailingWidget: _PillBadge(
+                label: 'BLE 5.2',
+                textColor: Color(0xFF1D4ED8),
+                bg: Color(0xFFEFF6FF),
+                border: Color(0xFFBFDBFE),
+              ),
             ),
           ]),
 
@@ -88,32 +97,34 @@ class SettingsScreen extends ConsumerWidget {
               iconBg: const Color(0xFFFFFBEB),
               iconColor: const Color(0xFFD97706),
               title: 'User Manual',
-              onTap: () => context.push(AppRoutes.userManual),
+              onTap: () => unawaited(context.push(AppRoutes.userManual)),
             ),
           ]),
 
           // ── Terraton footer ───────────────────────────────────────────────
-          const SizedBox(height: 56),
+          const SizedBox(height: 48),
+          const Divider(height: 1, color: Color(0xFFEDF0F4)),
+          const SizedBox(height: 36),
           Center(
             child: Column(
               children: [
-                const FanIcon(size: 100, semanticLabel: 'Terraton fan'),
-                const SizedBox(height: 10),
+                const FanIcon(size: 88, semanticLabel: 'Terraton fan'),
+                const SizedBox(height: 12),
                 Text(
                   'Terraton®',
                   style: GoogleFonts.poppins(
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.w500,
                     letterSpacing: 0.5,
                     color: const Color(0xFF5F6368),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   'SMART BLDC FAN CONTROL',
                   style: TextStyle(
                     fontSize: 9,
-                    letterSpacing: 1.5,
+                    letterSpacing: 1.6,
                     color: Colors.blueGrey.shade300,
                     fontWeight: FontWeight.w500,
                   ),
@@ -172,16 +183,65 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
+// ── Pill badge (trailing status indicator) ────────────────────────────────────
+
+class _PillBadge extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final Color textColor;
+  final Color bg;
+  final Color border;
+
+  const _PillBadge({
+    required this.label,
+    this.icon,
+    required this.textColor,
+    required this.bg,
+    required this.border,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: textColor),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Section label ─────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String label;
-  const _SectionLabel(this.label);
+  final bool isFirst;
+  const _SectionLabel(this.label, {this.isFirst = false});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
+      padding: EdgeInsets.fromLTRB(4, isFirst ? 4 : 20, 4, 8),
       child: Text(
         label,
         style: const TextStyle(
@@ -274,14 +334,17 @@ class _SettingsTile extends StatelessWidget {
       onTap: data.onTap,
       borderRadius: borderRadius,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(color: data.iconBg, shape: BoxShape.circle),
-              child: Icon(data.icon, color: data.iconColor, size: 19),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: data.iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(data.icon, color: data.iconColor, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
