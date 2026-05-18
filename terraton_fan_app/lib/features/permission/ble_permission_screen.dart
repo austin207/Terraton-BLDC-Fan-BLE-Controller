@@ -66,23 +66,8 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  color: kPrimary,
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: [
-                    BoxShadow(
-                      color: kPrimary.withAlpha(60),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: const FanIcon(size: 46, semanticLabel: 'Terraton fan'),
-              ),
-              const SizedBox(height: 32),
+              const FanIcon(size: 140, semanticLabel: 'Terraton fan'),
+              const SizedBox(height: 24),
 
               const Text(
                 'Bluetooth Access Required',

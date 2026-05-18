@@ -25,14 +25,14 @@ class FanCard extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: kPrimary.withAlpha(20),
-                  shape: BoxShape.circle,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  color: Colors.white,
+                  child: const FanIcon(size: 52),
                 ),
-                child: const FanIcon(size: 28),
               ),
               const SizedBox(width: 14),
               Expanded(
