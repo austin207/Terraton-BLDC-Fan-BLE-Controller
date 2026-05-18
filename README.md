@@ -8,11 +8,13 @@ An Android app for controlling the Terraton BLDC ceiling fan over Bluetooth Low 
 
 - **Pair fans** via Bluetooth scan or QR code
 - **Manage multiple fans** from a single home screen
-- **Full fan control** — power, 6 speed steps, boost (toggle on/off), nature/reverse/smart modes, 2/4/8-hour timers
-- **Live telemetry** — real-time watts and RPM polled every 3 seconds
+- **Full fan control** — power, 6 speed steps, boost mode, nature/reverse/smart operating modes, 2/4/8-hour sleep timer
+- **Mood Lighting** — ON/OFF toggle and warm↔cool colour temperature slider *(BLE command bytes pending from Terraton)*
+- **Live telemetry** — real-time watts and RPM polled every 3 seconds; stale values clear after 5 s
 - **Persistent storage** — fan metadata and last-known state saved with ObjectBox
 - **Export / import** — back up and restore fan list as JSON
 - **Bluetooth permission handling** — guided permission screen with retry, app-settings deep-link, and demo-mode fallback
+- **In-app User Manual** — eight expandable sections covering setup, controls, modes, timer, lighting, and troubleshooting
 
 ---
 
@@ -96,7 +98,7 @@ terraton_fan_app/
 │   │   ├── home/              # HomeScreen, FanCard
 │   │   ├── onboarding/        # BleScanScreen, QrScanScreen, NameFanScreen
 │   │   ├── permission/        # BlePermissionScreen — handles denied/revoked BT permissions
-│   │   ├── settings/          # SettingsScreen (export/import, about, support stub)
+│   │   ├── settings/          # SettingsScreen (export/import, about), UserManualScreen
 │   │   └── splash/            # SplashScreen — animated dots, permission routing
 │   ├── models/                # FanDevice, FanState (ObjectBox entities)
 │   └── shared/                # AppRoutes, GoRouter config, theme
@@ -180,7 +182,8 @@ dart run build_runner build --delete-conflicting-outputs
 | 1 | Multi-fan management & persistence | ✅ Complete |
 | 1 | QR + BLE onboarding | ✅ Complete |
 | 1 | Splash screen + BT permission screen | ✅ Complete |
-| 2 | Lighting control | ⏳ Pending command bytes from Terraton |
+| 1 | In-app User Manual | ✅ Complete |
+| 2 | Lighting control (UI complete) | ⏳ Pending BLE command bytes from Terraton |
 | 2 | Remote command loading (fetch updated `commands.yaml` from URL) | 📋 Planned |
 
 ---

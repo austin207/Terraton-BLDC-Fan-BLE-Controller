@@ -4,6 +4,26 @@ All notable changes to the Terraton Fan BLE Controller are documented here.
 
 ---
 
+## [Unreleased] — Sliding Controls, User Manual & Icon Polish
+
+### Added
+- **User Manual screen** (`lib/features/settings/user_manual_screen.dart`) — full in-app manual with eight expandable sections: Getting Started, Controlling Fan Speed, Boost Mode, Operating Modes, Sleep Timer, Mood Lighting, Managing Your Fans, Troubleshooting. Each section uses numbered steps with colour-coded icons. Accessible from Settings → User Manual. Route: `AppRoutes.userManual` (`/settings/user-manual`).
+
+### Changed
+- **Sleep Timer control** (`timer_control_widget.dart`) — replaced four individual bordered pill buttons with an `AnimatedPositioned` sliding segmented control. A single white pill glides across a grey container; labels cross-fade via `AnimatedDefaultTextStyle`. Widget converted to `StatefulWidget` with optimistic local state so the pill moves instantly on tap without waiting for the BLE round-trip.
+- **Mood Lighting ON/OFF toggle** (`lighting_control_widget.dart`) — replaced blue-fill active button (`kPrimary` background, white text) with matching sliding pill segmented control. Active pill is white with `kPrimary` text and a soft drop shadow, consistent with the Sleep Timer style. Outer container is pill-shaped (`borderRadius: 50`).
+- **`FanIcon` display** — removed the `kPrimary` blue container wrapping `FanIcon` in the splash screen, permission screen, settings screen, and fan card. Icon is now displayed directly on the page background. Fan card replaced `BoxShape.circle` clip with `ClipRRect(radius: 10)` + white background to avoid cropping the square logo.
+- **Splash screen & settings footer** — "Terraton®" wordmark added (and restored after icon changes) using `GoogleFonts.poppins(w500, 0.5 letterSpacing)`, matching the logo's geometric sans-serif. Applied to both the splash screen and settings footer.
+- **Adaptive icon background** (`pubspec.yaml`) — `adaptive_icon_background` changed from `#1A56A0` (blue) to `#FFFFFF` (white) so the launcher icon shows correctly without a blue ring on Android 8+.
+
+### Fixed
+- **BLE scan permission gate** (`ble_scan_screen.dart`) — screen no longer shows "Scanning for fans…" when Bluetooth permissions are denied. Added a tri-state `bool? _permissionGranted` flag: `null` = unchecked (brief), `false` = static denied page with "Open App Settings" + "Try Again", `true` = normal scan UI.
+- **Lighting toggle pill invisible** (`lighting_control_widget.dart`) — `_LightToggle` had no explicit `width`, so inside the header `Row` (with an `Expanded` sibling) it collapsed to zero. `LayoutBuilder` received zero width → `segWidth` went negative → `AnimatedPositioned` rendered nothing, leaving unstyled "ONOFF" text. Fixed with `width: 88`.
+- **Timer slide delay** — pill previously only moved after the BLE round-trip confirmed the new timer state (1–2 s). Fixed by introducing optimistic local `_displayLabel` state that updates immediately on tap; `didUpdateWidget` reconciles with the confirmed BLE value when it arrives. `HitTestBehavior.opaque` added so the full segment area is always a tap target.
+- **App icon case-sensitivity on Android** — `Icon.png` (capital I) failed to load on Android's Linux filesystem. Renamed via two-step to `icon.png` (lowercase).
+
+---
+
 ## [Unreleased] — UI Polish V2 + BT Permission Screen
 
 ### Added
