@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
@@ -100,12 +101,12 @@ class SettingsScreen extends ConsumerWidget {
                 const FanIcon(size: 100, semanticLabel: 'Terraton fan'),
                 const SizedBox(height: 10),
                 Text(
-                  'TERRATON',
-                  style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 3.5,
-                    color: Colors.blueGrey.shade400,
-                    fontWeight: FontWeight.w700,
+                  'Terraton®',
+                  style: GoogleFonts.poppins(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.5,
+                    color: const Color(0xFF5F6368),
                   ),
                 ),
                 const SizedBox(height: 4),
