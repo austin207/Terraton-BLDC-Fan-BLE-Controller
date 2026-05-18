@@ -76,7 +76,7 @@ void goToOnboarding(BuildContext context) {
             subtitle: const Text('Scan for nearby fans'),
             onTap: () {
               Navigator.of(sheetCtx).pop();
-              context.push(AppRoutes.scanBle);
+              if (context.mounted) context.push(AppRoutes.scanBle);
             },
           ),
           ListTile(
@@ -85,7 +85,7 @@ void goToOnboarding(BuildContext context) {
             subtitle: const Text('Scan the QR code on your fan packaging'),
             onTap: () {
               Navigator.of(sheetCtx).pop();
-              context.push(AppRoutes.scanQr);
+              if (context.mounted) context.push(AppRoutes.scanQr);
             },
           ),
           const SizedBox(height: 8),

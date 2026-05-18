@@ -126,48 +126,50 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Text field — character counter shown as inline suffix
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _ctrl,
-                  builder: (context, value, _) {
-                    return TextFormField(
-                      controller: _ctrl,
-                      maxLength: 30,
-                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
-                          const SizedBox.shrink(), // hide the default below-field counter
-                      decoration: InputDecoration(
-                        hintText: 'Living Room Fan',
-                        hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        suffixText: '${value.text.length} / 30',
-                        suffixStyle: const TextStyle(
+                // Text field — character counter shown as inline suffix.
+                // ValueListenableBuilder scoped to the Text only so the entire
+                // TextFormField does not rebuild on every keystroke.
+                TextFormField(
+                  controller: _ctrl,
+                  maxLength: 30,
+                  maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
+                      const SizedBox.shrink(),
+                  decoration: InputDecoration(
+                    hintText: 'Living Room Fan',
+                    hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    suffix: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _ctrl,
+                      builder: (_, value, __) => Text(
+                        '${value.text.length} / 30',
+                        style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF94A3B8),
                           fontWeight: FontWeight.w500,
                         ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: kPrimary, width: 1.5),
-                        ),
-                        errorBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFEF4444)),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       ),
-                      validator: _validate,
-                    );
-                  },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: kPrimary, width: 1.5),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFEF4444)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  validator: _validate,
                 ),
                 const SizedBox(height: 16),
 

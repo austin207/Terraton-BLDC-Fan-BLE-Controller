@@ -104,7 +104,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Refresh scan',
-              onPressed: _startScan,
+              onPressed: () => unawaited(_startScan()),
             ),
         ],
       ),
@@ -143,7 +143,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
               ElevatedButton.icon(
                 icon: const Icon(Icons.refresh),
                 label: const Text('Refresh'),
-                onPressed: _startScan,
+                onPressed: () => unawaited(_startScan()),
               ),
             ],
           ));
@@ -215,7 +215,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                 ),
               ],
             ),
-            child: const FanIcon(size: 42),
+            child: const FanIcon(size: 42, semanticLabel: 'Terraton fan'),
           ),
           const SizedBox(height: 28),
           const Text(

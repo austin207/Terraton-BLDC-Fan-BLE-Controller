@@ -46,35 +46,41 @@ class FanRepositoryImpl implements FanRepository {
   }
 
   @override
-  Future<void> saveFan(FanDevice fan) async {
+  Future<void> saveFan(FanDevice fan) {
     _fanBox.put(fan);
+    return Future<void>.value();
   }
 
   @override
-  Future<void> updateMac(String deviceId, String macAddress) async {
+  Future<void> updateMac(String deviceId, String macAddress) {
     final fan = getFanByDeviceId(deviceId);
-    if (fan == null) return;
-    fan.macAddress = macAddress;
-    fan.lastConnectedAt = DateTime.now();
-    _fanBox.put(fan);
+    if (fan != null) {
+      fan.macAddress = macAddress;
+      fan.lastConnectedAt = DateTime.now();
+      _fanBox.put(fan);
+    }
+    return Future<void>.value();
   }
 
   @override
-  Future<void> deleteFan(String deviceId) async {
+  Future<void> deleteFan(String deviceId) {
     final fan = getFanByDeviceId(deviceId);
     if (fan != null) _fanBox.remove(fan.id);
     final st = _useQuery(
         _stateBox.query(FanState_.deviceId.equals(deviceId)).build(),
         (q) => q.findFirst());
     if (st != null) _stateBox.remove(st.id);
+    return Future<void>.value();
   }
 
   @override
-  Future<void> renameFan(String deviceId, String newNickname) async {
+  Future<void> renameFan(String deviceId, String newNickname) {
     final fan = getFanByDeviceId(deviceId);
-    if (fan == null) return;
-    fan.nickname = newNickname;
-    _fanBox.put(fan);
+    if (fan != null) {
+      fan.nickname = newNickname;
+      _fanBox.put(fan);
+    }
+    return Future<void>.value();
   }
 
   @override

@@ -69,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ],
                     ),
-                    child: const FanIcon(size: 54),
+                    child: const FanIcon(size: 54, semanticLabel: 'Terraton fan'),
                   ),
                   const SizedBox(height: 28),
                   Text(

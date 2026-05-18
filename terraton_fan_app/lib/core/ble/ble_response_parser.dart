@@ -22,6 +22,9 @@ class BleResponseParser {
     return FanResponse(command: command, data: data);
   }
 
+  // Protocol: power reported as a single byte in watts (max 255 W).
+  // Sufficient for Terraton BLDC fans (≤ 60 W typical). If Terraton updates
+  // the protocol to two bytes (like parseRpm), update to (data[0] << 8) | data[1].
   static int?  parsePowerWatts(FanResponse r) =>
       r.command == 0x23 && r.data.isNotEmpty ? r.data[0] : null;
 

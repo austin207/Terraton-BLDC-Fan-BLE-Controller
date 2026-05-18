@@ -33,7 +33,8 @@ class BleServiceImpl implements BleService {
   static const int           _maxRetries = 3;
   static const Duration      _retryDelay = Duration(seconds: 5);
 
-  bool _disposed = false;
+  bool   _disposed    = false;
+  Timer? _retryTimer;
 
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
   static final _serviceGuid = Guid(kServiceUUID);
@@ -186,7 +187,8 @@ class BleServiceImpl implements BleService {
         _setState(app.BleConnectionState.disconnected);
         if (_retryCount < _maxRetries) {
           _retryCount++;
-          unawaited(Future<void>.delayed(_retryDelay, _doConnect));
+          _retryTimer?.cancel();
+          _retryTimer = Timer(_retryDelay, () => unawaited(_doConnect()));
         }
       }
     });
@@ -199,6 +201,8 @@ class BleServiceImpl implements BleService {
   @override
   Future<void> disconnect() async {
     _retryCount = _maxRetries; // Prevent auto-reconnect on intentional disconnect
+    _retryTimer?.cancel();
+    _retryTimer = null;
     await _connStateSub?.cancel();
     _connStateSub = null;
     await _device?.disconnect();
@@ -218,6 +222,7 @@ class BleServiceImpl implements BleService {
   @override
   Future<void> dispose() async {
     _disposed = true;
+    _retryTimer?.cancel();
     try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
     await _scanResultsSub?.cancel();
     await _isScanSub?.cancel();

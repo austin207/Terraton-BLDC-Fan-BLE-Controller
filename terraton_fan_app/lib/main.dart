@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/app.dart';
@@ -17,6 +16,7 @@ Future<void> main() async {
     return true;
   };
   ErrorWidget.builder = (details) => const Material(
+    color: Colors.white,
     child: Center(
       child: Padding(
         padding: EdgeInsets.all(24),
@@ -31,17 +31,12 @@ Future<void> main() async {
 
   await CommandLoader.load();
   await initObjectBox();
-  await _requestPermissions();
+  // Permissions are requested contextually by BlePermissionScreen after the
+  // splash screen checks status. Requesting here (before any UI) shows the
+  // system dialog over a blank screen, violating Android UX guidelines.
   await _ensureBluetoothOn();
 
   runApp(const ProviderScope(child: TerratorApp()));
-}
-
-Future<void> _requestPermissions() async {
-  await [
-    Permission.bluetoothScan,
-    Permission.bluetoothConnect,
-  ].request();
 }
 
 Future<void> _ensureBluetoothOn() async {

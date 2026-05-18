@@ -121,11 +121,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
       final pFrame = BleFrameBuilder.queryPower();
       final sFrame = BleFrameBuilder.querySpeed();
-      if (pFrame != null) await _ble.writeFrame(pFrame);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      if (!mounted) return;
-      if (sFrame != null) await _ble.writeFrame(sFrame);
-      if (!mounted) return;
+      try {
+        if (pFrame != null) await _ble.writeFrame(pFrame);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        if (sFrame != null) await _ble.writeFrame(sFrame);
+        if (!mounted) return;
+      } on Object catch (_) {
+        // Fan disconnected mid-poll; connection state stream handles recovery.
+      }
     });
   }
 
@@ -141,8 +145,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   // Frame format: [0x55, 0xAA, 0x06, cmd, dataLen, data..., checksum]
   void _applyDemoFrame(List<int> frame) {
     if (frame.length < 7) return;
-    final cmd  = frame[3];
-    final data = frame[5];
+    final cmd     = frame[3];
+    final dataLen = frame[4];
+    if (frame.length < 5 + dataLen + 1) return;
+    final data    = frame[5]; // first data byte — valid for all current 1-byte commands
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
     switch (cmd) {
       case 0x02: notifier.updatePower(data == 0x01);

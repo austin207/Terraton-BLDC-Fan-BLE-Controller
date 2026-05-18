@@ -80,7 +80,7 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                     ),
                   ],
                 ),
-                child: const FanIcon(size: 46),
+                child: const FanIcon(size: 46, semanticLabel: 'Terraton fan'),
               ),
               const SizedBox(height: 32),
 

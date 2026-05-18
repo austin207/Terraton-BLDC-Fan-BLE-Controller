@@ -167,6 +167,7 @@ class _DecorativeArcPainter extends CustomPainter {
   static const double _startAngle = (90 + _gapDeg / 2) * math.pi / 180;
   static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180;
   static const double _segGap     = 0.04;
+  static const double _segAngle   = (_totalSweep - _segGap * 6) / 6;
 
   // Full-circle speed gradient: 6 arc colours + Green repeated at 360° so the
   // StrokeCap.round start cap (~6.23 rad) is never clamped to Red by TileMode.clamp.
@@ -197,7 +198,7 @@ class _DecorativeArcPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final segAngle   = (_totalSweep - _segGap * 6) / 6;
+    const segAngle   = _segAngle;
     final centre     = Offset(size.width / 2, size.height / 2);
     final radius     = size.width / 2 - 16;
     final arcRect    = Rect.fromCircle(center: centre, radius: radius);
