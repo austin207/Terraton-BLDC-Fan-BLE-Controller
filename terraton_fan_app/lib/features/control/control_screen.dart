@@ -64,7 +64,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         if (!mounted) return;
         if (widget.fan.macAddress.isEmpty && !_isDemo) {
           await repo.updateMac(widget.fan.deviceId, returnedMac);
-          widget.fan.macAddress = returnedMac; // keep in-memory copy in sync for retry attempts
+          widget.fan.macAddress = returnedMac;
           if (!mounted) return;
           ref.invalidate(savedFansProvider);
         }
@@ -152,14 +152,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     super.dispose();
   }
 
-  // In demo mode: apply the frame directly to local state instead of writing BLE.
-  // Frame format: [0x55, 0xAA, 0x06, cmd, dataLen, data..., checksum]
   void _applyDemoFrame(List<int> frame) {
     if (frame.length < 7) return;
     final cmd     = frame[3];
     final dataLen = frame[4];
     if (frame.length < 5 + dataLen + 1) return;
-    final data    = frame[5]; // first data byte — valid for all current 1-byte commands
+    final data    = frame[5];
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
     switch (cmd) {
       case 0x02: notifier.updatePower(data == 0x01);
@@ -178,7 +176,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   Future<void> _send(List<int>? frame, {String? pendingMsg}) async {
     if (frame == null) {
-      // Suppress snackbars in demo mode (lighting is locally toggled via setState)
       if (pendingMsg != null && mounted && !_isDemo) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(pendingMsg)));
@@ -192,8 +189,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     try {
       await _ble.writeFrame(frame);
     } on Object catch (_) {
-      // BLE write failed (GATT error, disconnected mid-write).
-      // The connectionStateStream handles reconnect; no user action needed here.
+      // BLE write failed; connectionStateStream handles reconnect.
     }
     if (!mounted) return;
   }
@@ -217,8 +213,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
     final connState = ref.watch(bleConnectionStateProvider).value
         ?? BleConnectionState.disconnected;
-    final enabled       = _isDemo || connState == BleConnectionState.connected;
-    final isDisconnected = !_isDemo && connState == BleConnectionState.disconnected;
+
+    // Power button is always tappable when connected/demo.
+    final enabled = _isDemo || connState == BleConnectionState.connected;
+    // All other controls require the fan to also be powered on.
+    final controlsEnabled   = enabled && fanState.isPowered;
+    final isDisconnected     = !_isDemo && connState == BleConnectionState.disconnected;
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -247,117 +247,156 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, isDisconnected ? 180 : 24),
+            padding: EdgeInsets.fromLTRB(20, 28, 20, isDisconnected ? 180 : 28),
             child: Column(
               children: [
-                _PowerButton(
-                  isPowered: fanState.isPowered,
-                  enabled: enabled,
-                  onPower: (on) => unawaited(_send(
-                    on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
-                  )),
-                ),
-                const SizedBox(height: 24),
 
-                RepaintBoundary(
-                  child: CircularSpeedDial(
-                    currentSpeed: fanState.speed,
-                    watts: fanState.lastWatts,
-                    rpm: fanState.lastRpm,
-                    enabled: enabled,
-                    isBoost: fanState.isBoost,
-                    onSpeedSelected: (s) => unawaited(_send(BleFrameBuilder.setSpeed(s))),
+                // ── Power button + hint ───────────────────────────────────
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PowerButton(
+                      isPowered: fanState.isPowered,
+                      enabled: enabled,
+                      onPower: (on) => unawaited(_send(
+                        on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
+                      )),
+                    ),
+                    const SizedBox(height: 8),
+                    // Reserve space always so the layout doesn't jump
+                    AnimatedOpacity(
+                      opacity: enabled && !fanState.isPowered ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 250),
+                      child: const Text(
+                        'Tap to turn on',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Controls — grayed out until fan is powered on ─────────
+                IgnorePointer(
+                  ignoring: !controlsEnabled,
+                  child: AnimatedOpacity(
+                    opacity: controlsEnabled ? 1.0 : 0.55,
+                    duration: const Duration(milliseconds: 300),
+                    child: Column(
+                      children: [
+
+                        // Speed dial
+                        RepaintBoundary(
+                          child: CircularSpeedDial(
+                            currentSpeed: fanState.speed,
+                            watts: fanState.lastWatts,
+                            rpm: fanState.lastRpm,
+                            enabled: controlsEnabled,
+                            isBoost: fanState.isBoost,
+                            onSpeedSelected: (s) => unawaited(_send(BleFrameBuilder.setSpeed(s))),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Boost button
+                        _BoostButton(
+                          isBoost: fanState.isBoost,
+                          enabled: controlsEnabled,
+                          onBoost: () {
+                            if (fanState.isBoost) {
+                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                                  .updateMode(null);
+                            } else {
+                              unawaited(_send(BleFrameBuilder.setBoost()));
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Operating modes card
+                        _SectionCard(
+                          header: 'OPERATING MODES',
+                          child: ModeControlWidget(
+                            activeMode: fanState.activeMode,
+                            enabled: controlsEnabled,
+                            onMode: (m) {
+                              if (fanState.activeMode == m) {
+                                ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                                    .updateMode(null);
+                                return;
+                              }
+                              final frame = switch (m) {
+                                'nature'  => BleFrameBuilder.setNature(),
+                                'reverse' => BleFrameBuilder.setReverse(),
+                                'smart'   => BleFrameBuilder.setSmart(),
+                                _         => null,
+                              };
+                              unawaited(_send(frame));
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Sleep timer card
+                        _SectionCard(
+                          header: 'SLEEP TIMER',
+                          child: TimerControlWidget(
+                            activeTimerCode: fanState.activeTimerCode,
+                            enabled: controlsEnabled,
+                            onTimer: (a) {
+                              final frame = switch (a) {
+                                '2h'  => BleFrameBuilder.timer2h(),
+                                '4h'  => BleFrameBuilder.timer4h(),
+                                '8h'  => BleFrameBuilder.timer8h(),
+                                _     => BleFrameBuilder.timerOff(),
+                              };
+                              unawaited(_send(frame));
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Lighting card (already styled)
+                        LightingControlWidget(
+                          enabled: controlsEnabled,
+                          isLightOn: _isLightOn,
+                          colorTempValue: _colorTempValue,
+                          onLightOn: () {
+                            setState(() => _isLightOn = true);
+                            unawaited(_send(BleFrameBuilder.lightOn(),
+                                pendingMsg: 'Lighting commands pending from Terraton'));
+                          },
+                          onLightOff: () {
+                            setState(() => _isLightOn = false);
+                            unawaited(_send(BleFrameBuilder.lightOff(),
+                                pendingMsg: 'Lighting commands pending from Terraton'));
+                          },
+                          onColorTemp: (v) {
+                            setState(() => _colorTempValue = v);
+                            final byte = (v * 255).round().clamp(0, 255);
+                            unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
+                                pendingMsg: 'Lighting commands pending from Terraton'));
+                          },
+                        ),
+
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
 
-                _BoostButton(
-                  isBoost: fanState.isBoost,
-                  enabled: enabled,
-                  onBoost: () {
-                    if (fanState.isBoost) {
-                      // Toggle off — no protocol cancel command; clear local state.
-                      ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                          .updateMode(null);
-                    } else {
-                      unawaited(_send(BleFrameBuilder.setBoost()));
-                    }
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                const _SectionHeader('OPERATING MODES'),
-                const SizedBox(height: 8),
-                ModeControlWidget(
-                  activeMode: fanState.activeMode,
-                  enabled: enabled,
-                  onMode: (m) {
-                    if (fanState.activeMode == m) {
-                      // Toggle off — no protocol command exists to cancel a mode;
-                      // clear local state so the button deselects visually.
-                      ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                          .updateMode(null);
-                      return;
-                    }
-                    final frame = switch (m) {
-                      'nature'  => BleFrameBuilder.setNature(),
-                      'reverse' => BleFrameBuilder.setReverse(),
-                      'smart'   => BleFrameBuilder.setSmart(),
-                      _         => null,
-                    };
-                    unawaited(_send(frame));
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                const _SectionHeader('SLEEP TIMER'),
-                const SizedBox(height: 8),
-                TimerControlWidget(
-                  activeTimerCode: fanState.activeTimerCode,
-                  enabled: enabled,
-                  onTimer: (a) {
-                    final frame = switch (a) {
-                      '2h'  => BleFrameBuilder.timer2h(),
-                      '4h'  => BleFrameBuilder.timer4h(),
-                      '8h'  => BleFrameBuilder.timer8h(),
-                      _     => BleFrameBuilder.timerOff(),
-                    };
-                    unawaited(_send(frame));
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                LightingControlWidget(
-                  enabled: enabled,
-                  isLightOn: _isLightOn,
-                  colorTempValue: _colorTempValue,
-                  onLightOn: () {
-                    setState(() => _isLightOn = true);
-                    unawaited(_send(BleFrameBuilder.lightOn(),
-                        pendingMsg: 'Lighting commands pending from Terraton'));
-                  },
-                  onLightOff: () {
-                    setState(() => _isLightOn = false);
-                    unawaited(_send(BleFrameBuilder.lightOff(),
-                        pendingMsg: 'Lighting commands pending from Terraton'));
-                  },
-                  onColorTemp: (v) {
-                    setState(() => _colorTempValue = v);
-                    final byte = (v * 255).round().clamp(0, 255);
-                    unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
-                        pendingMsg: 'Lighting commands pending from Terraton'));
-                  },
-                ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
 
+          // ── Connection lost overlay ───────────────────────────────────
           if (isDisconnected)
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: 0, left: 0, right: 0,
               child: ConnectionLostCard(onRetry: _connect),
             ),
         ],
@@ -380,26 +419,56 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 }
 
+// ── Section card ──────────────────────────────────────────────────────────────
+
+class _SectionCard extends StatelessWidget {
+  final String header;
+  final Widget child;
+  const _SectionCard({required this.header, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(header),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader(this.label);
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF6B7F95),
-          letterSpacing: 1.2,
-        ),
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: Color(0xFF6B7F95),
+        letterSpacing: 1.2,
       ),
     );
   }
 }
+
+// ── Power button ──────────────────────────────────────────────────────────────
 
 class _PowerButton extends StatelessWidget {
   final bool isPowered;
@@ -419,32 +488,47 @@ class _PowerButton extends StatelessWidget {
       label: 'Power',
       value: isPowered ? 'on' : 'off',
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 72,
-        height: 72,
+        duration: const Duration(milliseconds: 300),
+        width: 92,
+        height: 92,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isPowered ? kPrimary : Colors.grey.shade300,
-          boxShadow: isPowered
-              ? [BoxShadow(color: kPrimary.withAlpha(80), blurRadius: 20, spreadRadius: 2)]
-              : null,
+          color: isPowered ? kPrimary.withAlpha(14) : const Color(0xFFF1F5F9),
+          border: Border.all(
+            color: isPowered ? kPrimary.withAlpha(55) : const Color(0xFFE2E8F0),
+            width: 1.5,
+          ),
         ),
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled
-                ? () {
-                    unawaited(HapticFeedback.lightImpact());
-                    onPower(!isPowered);
-                  }
-                : null,
-            child: Icon(
-              Icons.power_settings_new,
-              size: 32,
-              color: isPowered ? Colors.white : Colors.grey.shade500,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 66,
+            height: 66,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isPowered ? kPrimary : Colors.white,
+              boxShadow: isPowered
+                  ? [BoxShadow(color: kPrimary.withAlpha(80), blurRadius: 18, spreadRadius: 2)]
+                  : [BoxShadow(color: Colors.black.withAlpha(14), blurRadius: 8, offset: const Offset(0, 2))],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: enabled
+                    ? () {
+                        unawaited(HapticFeedback.lightImpact());
+                        onPower(!isPowered);
+                      }
+                    : null,
+                child: Icon(
+                  Icons.power_settings_new,
+                  size: 30,
+                  color: isPowered ? Colors.white : Colors.grey.shade400,
+                ),
+              ),
             ),
           ),
         ),
@@ -452,6 +536,8 @@ class _PowerButton extends StatelessWidget {
     );
   }
 }
+
+// ── Boost button ──────────────────────────────────────────────────────────────
 
 class _BoostButton extends StatefulWidget {
   final bool isBoost;
@@ -487,8 +573,7 @@ class _BoostButtonState extends State<_BoostButton>
   @override
   void didUpdateWidget(_BoostButton old) {
     super.didUpdateWidget(old);
-    final wasShimmer = old.isBoost && old.enabled; // previous widget's state
-    // _showShimmer reads widget.* (the new widget) — already updated by the framework
+    final wasShimmer = old.isBoost && old.enabled;
     if (_showShimmer && !wasShimmer) {
       _shimmerCtrl.repeat();
     } else if (!_showShimmer && wasShimmer) {
@@ -525,7 +610,6 @@ class _BoostButtonState extends State<_BoostButton>
           child: LayoutBuilder(
             builder: (_, constraints) => AnimatedBuilder(
               animation: _shimmerCtrl,
-              // child is built once per _BoostButtonState rebuild (not per frame)
               child: _BoostLabel(enabled: widget.enabled),
               builder: (_, child) {
                 if (!_showShimmer) {
@@ -542,7 +626,6 @@ class _BoostButtonState extends State<_BoostButton>
                   );
                 }
 
-                // Sharp gradient background + moving shimmer stripe
                 const shimmerW = 90.0;
                 final shimX = _shimmerCtrl.value *
                     (constraints.maxWidth + shimmerW) -

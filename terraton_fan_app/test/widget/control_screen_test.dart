@@ -98,6 +98,17 @@ void main() {
     await tester.pump();       // widget rebuilds with enabled=true
   }
 
+  // Pump connected AND simulate a power-on BLE notification so that
+  // controlsEnabled = true (controls require isPowered as well as connected).
+  // Power-on response frame: [55 AA 07 02 01 01 0B]
+  //   checksum = (0x07 + 0x02 + 0x01 + 0x01) & 0xFF = 0x0B
+  Future<void> pumpPoweredOn(WidgetTester tester) async {
+    await pumpConnected(tester);
+    notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0B]);
+    await tester.pump(); // notification delivered → updatePower(true)
+    await tester.pump(); // widget rebuilds with controlsEnabled = true
+  }
+
   // ── Helpers — invoke widget callbacks directly ─────────────────────────────
   // CircularSpeedDial: six GestureDetectors share the same pixel centre, so
   //   tester.tap() hits the overlaid Column instead of an arc segment.
@@ -138,7 +149,7 @@ void main() {
   // ── Boost ──────────────────────────────────────────────────────────────────
 
   testWidgets('boost sends correct frame', (tester) async {
-    await pumpConnected(tester);
+    await pumpPoweredOn(tester); // controls require isPowered; use powered-on helper
 
     final dial = tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
     expect(dial.enabled, true, reason: 'dial must be enabled in connected state');
