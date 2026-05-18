@@ -55,33 +55,10 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: kPrimary,
-                      borderRadius: BorderRadius.circular(26),
-                      boxShadow: [
-                        BoxShadow(
-                          color: kPrimary.withAlpha(70),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: const FanIcon(size: 54, semanticLabel: 'Terraton fan'),
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'Terraton®',
-                    style: GoogleFonts.poppins(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
-                      color: const Color(0xFF5F6368),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
+                  // Logo — shown directly on the light background; no coloured box
+                  // so the icon's own white background blends with kBackground.
+                  const FanIcon(size: 180, semanticLabel: 'Terraton fan'),
+                  const SizedBox(height: 20),
                   Text(
                     'SMART BLDC FAN CONTROL',
                     style: GoogleFonts.poppins(
