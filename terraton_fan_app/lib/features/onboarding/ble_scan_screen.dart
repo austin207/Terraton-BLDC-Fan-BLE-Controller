@@ -158,7 +158,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             final alreadyAdded = savedMacs.contains(fan.macAddress);
             return Card(
               child: ListTile(
-                leading: const FanIcon(size: 24),
+                leading: const ExcludeSemantics(child: FanIcon(size: 24)),
                 title: Text(fan.name),
                 subtitle: Text(fan.macAddress),
                 trailing: alreadyAdded

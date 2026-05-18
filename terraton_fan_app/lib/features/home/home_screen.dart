@@ -9,7 +9,7 @@ import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/router.dart';
 import 'package:terraton_fan_app/features/home/fan_card.dart';
 
-FanDevice _demoFan() => FanDevice()
+final _kDemoFan = FanDevice()
   ..deviceId   = '__demo__'
   ..macAddress = ''
   ..nickname   = 'Living Room Fan'
@@ -56,7 +56,7 @@ class _FanList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayFans = showDemo ? [_demoFan()] : fans;
+    final displayFans = showDemo ? [_kDemoFan] : fans;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
