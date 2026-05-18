@@ -1,4 +1,5 @@
 // lib/features/permission/ble_permission_screen.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -123,7 +124,7 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: openAppSettings,
+                    onPressed: () => unawaited(openAppSettings()),
                     icon: const Icon(Icons.settings_outlined, size: 18),
                     label: const Text('Open App Settings'),
                   ),

@@ -1,4 +1,5 @@
 // lib/shared/router.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
@@ -56,7 +57,7 @@ final appRouter = GoRouter(
 
 /// Shows a bottom sheet letting the user pick QR scan or BLE scan.
 void goToOnboarding(BuildContext context) {
-  showModalBottomSheet<void>(
+  unawaited(showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -76,7 +77,10 @@ void goToOnboarding(BuildContext context) {
             subtitle: const Text('Scan for nearby fans'),
             onTap: () {
               Navigator.of(sheetCtx).pop();
-              if (context.mounted) context.push(AppRoutes.scanBle);
+              // context is the outer screen's BuildContext (captured by the caller).
+              // sheetCtx is invalid after pop, so GoRouter navigation uses context.
+              // The mounted guard silently no-ops if the caller was removed.
+              if (context.mounted) unawaited(context.push(AppRoutes.scanBle));
             },
           ),
           ListTile(
@@ -85,12 +89,12 @@ void goToOnboarding(BuildContext context) {
             subtitle: const Text('Scan the QR code on your fan packaging'),
             onTap: () {
               Navigator.of(sheetCtx).pop();
-              if (context.mounted) context.push(AppRoutes.scanQr);
+              if (context.mounted) unawaited(context.push(AppRoutes.scanQr));
             },
           ),
           const SizedBox(height: 8),
         ],
       ),
     ),
-  );
+  ));
 }

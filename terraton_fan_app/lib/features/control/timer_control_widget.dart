@@ -1,4 +1,5 @@
 // lib/features/control/timer_control_widget.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -33,7 +34,7 @@ class TimerControlWidget extends StatelessWidget {
               child: GestureDetector(
                 onTap: enabled
                     ? () {
-                        HapticFeedback.lightImpact();
+                        unawaited(HapticFeedback.lightImpact());
                         onTimer(label.toLowerCase());
                       }
                     : null,

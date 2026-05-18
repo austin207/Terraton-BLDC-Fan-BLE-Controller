@@ -21,3 +21,4 @@ linter:
     always_use_package_imports: true
     cancel_subscriptions: true
     close_sinks: true
+    discarded_futures: true

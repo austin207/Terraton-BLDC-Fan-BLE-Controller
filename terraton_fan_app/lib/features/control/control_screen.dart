@@ -36,6 +36,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
 
+  bool _connecting = false;
+
   bool get _isDemo => widget.fan.deviceId == '__demo__';
 
   @override
@@ -48,32 +50,38 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   Future<void> _connect() async {
-    final repo = ref.read(fanRepositoryProvider);
-    final mac  = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
-
-    await _ble.startScan(targetMac: mac, timeoutSeconds: 10);
-    if (!mounted) return;
-
+    if (_connecting) return;
+    _connecting = true;
     try {
-      final returnedMac = await _ble.connect();
-      if (!mounted) return;
-      if (widget.fan.macAddress.isEmpty && !_isDemo) {
-        await repo.updateMac(widget.fan.deviceId, returnedMac);
-        widget.fan.macAddress = returnedMac; // keep in-memory copy in sync for retry attempts
-        if (!mounted) return;
-        ref.invalidate(savedFansProvider);
-      }
-    } on Object catch (_) {
-      if (!mounted) return;
-      return;
-    }
+      final repo = ref.read(fanRepositoryProvider);
+      final mac  = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
 
-    _startTelemetry();
-    _subscribeNotify();
+      await _ble.startScan(targetMac: mac, timeoutSeconds: 10);
+      if (!mounted) return;
+
+      try {
+        final returnedMac = await _ble.connect();
+        if (!mounted) return;
+        if (widget.fan.macAddress.isEmpty && !_isDemo) {
+          await repo.updateMac(widget.fan.deviceId, returnedMac);
+          widget.fan.macAddress = returnedMac; // keep in-memory copy in sync for retry attempts
+          if (!mounted) return;
+          ref.invalidate(savedFansProvider);
+        }
+      } on Object catch (_) {
+        if (!mounted) return;
+        return;
+      }
+
+      _startTelemetry();
+      _subscribeNotify();
+    } finally {
+      _connecting = false;
+    }
   }
 
   void _subscribeNotify() {
-    _notifySub?.cancel();
+    unawaited(_notifySub?.cancel() ?? Future<void>.value());
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
       final response = BleResponseParser.parse(bytes);
@@ -136,7 +144,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   @override
   void dispose() {
     _telemetryTimer?.cancel();
-    _notifySub?.cancel();
+    unawaited(_notifySub?.cancel() ?? Future<void>.value());
     if (!_isDemo) unawaited(_ble.disconnect());
     super.dispose();
   }
@@ -178,7 +186,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _applyDemoFrame(frame);
       return;
     }
-    await _ble.writeFrame(frame);
+    try {
+      await _ble.writeFrame(frame);
+    } on Object catch (_) {
+      // BLE write failed (GATT error, disconnected mid-write).
+      // The connectionStateStream handles reconnect; no user action needed here.
+    }
     if (!mounted) return;
   }
 
@@ -237,9 +250,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 _PowerButton(
                   isPowered: fanState.isPowered,
                   enabled: enabled,
-                  onPower: (on) => _send(
+                  onPower: (on) => unawaited(_send(
                     on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
-                  ),
+                  )),
                 ),
                 const SizedBox(height: 24),
 
@@ -250,7 +263,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     rpm: fanState.lastRpm,
                     enabled: enabled,
                     isBoost: fanState.isBoost,
-                    onSpeedSelected: (s) => _send(BleFrameBuilder.setSpeed(s)),
+                    onSpeedSelected: (s) => unawaited(_send(BleFrameBuilder.setSpeed(s))),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -264,7 +277,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                       ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
                           .updateMode(null);
                     } else {
-                      _send(BleFrameBuilder.setBoost());
+                      unawaited(_send(BleFrameBuilder.setBoost()));
                     }
                   },
                 ),
@@ -289,7 +302,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                       'smart'   => BleFrameBuilder.setSmart(),
                       _         => null,
                     };
-                    _send(frame);
+                    unawaited(_send(frame));
                   },
                 ),
                 const SizedBox(height: 20),
@@ -306,7 +319,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                       '8h'  => BleFrameBuilder.timer8h(),
                       _     => BleFrameBuilder.timerOff(),
                     };
-                    _send(frame);
+                    unawaited(_send(frame));
                   },
                 ),
                 const SizedBox(height: 20),
@@ -317,19 +330,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   colorTempValue: _colorTempValue,
                   onLightOn: () {
                     setState(() => _isLightOn = true);
-                    _send(BleFrameBuilder.lightOn(),
-                        pendingMsg: 'Lighting commands pending from Terraton');
+                    unawaited(_send(BleFrameBuilder.lightOn(),
+                        pendingMsg: 'Lighting commands pending from Terraton'));
                   },
                   onLightOff: () {
                     setState(() => _isLightOn = false);
-                    _send(BleFrameBuilder.lightOff(),
-                        pendingMsg: 'Lighting commands pending from Terraton');
+                    unawaited(_send(BleFrameBuilder.lightOff(),
+                        pendingMsg: 'Lighting commands pending from Terraton'));
                   },
                   onColorTemp: (v) {
                     setState(() => _colorTempValue = v);
-                    final byte = (v * 255).round();
-                    _send(BleFrameBuilder.lightColorTemp(byte),
-                        pendingMsg: 'Lighting commands pending from Terraton');
+                    final byte = (v * 255).round().clamp(0, 255);
+                    unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
+                        pendingMsg: 'Lighting commands pending from Terraton'));
                   },
                 ),
                 const SizedBox(height: 8),
@@ -421,7 +434,7 @@ class _PowerButton extends StatelessWidget {
             customBorder: const CircleBorder(),
             onTap: enabled
                 ? () {
-                    HapticFeedback.lightImpact();
+                    unawaited(HapticFeedback.lightImpact());
                     onPower(!isPowered);
                   }
                 : null,
@@ -471,7 +484,8 @@ class _BoostButtonState extends State<_BoostButton>
   @override
   void didUpdateWidget(_BoostButton old) {
     super.didUpdateWidget(old);
-    final wasShimmer = old.isBoost && old.enabled;
+    final wasShimmer = old.isBoost && old.enabled; // previous widget's state
+    // _showShimmer reads widget.* (the new widget) — already updated by the framework
     if (_showShimmer && !wasShimmer) {
       _shimmerCtrl.repeat();
     } else if (!_showShimmer && wasShimmer) {
@@ -498,7 +512,7 @@ class _BoostButtonState extends State<_BoostButton>
         key: const ValueKey('boost_button'),
         onTap: widget.enabled
             ? () {
-                HapticFeedback.lightImpact();
+                unawaited(HapticFeedback.lightImpact());
                 widget.onBoost();
               }
             : null,

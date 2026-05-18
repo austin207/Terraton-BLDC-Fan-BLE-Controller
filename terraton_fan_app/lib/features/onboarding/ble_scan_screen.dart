@@ -83,7 +83,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
 
   @override
   void dispose() {
-    _sub?.cancel();
+    unawaited(_sub?.cancel() ?? Future<void>.value());
     _timeout?.cancel();
     unawaited(ref.read(bleServiceProvider).stopScan());
     super.dispose();
@@ -185,7 +185,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                     ..macAddress = fan.macAddress
                     ..nickname   = ''
                     ..addedAt    = DateTime.now();
-                  context.push(AppRoutes.nameFan, extra: device);
+                  unawaited(context.push(AppRoutes.nameFan, extra: device));
                 },
               ),
             );
@@ -243,7 +243,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: openAppSettings,
+              onPressed: () => unawaited(openAppSettings()),
               icon: const Icon(Icons.settings_outlined, size: 18),
               label: const Text('Open App Settings'),
             ),

@@ -1,4 +1,5 @@
 // lib/features/control/lighting_control_widget.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -71,8 +72,8 @@ class LightingControlWidget extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _ToggleBtn(label: 'ON',  active: isLightOn,  isLeft: true,  enabled: enabled, onTap: () { HapticFeedback.lightImpact(); onLightOn();  }),
-                    _ToggleBtn(label: 'OFF', active: !isLightOn, isLeft: false, enabled: enabled, onTap: () { HapticFeedback.lightImpact(); onLightOff(); }),
+                    _ToggleBtn(label: 'ON',  active: isLightOn,  isLeft: true,  enabled: enabled, onTap: () { unawaited(HapticFeedback.lightImpact()); onLightOn();  }),
+                    _ToggleBtn(label: 'OFF', active: !isLightOn, isLeft: false, enabled: enabled, onTap: () { unawaited(HapticFeedback.lightImpact()); onLightOff(); }),
                   ],
                 ),
               ),

@@ -1,4 +1,5 @@
 // lib/features/control/circular_speed_dial.dart
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -111,7 +112,7 @@ class CircularSpeedDial extends StatelessWidget {
                 child: GestureDetector(
                   onTap: enabled
                       ? () {
-                          HapticFeedback.lightImpact();
+                          unawaited(HapticFeedback.lightImpact());
                           onSpeedSelected(speed);
                         }
                       : null,

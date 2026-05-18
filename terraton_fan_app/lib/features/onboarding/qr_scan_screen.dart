@@ -58,7 +58,7 @@ class _QrScanScreenState extends State<QrScanScreen>
   }
 
   void _showPermissionDialog() {
-    showDialog<void>(
+    unawaited(showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Camera Permission Required'),
@@ -70,12 +70,12 @@ class _QrScanScreenState extends State<QrScanScreen>
           TextButton(
               onPressed: () {
                 Navigator.of(dialogCtx).pop();
-                openAppSettings();
+                unawaited(openAppSettings());
               },
               child: const Text('Open Settings')),
         ],
       ),
-    );
+    ));
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -133,7 +133,7 @@ class _QrScanScreenState extends State<QrScanScreen>
   @override
   void dispose() {
     _scanAnim.dispose();
-    _ctrl.dispose();
+    unawaited(_ctrl.dispose());
     super.dispose();
   }
 
@@ -250,7 +250,7 @@ class _QrScanScreenState extends State<QrScanScreen>
 
             // ── Torch toggle ─────────────────────────────────────────────────
             GestureDetector(
-              onTap: () {
+              onTap: !_cameraReady ? null : () {
                 setState(() => _torchOn = !_torchOn);
                 unawaited(_ctrl.toggleTorch());
               },

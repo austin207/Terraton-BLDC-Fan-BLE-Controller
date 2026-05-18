@@ -1,4 +1,5 @@
 // lib/features/control/mode_control_widget.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -37,7 +38,7 @@ class ModeControlWidget extends StatelessWidget {
               child: GestureDetector(
                 onTap: enabled
                     ? () {
-                        HapticFeedback.lightImpact();
+                        unawaited(HapticFeedback.lightImpact());
                         onMode(entry.$1);
                       }
                     : null,

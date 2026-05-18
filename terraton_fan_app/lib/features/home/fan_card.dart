@@ -1,4 +1,5 @@
 // lib/features/home/fan_card.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,7 +32,7 @@ class FanCard extends ConsumerWidget {
                   width: 52,
                   height: 52,
                   color: Colors.white,
-                  child: const FanIcon(size: 52),
+                  child: const ExcludeSemantics(child: FanIcon(size: 52)),
                 ),
               ),
               const SizedBox(width: 14),
@@ -75,7 +76,7 @@ class FanCard extends ConsumerWidget {
   }
 
   void _showOptions(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
+    unawaited(showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -140,11 +141,11 @@ class FanCard extends ConsumerWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 
   void _showRenameDialog(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<String>(
+    unawaited(showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -157,11 +158,11 @@ class FanCard extends ConsumerWidget {
         await ref.read(fanRepositoryProvider).renameFan(fan.deviceId, name);
         if (context.mounted) ref.invalidate(savedFansProvider);
       }
-    });
+    }));
   }
 
   void _confirmDelete(BuildContext context, WidgetRef ref) {
-    showDialog<bool>(
+    unawaited(showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Remove Device?'),
@@ -182,7 +183,7 @@ class FanCard extends ConsumerWidget {
         await ref.read(fanRepositoryProvider).deleteFan(fan.deviceId);
         if (context.mounted) ref.invalidate(savedFansProvider);
       }
-    });
+    }));
   }
 }
 
