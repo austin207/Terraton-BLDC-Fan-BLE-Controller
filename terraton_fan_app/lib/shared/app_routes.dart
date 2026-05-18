@@ -8,4 +8,5 @@ abstract final class AppRoutes {
   static const nameFan            = '/name-fan';
   static const control            = '/control';
   static const settings           = '/settings';
+  static const userManual         = '/settings/user-manual';
 }

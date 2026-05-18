@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -86,10 +88,7 @@ class SettingsScreen extends ConsumerWidget {
               iconBg: const Color(0xFFFFFBEB),
               iconColor: const Color(0xFFD97706),
               title: 'User Manual',
-              trailingWidget: const Icon(Icons.open_in_new_rounded, size: 16, color: Color(0xFF94A3B8)),
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('User Manual coming soon.')),
-              ),
+              onTap: () => context.push(AppRoutes.userManual),
             ),
           ]),
 

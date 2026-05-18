@@ -62,20 +62,12 @@ class LightingControlWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              // Segmented ON / OFF toggle
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.all(2),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _ToggleBtn(label: 'ON',  active: isLightOn,  isLeft: true,  enabled: enabled, onTap: () { unawaited(HapticFeedback.lightImpact()); onLightOn();  }),
-                    _ToggleBtn(label: 'OFF', active: !isLightOn, isLeft: false, enabled: enabled, onTap: () { unawaited(HapticFeedback.lightImpact()); onLightOff(); }),
-                  ],
-                ),
+              // Segmented ON / OFF toggle — sliding pill
+              _LightToggle(
+                isOn: isLightOn,
+                enabled: enabled,
+                onLightOn: onLightOn,
+                onLightOff: onLightOff,
               ),
             ],
           ),
@@ -154,53 +146,102 @@ class LightingControlWidget extends StatelessWidget {
   }
 }
 
-class _ToggleBtn extends StatelessWidget {
-  final String label;
-  final bool active;
-  final bool isLeft;
+class _LightToggle extends StatelessWidget {
+  final bool isOn;
   final bool enabled;
-  final VoidCallback onTap;
+  final VoidCallback onLightOn;
+  final VoidCallback onLightOff;
 
-  const _ToggleBtn({
-    required this.label,
-    required this.active,
-    required this.isLeft,
+  static const _labels = ['ON', 'OFF'];
+
+  const _LightToggle({
+    required this.isOn,
     required this.enabled,
-    required this.onTap,
+    required this.onLightOn,
+    required this.onLightOff,
   });
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.horizontal(
-      left:  isLeft  ? const Radius.circular(6) : Radius.zero,
-      right: !isLeft ? const Radius.circular(6) : Radius.zero,
-    );
-    return Semantics(
-      button: true,
-      label: '$label light',
-      selected: active,
-      enabled: enabled,
-      child: GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? kPrimary : Colors.transparent,
-          borderRadius: radius,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: active
-                ? Colors.white
-                : (enabled ? const Color(0xFF64748B) : const Color(0xFFCBD5E1)),
-          ),
-        ),
+    final activeIndex = isOn ? 0 : 1;
+
+    return Container(
+      width: 88,
+      height: 34,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(50),
       ),
-    ),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final segWidth = (constraints.maxWidth - 6) / _labels.length;
+          return Stack(
+            children: [
+              // ── Sliding white pill ────────────────────────────────────
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                left: 3 + activeIndex * segWidth,
+                top: 3,
+                bottom: 3,
+                width: segWidth,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(50),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(20),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // ── Labels (above the pill) ───────────────────────────────
+              Row(
+                children: _labels.asMap().entries.map((e) {
+                  final label    = e.value;
+                  final isActive = e.key == activeIndex;
+                  return Expanded(
+                    child: Semantics(
+                      button: true,
+                      label: '$label light',
+                      selected: isActive,
+                      enabled: enabled,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: enabled
+                            ? () {
+                                unawaited(HapticFeedback.lightImpact());
+                                (label == 'ON' ? onLightOn : onLightOff)();
+                              }
+                            : null,
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 200),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isActive
+                                  ? kPrimary
+                                  : (enabled
+                                      ? const Color(0xFF64748B)
+                                      : const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(label),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
