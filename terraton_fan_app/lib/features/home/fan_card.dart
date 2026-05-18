@@ -23,51 +23,62 @@ class FanCard extends ConsumerWidget {
         onTap: () => unawaited(context.push(AppRoutes.control, extra: fan)),
         onLongPress: () => _showOptions(context, ref),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  color: Colors.white,
-                  child: const ExcludeSemantics(child: FanIcon(size: 52)),
+              // ── Fan icon — framed container ───────────────────────────
+              Container(
+                width: 54,
+                height: 54,
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
+                child: const ExcludeSemantics(child: FanIcon(size: 40)),
               ),
+
               const SizedBox(width: 14),
+
+              // ── Fan info ──────────────────────────────────────────────
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       fan.nickname,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                        letterSpacing: -0.2,
+                      ),
                     ),
-                    if (fan.model.isNotEmpty)
-                      Text(fan.model, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF94A3B8),
-                            shape: BoxShape.circle,
-                          ),
+                    if (fan.model.isNotEmpty) ...[
+                      const SizedBox(height: 1),
+                      Text(
+                        fan.model,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
                         ),
-                        const SizedBox(width: 5),
-                        const Text(
-                          'Disconnected',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    // ── Status pill badge ─────────────────────────────
+                    _StatusBadge(isDemo: fan.deviceId == '__demo__'),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade400),
+
+              // ── Chevron ───────────────────────────────────────────────
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Color(0xFFCBD5E1),
+              ),
             ],
           ),
         ),
@@ -186,6 +197,63 @@ class FanCard extends ConsumerWidget {
     }));
   }
 }
+
+// ── Status pill badge ─────────────────────────────────────────────────────────
+
+class _StatusBadge extends StatelessWidget {
+  final bool isDemo;
+  const _StatusBadge({required this.isDemo});
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color dot, Color bg, Color border, Color text, String label) = isDemo
+        ? (
+            const Color(0xFFF59E0B),
+            const Color(0xFFFFFBEB),
+            const Color(0xFFFDE68A),
+            const Color(0xFFB45309),
+            'Demo',
+          )
+        : (
+            const Color(0xFF94A3B8),
+            const Color(0xFFF1F5F9),
+            const Color(0xFFE2E8F0),
+            const Color(0xFF64748B),
+            'Disconnected',
+          );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: text,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Rename sheet ──────────────────────────────────────────────────────────────
 
 class _RenameSheet extends StatefulWidget {
   final String initialName;
