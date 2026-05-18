@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
@@ -71,23 +72,23 @@ class _SplashScreenState extends State<SplashScreen>
                     child: const FanIcon(size: 54),
                   ),
                   const SizedBox(height: 28),
-                  const Text(
-                    'TERRATON',
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 4,
-                      color: Color(0xFF1A2C4E),
+                  Text(
+                    'Terraton®',
+                    style: GoogleFonts.poppins(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.5,
+                      color: const Color(0xFF5F6368),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     'SMART BLDC FAN CONTROL',
-                    style: TextStyle(
-                      fontSize: 12,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
                       letterSpacing: 2.5,
-                      color: Colors.blueGrey[500],
-                      fontWeight: FontWeight.w500,
+                      color: Colors.blueGrey.shade400,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
