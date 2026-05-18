@@ -97,15 +97,7 @@ class SettingsScreen extends ConsumerWidget {
           Center(
             child: Column(
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: kPrimary,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const FanIcon(size: 26),
-                ),
+                const FanIcon(size: 100, semanticLabel: 'Terraton fan'),
                 const SizedBox(height: 10),
                 Text(
                   'TERRATON',
