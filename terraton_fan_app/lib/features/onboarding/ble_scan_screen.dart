@@ -28,10 +28,12 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   bool? _permissionGranted;
   StreamSubscription<List<DiscoveredFan>>? _sub;
   Timer? _timeout;
+  late BleService _ble;
 
   @override
   void initState() {
     super.initState();
+    _ble = ref.read(bleServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkPermissionAndScan());
   }
 
@@ -59,11 +61,10 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     }
 
     setState(() { _scanning = true; _timedOut = false; _results = []; });
-    final ble = ref.read(bleServiceProvider);
 
     await _sub?.cancel();
     if (!mounted) return;
-    _sub = ble.scanResultsStream.listen((fans) {
+    _sub = _ble.scanResultsStream.listen((fans) {
       if (mounted) setState(() => _results = fans);
     });
 
@@ -73,8 +74,9 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     });
 
     try {
-      await ble.startScan(timeoutSeconds: 15);
+      await _ble.startScan(timeoutSeconds: 15);
     } on Object catch (_) {
+      _timeout?.cancel();
       if (mounted) setState(() { _scanning = false; _timedOut = true; });
       return;
     }
@@ -85,7 +87,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   void dispose() {
     unawaited(_sub?.cancel() ?? Future<void>.value());
     _timeout?.cancel();
-    unawaited(ref.read(bleServiceProvider).stopScan());
+    unawaited(_ble.stopScan());
     super.dispose();
   }
 

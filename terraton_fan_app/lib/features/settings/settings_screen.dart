@@ -129,6 +129,7 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final json = ref.read(fanRepositoryProvider).exportToJson();
     final dir  = await getTemporaryDirectory();
+    if (!context.mounted) return;
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final tmp = File('${dir.path}/terraton_fans_$timestamp.json');
     await tmp.writeAsString(json);

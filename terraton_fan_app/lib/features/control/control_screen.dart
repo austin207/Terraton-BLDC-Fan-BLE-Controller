@@ -73,6 +73,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         return;
       }
 
+      if (!mounted) return;
+      _lastWattsAt = null;
+      _lastRpmAt   = null;
       _startTelemetry();
       _subscribeNotify();
     } finally {
@@ -237,7 +240,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onPressed: () => context.push(AppRoutes.settings),
+            onPressed: () => unawaited(context.push(AppRoutes.settings)),
           ),
         ],
       ),

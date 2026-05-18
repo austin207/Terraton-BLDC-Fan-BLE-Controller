@@ -20,7 +20,7 @@ class FanCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push(AppRoutes.control, extra: fan),
+        onTap: () => unawaited(context.push(AppRoutes.control, extra: fan)),
         onLongPress: () => _showOptions(context, ref),
         child: Padding(
           padding: const EdgeInsets.all(16),
