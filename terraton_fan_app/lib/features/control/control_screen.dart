@@ -38,6 +38,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   bool _connecting = false;
 
+  // Debug
+  List<int>? _lastSentFrame;
+  List<int>? _lastReceivedFrame;
+  String _lastSentLabel = '';
+
   bool get _isDemo => widget.fan.deviceId == '__demo__';
 
   @override
@@ -87,6 +92,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
+      setState(() => _lastReceivedFrame = bytes);
       final response = BleResponseParser.parse(bytes);
       if (response == null) return;
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
@@ -178,7 +184,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     }
   }
 
-  Future<void> _send(List<int>? frame, {String? pendingMsg}) async {
+  Future<void> _send(List<int>? frame, {String? pendingMsg, String label = ''}) async {
     if (frame == null) {
       if (pendingMsg != null && mounted && !_isDemo) {
         ScaffoldMessenger.of(context)
@@ -186,6 +192,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
       return;
     }
+    if (mounted) setState(() { _lastSentFrame = frame; _lastSentLabel = label; });
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
@@ -268,6 +275,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             .updatePower(on);
                         unawaited(_send(
                           on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
+                          label: on ? 'Power ON' : 'Power OFF',
                         ));
                       },
                     ),
@@ -310,7 +318,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             onSpeedSelected: (s) {
                               ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
                                   .updateSpeed(s);
-                              unawaited(_send(BleFrameBuilder.setSpeed(s)));
+                              unawaited(_send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
                             },
                           ),
                         ),
@@ -326,7 +334,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                               notifier.updateMode(null);
                             } else {
                               notifier.updateMode('boost');
-                              unawaited(_send(BleFrameBuilder.setBoost()));
+                              unawaited(_send(BleFrameBuilder.setBoost(), label: 'Boost'));
                             }
                           },
                         ),
@@ -351,7 +359,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                                 'smart'   => BleFrameBuilder.setSmart(),
                                 _         => null,
                               };
-                              unawaited(_send(frame));
+                              unawaited(_send(frame, label: 'Mode: $m'));
                             },
                           ),
                         ),
@@ -378,7 +386,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                                 '8h'  => BleFrameBuilder.timer8h(),
                                 _     => BleFrameBuilder.timerOff(),
                               };
-                              unawaited(_send(frame));
+                              unawaited(_send(frame, label: 'Timer: $a'));
                             },
                           ),
                         ),
@@ -405,6 +413,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
                                 pendingMsg: 'Lighting commands pending from Terraton'));
                           },
+                        ),
+
+                        // ── Debug card ────────────────────────────────────
+                        const SizedBox(height: 16),
+                        _DebugCard(
+                          sentFrame: _lastSentFrame,
+                          sentLabel: _lastSentLabel,
+                          receivedFrame: _lastReceivedFrame,
                         ),
 
                       ],
@@ -439,6 +455,166 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       BleConnectionState.disconnected => ('DISCONNECTED',  Colors.black45),
     };
     return Text(text, style: TextStyle(fontSize: 11, color: color, letterSpacing: 0.5));
+  }
+}
+
+// ── Debug card ────────────────────────────────────────────────────────────────
+
+class _DebugCard extends StatelessWidget {
+  final List<int>? sentFrame;
+  final String sentLabel;
+  final List<int>? receivedFrame;
+
+  const _DebugCard({
+    required this.sentFrame,
+    required this.sentLabel,
+    required this.receivedFrame,
+  });
+
+  static String _hex(List<int> bytes) =>
+      bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0').toUpperCase()}').join('  ');
+
+  static String _frameLabel(List<int> bytes) {
+    if (bytes.length < 4) return '';
+    final cmd = bytes[3];
+    final data = bytes.length > 5 ? bytes[5] : null;
+    return switch (cmd) {
+      0x02 => data == 0x01 ? 'Power ON' : 'Power OFF',
+      0x04 => 'Speed ${data ?? '?'}',
+      0x21 => switch (data) {
+        0x01 => 'Boost',
+        0x02 => 'Nature',
+        0x03 => 'Reverse',
+        0x04 => 'Smart',
+        _    => 'Mode ?',
+      },
+      0x22 => switch (data) {
+        0x00 => 'Timer OFF',
+        0x02 => 'Timer 2h',
+        0x04 => 'Timer 4h',
+        0x08 => 'Timer 8h',
+        _    => 'Timer ?',
+      },
+      0x23 => 'Query Power',
+      0x24 => 'Query Speed',
+      _    => 'cmd=0x${cmd.toRadixString(16).toUpperCase()}',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1E3A5F)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E3A5F),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('DEBUG', style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w800,
+                  color: Color(0xFF60A5FA), letterSpacing: 1.2,
+                )),
+              ),
+              const Spacer(),
+              const Text('BLE FRAMES', style: TextStyle(
+                fontSize: 10, color: Color(0xFF475569), letterSpacing: 1.0,
+              )),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Sent frame
+          _DebugRow(
+            direction: 'TX',
+            color: const Color(0xFF34D399),
+            label: sentFrame != null ? sentLabel : '—',
+            hex: sentFrame != null ? _hex(sentFrame!) : '',
+            decoded: sentFrame != null ? _frameLabel(sentFrame!) : '',
+          ),
+          const SizedBox(height: 10),
+
+          // Received frame
+          _DebugRow(
+            direction: 'RX',
+            color: const Color(0xFF818CF8),
+            label: receivedFrame != null ? _frameLabel(receivedFrame!) : '—',
+            hex: receivedFrame != null ? _hex(receivedFrame!) : '',
+            decoded: '',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DebugRow extends StatelessWidget {
+  final String direction;
+  final Color color;
+  final String label;
+  final String hex;
+  final String decoded;
+
+  const _DebugRow({
+    required this.direction,
+    required this.color,
+    required this.label,
+    required this.hex,
+    required this.decoded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 28, height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color.withAlpha(30),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: color.withAlpha(80)),
+              ),
+              child: Text(direction, style: TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w800, color: color,
+              )),
+            ),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE2E8F0),
+            )),
+          ],
+        ),
+        if (hex.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 36),
+            child: Text(
+              hex,
+              style: const TextStyle(
+                fontSize: 11, fontFamily: 'monospace',
+                color: Color(0xFF94A3B8), letterSpacing: 0.5,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 

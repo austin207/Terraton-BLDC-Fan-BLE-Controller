@@ -222,7 +222,9 @@ class BleServiceImpl implements BleService {
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
     if (char == null) return;
-    await char.write(frame, withoutResponse: false);
+    // Use Write Command (no ATT acknowledgment) — the module advertises
+    // WRITE NO RESPONSE and many embedded BLE modules only process this variant.
+    await char.write(frame, withoutResponse: true);
   }
 
   @override
