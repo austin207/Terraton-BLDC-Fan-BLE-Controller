@@ -259,9 +259,13 @@ class BleServiceImpl implements BleService {
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
     if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
-    // Uint8List ensures clean binary serialisation through the platform channel.
-    // withoutResponse: true = ATT Write Command; the BLE60 module processes this variant.
-    await char.write(Uint8List.fromList(frame), withoutResponse: true);
+    // Respect the characteristic's declared write type.
+    // WithResp (PROPERTY_WRITE) = ATT Write Request; the peripheral sends an ACK.
+    // NoResp (PROPERTY_WRITE_NO_RESPONSE) = ATT Write Command; fire-and-forget.
+    await char.write(
+      Uint8List.fromList(frame),
+      withoutResponse: char.properties.writeWithoutResponse,
+    );
   }
 
   @override
