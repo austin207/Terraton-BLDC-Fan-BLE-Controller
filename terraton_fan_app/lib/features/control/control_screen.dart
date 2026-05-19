@@ -141,6 +141,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _lastRpmAt = null;
       }
 
+      // Only query telemetry when fan is powered on — avoids flooding the
+      // BLE module with query frames while the fan is off or during testing.
+      final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
+      if (!fanState.isPowered) return;
+
       final pFrame = BleFrameBuilder.queryPower();
       final sFrame = BleFrameBuilder.querySpeed();
       try {

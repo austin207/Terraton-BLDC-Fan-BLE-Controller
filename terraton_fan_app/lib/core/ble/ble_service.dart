@@ -162,11 +162,6 @@ class BleServiceImpl implements BleService {
       }
     }
 
-    // Pre-emptive disconnect clears any stale GATT state from a previous
-    // session or a partially-torn-down connection. Errors are expected when
-    // the device is not already connected — ignore them.
-    try { await target.disconnect(); } on Object catch (_) {}
-
     try {
       await target.connect(license: License.free, timeout: const Duration(seconds: 15));
     } on Object catch (_) {
