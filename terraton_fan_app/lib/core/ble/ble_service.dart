@@ -1,5 +1,6 @@
 // lib/core/ble/ble_service.dart
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:terraton_fan_app/core/ble/ble_constants.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart' as app;
@@ -22,6 +23,9 @@ abstract class BleService {
   Stream<app.BleConnectionState>  get connectionStateStream;
   app.BleConnectionState          get currentState;
   Stream<List<DiscoveredFan>>     get scanResultsStream;
+  /// Human-readable diagnostic: whether the write characteristic was found
+  /// after the last service discovery, and what ATT properties it has.
+  String get writeCharStatus;
 }
 
 class BleServiceImpl implements BleService {
@@ -33,8 +37,9 @@ class BleServiceImpl implements BleService {
   static const int           _maxRetries = 3;
   static const Duration      _retryDelay = Duration(seconds: 5);
 
-  bool   _disposed    = false;
+  bool   _disposed        = false;
   Timer? _retryTimer;
+  String _writeCharStatus = 'pending';
 
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
   static final _serviceGuid = Guid(kServiceUUID);
@@ -62,6 +67,8 @@ class BleServiceImpl implements BleService {
   Stream<List<DiscoveredFan>>     get scanResultsStream   => _scanResultsController.stream;
   @override
   app.BleConnectionState          get currentState        => _currentState;
+  @override
+  String                          get writeCharStatus     => _writeCharStatus;
 
   void _setState(app.BleConnectionState s) {
     if (_disposed) return;
@@ -177,6 +184,22 @@ class BleServiceImpl implements BleService {
       }
     }
 
+    // Log result for the debug card.
+    if (_writeChar != null) {
+      final p = _writeChar!.properties;
+      final modes = <String>[
+        if (p.writeWithoutResponse) 'NoResp',
+        if (p.write)                'WithResp',
+      ];
+      _writeCharStatus =
+          'found | props: ${modes.isEmpty ? "NONE" : modes.join("+")}';
+    } else {
+      final discovered =
+          services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
+      _writeCharStatus =
+          'NOT FOUND | services: [$discovered]';
+    }
+
     if (_notifyChar != null) {
       await _notifyChar!.setNotifyValue(true);
       await _notifyValueSub?.cancel();
@@ -212,19 +235,20 @@ class BleServiceImpl implements BleService {
     await _connStateSub?.cancel();
     _connStateSub = null;
     await _device?.disconnect();
-    _writeChar  = null;
-    _notifyChar = null;
-    _device     = null;
+    _writeChar        = null;
+    _notifyChar       = null;
+    _device           = null;
+    _writeCharStatus  = 'disconnected';
     _setState(app.BleConnectionState.disconnected);
   }
 
   @override
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
-    if (char == null) return;
-    // Use Write Command (no ATT acknowledgment) — the module advertises
-    // WRITE NO RESPONSE and many embedded BLE modules only process this variant.
-    await char.write(frame, withoutResponse: true);
+    if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
+    // Uint8List ensures clean binary serialisation through the platform channel.
+    // withoutResponse: true = ATT Write Command; the BLE60 module processes this variant.
+    await char.write(Uint8List.fromList(frame), withoutResponse: true);
   }
 
   @override

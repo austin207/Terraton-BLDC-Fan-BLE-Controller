@@ -41,7 +41,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   // Debug
   List<int>? _lastSentFrame;
   List<int>? _lastReceivedFrame;
-  String _lastSentLabel = '';
+  String     _lastSentLabel  = '';
+  String?    _lastWriteError;
 
   bool get _isDemo => widget.fan.deviceId == '__demo__';
 
@@ -192,15 +193,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
       return;
     }
-    if (mounted) setState(() { _lastSentFrame = frame; _lastSentLabel = label; });
+    if (mounted) {
+      setState(() {
+        _lastSentFrame  = frame;
+        _lastSentLabel  = label;
+        _lastWriteError = null;
+      });
+    }
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
     }
     try {
       await _ble.writeFrame(frame);
-    } on Object catch (_) {
-      // BLE write failed; connectionStateStream handles reconnect.
+    } on Object catch (e) {
+      // Surface write errors to the debug card; connection state stream handles reconnect.
+      if (mounted) setState(() => _lastWriteError = e.toString());
     }
     if (!mounted) return;
   }
@@ -421,6 +429,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                           sentFrame: _lastSentFrame,
                           sentLabel: _lastSentLabel,
                           receivedFrame: _lastReceivedFrame,
+                          writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
+                          writeError: _lastWriteError,
                         ),
 
                       ],
@@ -462,13 +472,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
 class _DebugCard extends StatelessWidget {
   final List<int>? sentFrame;
-  final String sentLabel;
+  final String     sentLabel;
   final List<int>? receivedFrame;
+  final String     writeCharStatus;
+  final String?    writeError;
 
   const _DebugCard({
     required this.sentFrame,
     required this.sentLabel,
     required this.receivedFrame,
+    required this.writeCharStatus,
+    this.writeError,
   });
 
   static String _hex(List<int> bytes) =>
@@ -533,16 +547,60 @@ class _DebugCard extends StatelessWidget {
               )),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+
+          // Char status line
+          Row(
+            children: [
+              const Text('CHAR ', style: TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w700,
+                color: Color(0xFF94A3B8), letterSpacing: 0.8,
+              )),
+              Expanded(
+                child: Text(
+                  writeCharStatus,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: writeCharStatus.startsWith('found')
+                        ? const Color(0xFF34D399)
+                        : writeCharStatus == 'pending' || writeCharStatus == 'disconnected'
+                            ? const Color(0xFF64748B)
+                            : const Color(0xFFFCA5A5),
+                    fontFamily: 'monospace',
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
 
           // Sent frame
           _DebugRow(
             direction: 'TX',
-            color: const Color(0xFF34D399),
+            color: writeError != null
+                ? const Color(0xFFFCA5A5)
+                : const Color(0xFF34D399),
             label: sentFrame != null ? sentLabel : '—',
             hex: sentFrame != null ? _hex(sentFrame!) : '',
             decoded: sentFrame != null ? _frameLabel(sentFrame!) : '',
           ),
+
+          // Write error (shown below TX if write failed)
+          if (writeError != null) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.only(left: 36),
+              child: Text(
+                'ERR: $writeError',
+                style: const TextStyle(
+                  fontSize: 10, fontFamily: 'monospace',
+                  color: Color(0xFFFCA5A5), height: 1.4,
+                ),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 10),
 
           // Received frame
