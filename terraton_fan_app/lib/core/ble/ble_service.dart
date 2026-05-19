@@ -79,6 +79,12 @@ class BleServiceImpl implements BleService {
   @override
   Future<void> startScan({String? targetMac, int timeoutSeconds = 10}) async {
     _targetMac = targetMac;
+
+    // When a target MAC is already known, _doConnect uses BluetoothDevice.fromId()
+    // directly — no scan needed. Running a scan with an active connection attempt
+    // can interfere with GATT connection establishment on Android's shared radio.
+    if (targetMac != null) return;
+
     // Clears previous results so the list doesn't grow unboundedly across
     // multiple scans. Side-effect: scan results briefly empty on Refresh.
     _discovered.clear();
@@ -88,6 +94,8 @@ class BleServiceImpl implements BleService {
     // Without this, every Refresh tap stacks a new listener.
     await _scanResultsSub?.cancel();
     await _isScanSub?.cancel();
+    // Stop any running scan before starting a fresh one.
+    try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
 
     await FlutterBluePlus.startScan(
       withServices: [_serviceGuid],
@@ -153,6 +161,11 @@ class BleServiceImpl implements BleService {
         sub = null;
       }
     }
+
+    // Pre-emptive disconnect clears any stale GATT state from a previous
+    // session or a partially-torn-down connection. Errors are expected when
+    // the device is not already connected — ignore them.
+    try { await target.disconnect(); } on Object catch (_) {}
 
     try {
       await target.connect(license: License.free, timeout: const Duration(seconds: 15));
