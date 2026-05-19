@@ -96,7 +96,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           if (v != null) notifier.updatePower(v);
         case 0x04:
           final v = BleResponseParser.parseSpeed(response);
-          if (v != null) notifier.updateSpeed(v);
+          if (v != null) {
+            notifier.updateSpeed(v);
+            // Speed > 0 from the module implies the fan is powered on.
+            if (v > 0) notifier.updatePower(true);
+          }
         case 0x21:
           final v = BleResponseParser.parseModeString(response);
           if (v != null) notifier.updateMode(v);
@@ -258,9 +262,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     _PowerButton(
                       isPowered: fanState.isPowered,
                       enabled: enabled,
-                      onPower: (on) => unawaited(_send(
-                        on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
-                      )),
+                      onPower: (on) {
+                        // Optimistic update — most modules don't echo a 0x02 response.
+                        ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                            .updatePower(on);
+                        unawaited(_send(
+                          on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
+                        ));
+                      },
                     ),
                     const SizedBox(height: 8),
                     // Reserve space always so the layout doesn't jump
@@ -298,7 +307,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             rpm: fanState.lastRpm,
                             enabled: controlsEnabled,
                             isBoost: fanState.isBoost,
-                            onSpeedSelected: (s) => unawaited(_send(BleFrameBuilder.setSpeed(s))),
+                            onSpeedSelected: (s) {
+                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                                  .updateSpeed(s);
+                              unawaited(_send(BleFrameBuilder.setSpeed(s)));
+                            },
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -308,10 +321,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                           isBoost: fanState.isBoost,
                           enabled: controlsEnabled,
                           onBoost: () {
+                            final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
                             if (fanState.isBoost) {
-                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                                  .updateMode(null);
+                              notifier.updateMode(null);
                             } else {
+                              notifier.updateMode('boost');
                               unawaited(_send(BleFrameBuilder.setBoost()));
                             }
                           },
@@ -325,11 +339,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             activeMode: fanState.activeMode,
                             enabled: controlsEnabled,
                             onMode: (m) {
+                              final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
                               if (fanState.activeMode == m) {
-                                ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                                    .updateMode(null);
+                                notifier.updateMode(null);
                                 return;
                               }
+                              notifier.updateMode(m);
                               final frame = switch (m) {
                                 'nature'  => BleFrameBuilder.setNature(),
                                 'reverse' => BleFrameBuilder.setReverse(),
@@ -349,6 +364,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             activeTimerCode: fanState.activeTimerCode,
                             enabled: controlsEnabled,
                             onTimer: (a) {
+                              final code = switch (a) {
+                                '2h' => 0x02,
+                                '4h' => 0x04,
+                                '8h' => 0x08,
+                                _    => 0x00,
+                              };
+                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                                  .updateTimer(code);
                               final frame = switch (a) {
                                 '2h'  => BleFrameBuilder.timer2h(),
                                 '4h'  => BleFrameBuilder.timer4h(),

@@ -90,7 +90,13 @@ class BleServiceImpl implements BleService {
     _scanResultsSub = FlutterBluePlus.scanResults.listen((results) {
       for (final r in results) {
         final mac  = r.device.remoteId.str;
-        final name = r.device.platformName.isNotEmpty ? r.device.platformName : mac;
+        // Prefer advertisement name; fall back to cached platform name then MAC.
+        final advName = r.advertisementData.advName;
+        final name = advName.isNotEmpty
+            ? advName
+            : r.device.platformName.isNotEmpty
+                ? r.device.platformName
+                : mac;
         _discovered[mac] = DiscoveredFan(macAddress: mac, name: name, rssi: r.rssi);
       }
       _scanResultsController.add(_discovered.values.toList());
