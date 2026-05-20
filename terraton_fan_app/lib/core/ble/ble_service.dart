@@ -26,6 +26,9 @@ abstract class BleService {
   /// Human-readable diagnostic: whether the write characteristic was found
   /// after the last service discovery, and what ATT properties it has.
   String get writeCharStatus;
+  /// Human-readable diagnostic: last connection attempt outcome — useful
+  /// for surfacing why connect() is failing (timeouts, GATT errors, etc.).
+  String get connectStatus;
 }
 
 class BleServiceImpl implements BleService {
@@ -34,12 +37,16 @@ class BleServiceImpl implements BleService {
   BluetoothCharacteristic?   _notifyChar;
   String?                    _targetMac;
   int                        _retryCount = 0;
-  static const int           _maxRetries = 3;
-  static const Duration      _retryDelay = Duration(seconds: 5);
+  static const int           _maxRetries        = 2;
+  static const Duration      _retryDelay        = Duration(seconds: 2);
+  static const Duration      _connectTimeout    = Duration(seconds: 10);
+  static const Duration      _connectHardCap    = Duration(seconds: 12); // dart-side safety net
+  static const Duration      _disconnectTimeout = Duration(seconds: 3);  // disconnect can hang on Android
 
   bool   _disposed        = false;
   Timer? _retryTimer;
   String _writeCharStatus = 'pending';
+  String _connectStatus   = 'idle';
 
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
   static final _advServiceGuid = Guid(kAdvServiceUUID); // what the module advertises
@@ -70,6 +77,8 @@ class BleServiceImpl implements BleService {
   app.BleConnectionState          get currentState        => _currentState;
   @override
   String                          get writeCharStatus     => _writeCharStatus;
+  @override
+  String                          get connectStatus       => _connectStatus;
 
   void _setState(app.BleConnectionState s) {
     if (_disposed) return;
@@ -168,11 +177,28 @@ class BleServiceImpl implements BleService {
       }
     }
 
+    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
     try {
-      await target.connect(license: License.free, timeout: const Duration(seconds: 15));
-    } on Object catch (_) {
-      // Disconnect the partial connection before retrying to avoid "already connected" errors.
-      try { await target.disconnect(); } on Object catch (_) {}
+      // Dart-side hard cap (_connectHardCap) wraps the underlying call.
+      // flutter_blue_plus's `timeout` parameter is not always honoured by the
+      // Android BLE driver — on some devices, BluetoothGatt.connect() hangs
+      // well past the requested timeout when the peer is in a stale state.
+      // Future.timeout() guarantees the await returns regardless.
+      await target
+          .connect(
+            license: License.free,
+            timeout: _connectTimeout,
+            autoConnect: false,
+          )
+          .timeout(_connectHardCap);
+    } on Object catch (e) {
+      _connectStatus = 'attempt ${_retryCount + 1} failed: ${e.toString().split('\n').first}';
+      // Disconnect the partial connection before retrying to avoid "already
+      // connected" errors. Wrap in timeout — disconnect() can also hang for
+      // 30+ seconds on Android when the peer never ACKs the disconnect.
+      try {
+        await target.disconnect().timeout(_disconnectTimeout);
+      } on Object catch (_) {}
       if (_retryCount < _maxRetries) {
         _retryCount++;
         // Cancel stale connection-state subscription so a previous listener
@@ -185,6 +211,7 @@ class BleServiceImpl implements BleService {
       _setState(app.BleConnectionState.disconnected);
       rethrow;
     }
+    _connectStatus = 'connected, discovering services...';
 
     _device = target;
 
@@ -240,6 +267,7 @@ class BleServiceImpl implements BleService {
     });
 
     _retryCount = 0;
+    _connectStatus = 'connected';
     _setState(app.BleConnectionState.connected);
     return target.remoteId.str;
   }
@@ -251,11 +279,14 @@ class BleServiceImpl implements BleService {
     _retryTimer = null;
     await _connStateSub?.cancel();
     _connStateSub = null;
-    await _device?.disconnect();
+    try {
+      await _device?.disconnect().timeout(_disconnectTimeout);
+    } on Object catch (_) {}
     _writeChar        = null;
     _notifyChar       = null;
     _device           = null;
     _writeCharStatus  = 'disconnected';
+    _connectStatus    = 'idle';
     _setState(app.BleConnectionState.disconnected);
   }
 

@@ -428,19 +428,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                           },
                         ),
 
-                        // ── Debug card ────────────────────────────────────
-                        const SizedBox(height: 16),
-                        _DebugCard(
-                          sentFrame: _lastSentFrame,
-                          sentLabel: _lastSentLabel,
-                          receivedFrame: _lastReceivedFrame,
-                          writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
-                          writeError: _lastWriteError,
-                        ),
-
                       ],
                     ),
                   ),
+                ),
+
+                // ── Debug card (always visible — outside the IgnorePointer) ─
+                const SizedBox(height: 16),
+                _DebugCard(
+                  sentFrame: _lastSentFrame,
+                  sentLabel: _lastSentLabel,
+                  receivedFrame: _lastReceivedFrame,
+                  writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
+                  connectStatus:   _isDemo ? 'demo' : _ble.connectStatus,
+                  writeError: _lastWriteError,
                 ),
 
               ],
@@ -480,6 +481,7 @@ class _DebugCard extends StatelessWidget {
   final String     sentLabel;
   final List<int>? receivedFrame;
   final String     writeCharStatus;
+  final String     connectStatus;
   final String?    writeError;
 
   const _DebugCard({
@@ -487,6 +489,7 @@ class _DebugCard extends StatelessWidget {
     required this.sentLabel,
     required this.receivedFrame,
     required this.writeCharStatus,
+    required this.connectStatus,
     this.writeError,
   });
 
@@ -553,6 +556,33 @@ class _DebugCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
+
+          // Connect status line — surfaces retry attempts and timeouts so a
+          // hanging "CONNECTING…" UI has visible diagnostic context.
+          Row(
+            children: [
+              const Text('CONN ', style: TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w700,
+                color: Color(0xFF94A3B8), letterSpacing: 0.8,
+              )),
+              Expanded(
+                child: Text(
+                  connectStatus,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: connectStatus == 'connected'
+                        ? const Color(0xFF34D399)
+                        : connectStatus.contains('failed')
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFFCD34D),
+                    fontFamily: 'monospace',
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
 
           // Char status line
           Row(
