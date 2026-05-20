@@ -335,11 +335,14 @@ class BleServiceImpl implements BleService {
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
     if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
-    // Respect the characteristic's declared write type.
-    // WithResp (PROPERTY_WRITE) = ATT Write Request; the peripheral sends an ACK.
-    // NoResp (PROPERTY_WRITE_NO_RESPONSE) = ATT Write Command; fire-and-forget.
+    // The Amp'ed RF BLE60 module is a BLE-to-UART bridge. It buffers incoming
+    // BLE data and only flushes it to the MCU's UART when it receives \r\n
+    // (0x0D 0x0A). Without the newline, frames sit in the module's buffer and
+    // never reach the MCU — confirmed by Serial Bluetooth Terminal's log which
+    // shows 0D 0A appended to every sent frame and the fan responding.
+    final payload = Uint8List.fromList([...frame, 0x0D, 0x0A]);
     await char.write(
-      Uint8List.fromList(frame),
+      payload,
       withoutResponse: char.properties.writeWithoutResponse,
     );
   }
