@@ -4,7 +4,8 @@ import 'package:terraton_fan_app/shared/theme.dart';
 
 class ConnectionLostCard extends StatelessWidget {
   final VoidCallback onRetry;
-  const ConnectionLostCard({super.key, required this.onRetry});
+  final String? connectStatus;
+  const ConnectionLostCard({super.key, required this.onRetry, this.connectStatus});
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +42,27 @@ class ConnectionLostCard extends StatelessWidget {
             'Fan not found. Is it powered on and within range?',
             style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4),
           ),
+          if (connectStatus != null && connectStatus!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                connectStatus!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  color: connectStatus!.contains('failed')
+                      ? Colors.red.shade700
+                      : Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,

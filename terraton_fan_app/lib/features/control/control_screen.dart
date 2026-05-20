@@ -448,7 +448,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           if (isDisconnected)
             Positioned(
               bottom: 0, left: 0, right: 0,
-              child: ConnectionLostCard(onRetry: _connect),
+              child: ConnectionLostCard(
+                onRetry: _connect,
+                connectStatus: _isDemo ? null : _ble.connectStatus,
+              ),
             ),
         ],
       ),
