@@ -39,8 +39,11 @@ class BleServiceImpl implements BleService {
   int                        _retryCount = 0;
   static const int           _maxRetries        = 2;
   static const Duration      _retryDelay        = Duration(seconds: 2);
-  static const Duration      _connectTimeout    = Duration(seconds: 10);
-  static const Duration      _connectHardCap    = Duration(seconds: 12); // dart-side safety net
+  // autoConnect=true does its own waiting for the peripheral to advertise,
+  // so the timeout has to be generous — Amp'ed RF / random-address modules
+  // can take 20–30s to be picked up on the first cold connect.
+  static const Duration      _connectTimeout    = Duration(seconds: 30);
+  static const Duration      _connectHardCap    = Duration(seconds: 33); // dart-side safety net
   static const Duration      _disconnectTimeout = Duration(seconds: 3);  // disconnect can hang on Android
 
   bool   _disposed        = false;
@@ -177,18 +180,23 @@ class BleServiceImpl implements BleService {
       }
     }
 
-    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
+    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1} (autoConnect)';
     try {
-      // Dart-side hard cap (_connectHardCap) wraps the underlying call.
-      // flutter_blue_plus's `timeout` parameter is not always honoured by the
-      // Android BLE driver — on some devices, BluetoothGatt.connect() hangs
-      // well past the requested timeout when the peer is in a stale state.
-      // Future.timeout() guarantees the await returns regardless.
+      // autoConnect: true is the canonical Android fix for peripherals that
+      // BluetoothGatt.connect() can't pick up directly — Amp'ed RF modules,
+      // Nordic devices, anything using random / resolvable private addresses.
+      // Android queues the connection until the peripheral's next advertisement
+      // is seen, then initiates the GATT link. Much more reliable than the
+      // direct-connect path (autoConnect: false) for modules that work fine
+      // with nRF Connect / generic BLE apps but hang in flutter_blue_plus.
+      //
+      // Trade-off: initial connection is slower (Android uses its background
+      // scan interval, ~5–10s typical, up to 30s). Future.timeout() caps it.
       await target
           .connect(
             license: License.free,
             timeout: _connectTimeout,
-            autoConnect: false,
+            autoConnect: true,
           )
           .timeout(_connectHardCap);
     } on Object catch (e) {
