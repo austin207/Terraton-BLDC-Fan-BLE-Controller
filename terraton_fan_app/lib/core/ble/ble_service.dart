@@ -128,98 +128,120 @@ class BleServiceImpl implements BleService {
 
   // ── Connect ───────────────────────────────────────────────────────────────
 
+  static const int      _maxRetries = 3;
+  static const Duration _retryDelay = Duration(seconds: 5);
+
   @override
   Future<String> connect(String mac) async {
     if (_disposed) throw StateError('BleService disposed');
-    _setState(app.BleConnectionState.connecting);
-    _connectStatus = 'connecting...';
-    _writeCharStatus = 'pending';
 
     // Use the live scan-result device when available — it carries the correct
-    // BLE address type. On reconnects after the first session, Android caches
-    // the address type so fromId() also works.
+    // BLE address type. fromId() works on reconnects once Android has cached
+    // the address type from a prior successful connection.
     final device = _scanCache[mac] ?? BluetoothDevice.fromId(mac);
 
-    try {
-      await device.connect(
-        license: License.free,
-        autoConnect: false,
-        timeout: const Duration(seconds: 15),
-      );
+    for (int attempt = 1; attempt <= _maxRetries; attempt++) {
+      _setState(app.BleConnectionState.connecting);
+      _connectStatus = 'attempt $attempt/$_maxRetries';
+      _writeCharStatus = 'pending';
 
-      _connectStatus = 'discovering services...';
-      final services = await device.discoverServices();
+      try {
+        await device.connect(
+          license: License.free,
+          autoConnect: false,
+          timeout: const Duration(seconds: 15),
+        );
 
-      _writeChar  = null;
-      _notifyChar = null;
-      for (final svc in services) {
-        for (final c in svc.characteristics) {
-          // Priority order — first match wins (??= never overwrites):
-          // 1. BLE Mesh Proxy Data In/Out  (confirmed working with BLE60 fan)
-          // 2. Firmware-team proprietary   (26cc3fc2 / 26cc3fc1)
-          // 3. HM-10 / CC254X              (0000ffe1 — common on Amp'ed RF)
-          // 4. Nordic UART Service
-          // 5. Microchip RN4870
-          if (c.characteristicUuid == _meshProxyIn)     _writeChar  ??= c;
-          if (c.characteristicUuid == _meshProxyOut)    _notifyChar ??= c;
-          if (c.characteristicUuid == _writeGuid)       _writeChar  ??= c;
-          if (c.characteristicUuid == _notifyGuid)      _notifyChar ??= c;
-          if (c.characteristicUuid == _cc254xWrite)     { _writeChar ??= c; _notifyChar ??= c; }
-          if (c.characteristicUuid == _nusWrite)        _writeChar  ??= c;
-          if (c.characteristicUuid == _nusNotify)       _notifyChar ??= c;
-          if (c.characteristicUuid == _microchipWrite)  _writeChar  ??= c;
-          if (c.characteristicUuid == _microchipNotify) _notifyChar ??= c;
+        _connectStatus = 'discovering services...';
+        final services = await device.discoverServices();
+
+        _writeChar  = null;
+        _notifyChar = null;
+        for (final svc in services) {
+          for (final c in svc.characteristics) {
+            // Priority — first match wins (??= never overwrites):
+            // 1. BLE Mesh Proxy Data In/Out  (confirmed working with BLE60 fan)
+            // 2. Firmware-team proprietary   (26cc3fc2 / 26cc3fc1)
+            // 3. HM-10 / CC254X              (0000ffe1 — common on Amp'ed RF)
+            // 4. Nordic UART Service
+            // 5. Microchip RN4870
+            if (c.characteristicUuid == _meshProxyIn)     _writeChar  ??= c;
+            if (c.characteristicUuid == _meshProxyOut)    _notifyChar ??= c;
+            if (c.characteristicUuid == _writeGuid)       _writeChar  ??= c;
+            if (c.characteristicUuid == _notifyGuid)      _notifyChar ??= c;
+            if (c.characteristicUuid == _cc254xWrite)     { _writeChar ??= c; _notifyChar ??= c; }
+            if (c.characteristicUuid == _nusWrite)        _writeChar  ??= c;
+            if (c.characteristicUuid == _nusNotify)       _notifyChar ??= c;
+            if (c.characteristicUuid == _microchipWrite)  _writeChar  ??= c;
+            if (c.characteristicUuid == _microchipNotify) _notifyChar ??= c;
+          }
         }
-      }
 
-      final svcList = services
-          .map((s) => s.serviceUuid.toString().substring(0, 8))
-          .join(', ');
-      if (_writeChar != null) {
-        final p     = _writeChar!.properties;
-        final modes = [
-          if (p.writeWithoutResponse) 'NoResp',
-          if (p.write)                'WithResp',
-        ];
-        _writeCharStatus =
-            'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
-            ' | ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs:[$svcList]';
-      } else {
-        _writeCharStatus = 'NOT FOUND | svcs:[$svcList]';
-      }
+        final svcList = services
+            .map((s) => s.serviceUuid.toString().substring(0, 8))
+            .join(', ');
+        if (_writeChar != null) {
+          final p     = _writeChar!.properties;
+          final modes = [
+            if (p.writeWithoutResponse) 'NoResp',
+            if (p.write)                'WithResp',
+          ];
+          _writeCharStatus =
+              'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
+              ' | ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs:[$svcList]';
+        } else {
+          _writeCharStatus = 'NOT FOUND | svcs:[$svcList]';
+        }
 
-      if (_notifyChar != null) {
-        await _notifyChar!.setNotifyValue(true);
-        await _notifyValueSub?.cancel();
-        _notifyValueSub = _notifyChar!.onValueReceived.listen(_notifyCtrl.add);
-      }
+        if (_notifyChar != null) {
+          await _notifyChar!.setNotifyValue(true);
+          await _notifyValueSub?.cancel();
+          _notifyValueSub = _notifyChar!.onValueReceived.listen(_notifyCtrl.add);
+        }
 
-      _device = device;
-      _scanCache[mac] = device; // keep for future reconnects in this session
+        _device = device;
+        _scanCache[mac] = device;
 
-      await _connStateSub?.cancel();
-      _connStateSub = device.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected && !_disposed) {
+        await _connStateSub?.cancel();
+        _connStateSub = device.connectionState.listen((state) {
+          if (state == BluetoothConnectionState.disconnected && !_disposed) {
+            _writeChar  = null;
+            _notifyChar = null;
+            _device     = null;
+            _setState(app.BleConnectionState.disconnected);
+          }
+        });
+
+        _connectStatus = 'connected';
+        _setState(app.BleConnectionState.connected);
+        return mac;
+
+      } on Object catch (e) {
+        _connectStatus =
+            'attempt $attempt failed: ${e.toString().split('\n').first}';
+        // Disconnect the partial GATT before retrying — avoids "already
+        // connected" errors on the next attempt. Timeout so we don't hang
+        // if the peripheral never ACKs the disconnect.
+        try {
+          await device.disconnect().timeout(const Duration(seconds: 3));
+        } on Object catch (_) {}
+
+        await _connStateSub?.cancel();
+        _connStateSub = null;
+
+        if (attempt == _maxRetries) {
           _writeChar  = null;
           _notifyChar = null;
           _device     = null;
           _setState(app.BleConnectionState.disconnected);
+          rethrow;
         }
-      });
-
-      _connectStatus = 'connected';
-      _setState(app.BleConnectionState.connected);
-      return mac;
-
-    } on Object catch (e) {
-      _connectStatus = 'failed: ${e.toString().split('\n').first}';
-      try { await device.disconnect(); } on Object catch (_) {}
-      _writeChar  = null;
-      _notifyChar = null;
-      _device     = null;
-      _setState(app.BleConnectionState.disconnected);
-      rethrow;
+        await Future<void>.delayed(_retryDelay);
+      }
     }
+
+    // unreachable — loop always returns or rethrows
+    throw StateError('connect() loop exited without result');
   }
 
   // ── Disconnect ────────────────────────────────────────────────────────────
