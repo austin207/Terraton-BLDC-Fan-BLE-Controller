@@ -1,14 +1,30 @@
 // lib/core/ble/ble_constants.dart
 // Single source of truth for all BLE UUIDs. Never write these elsewhere.
 
-// Advertised service UUID — what the BLE60 module puts in its advertisement
-// packet. The working APK (20260519_125522) used only this Mesh Proxy UUID
-// for both scan and GATT, which is why the module was discoverable in the
-// scan list. Used as the scan filter.
-const String kAdvServiceUUID = "00001827-0000-1000-8000-00805f9b34fb"; // BLE Mesh Proxy (advertised)
+// ── Scan filter ──────────────────────────────────────────────────────────────
+// What the BLE60 puts in its advertisement packet (BLE Mesh Proxy profile).
+const String kAdvServiceUUID = "00001827-0000-1000-8000-00805f9b34fb";
 
-// GATT service UUID — the actual proprietary service the module exposes
-// after a GATT connection is established. Confirmed by the firmware team.
-const String kServiceUUID    = "26cc3fc0-6241-f5b4-5347-63a3097f6764"; // Amp'ed RF BLE60 proprietary service
-const String kWriteCharUUID  = "26cc3fc2-6241-f5b4-5347-63a3097f6764"; // Write characteristic
-const String kNotifyCharUUID = "26cc3fc1-6241-f5b4-5347-63a3097f6764"; // Read / Notify characteristic
+// ── Firmware-team GATT UUIDs (proprietary Amp'ed RF service) ────────────────
+const String kServiceUUID    = "26cc3fc0-6241-f5b4-5347-63a3097f6764";
+const String kWriteCharUUID  = "26cc3fc2-6241-f5b4-5347-63a3097f6764";
+const String kNotifyCharUUID = "26cc3fc1-6241-f5b4-5347-63a3097f6764";
+
+// ── Standard UART-over-BLE fallback UUIDs ───────────────────────────────────
+// Serial Bluetooth Terminal (the app confirmed to work with BLE60) searches
+// for these profiles in priority order. If the BLE60's actual write char is
+// one of these, the service discovery below will find it.
+
+// HM-10 / CC254X (most common for Amp'ed RF / Chinese BLE modules)
+const String kCC254xServiceUUID  = "0000ffe0-0000-1000-8000-00805f9b34fb";
+const String kCC254xCharUUID     = "0000ffe1-0000-1000-8000-00805f9b34fb"; // RW
+
+// Nordic UART Service (NUS)
+const String kNusServiceUUID     = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const String kNusWriteCharUUID   = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Write
+const String kNusNotifyCharUUID  = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Notify
+
+// Microchip RN4870 / RN4871
+const String kMicrochipServiceUUID  = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+const String kMicrochipWriteCharUUID = "49535343-8841-43f4-a8d4-ecbe34729bb3"; // Write
+const String kMicrochipNotifyCharUUID = "49535343-1e4d-4bd9-ba61-23c647249616"; // Notify

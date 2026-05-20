@@ -50,9 +50,15 @@ class BleServiceImpl implements BleService {
   String _connectStatus   = 'idle';
 
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
-  static final _advServiceGuid = Guid(kAdvServiceUUID); // what the module advertises
-  static final _serviceGuid    = Guid(kServiceUUID);    // GATT service after connect
-  static final _writeGuid      = Guid(kWriteCharUUID);
+  static final _advServiceGuid  = Guid(kAdvServiceUUID);
+  static final _serviceGuid     = Guid(kServiceUUID);
+  static final _writeGuid       = Guid(kWriteCharUUID);
+  // Fallback UART profiles — same order Serial Bluetooth Terminal uses.
+  static final _cc254xWrite     = Guid(kCC254xCharUUID);
+  static final _nusWrite        = Guid(kNusWriteCharUUID);
+  static final _nusNotify       = Guid(kNusNotifyCharUUID);
+  static final _microchipWrite  = Guid(kMicrochipWriteCharUUID);
+  static final _microchipNotify = Guid(kMicrochipNotifyCharUUID);
   static final _notifyGuid     = Guid(kNotifyCharUUID);
 
   // Stored so they can be cancelled before re-subscribing and on dispose.
@@ -238,31 +244,45 @@ class BleServiceImpl implements BleService {
       throw TimeoutException('discoverServices() timed out after 15s');
     });
     // Search ALL services for the write/notify chars by UUID. The BLE60
-    // module exposes its data characteristics inside the proprietary
-    // service (kServiceUUID), but ESP32 test peripherals and some firmware
-    // variants put them under the Mesh Proxy service. Matching by char UUID
-    // directly is robust to either layout.
+    // Search for write/notify chars using the same priority order as Serial
+    // Bluetooth Terminal, which is confirmed to work with the BLE60 module.
+    //
+    // Priority:
+    //   1. Firmware-team proprietary UUIDs (26cc3fc2 / 26cc3fc1)
+    //   2. HM-10 / CC254X profile (0000ffe1) — most common for Amp'ed RF
+    //   3. Nordic UART Service (6e400002 write / 6e400003 notify)
+    //   4. Microchip RN4870 profile
+    //
+    // All services are searched so the char can live inside any service UUID.
     for (final svc in services) {
       for (final c in svc.characteristics) {
-        if (c.characteristicUuid == _writeGuid)  _writeChar  ??= c;
-        if (c.characteristicUuid == _notifyGuid) _notifyChar ??= c;
+        // Priority 1 — proprietary
+        if (c.characteristicUuid == _writeGuid)    _writeChar  ??= c;
+        if (c.characteristicUuid == _notifyGuid)   _notifyChar ??= c;
+        // Priority 2 — HM-10 / CC254X (RW char doubles as write+notify)
+        if (c.characteristicUuid == _cc254xWrite)  { _writeChar ??= c; _notifyChar ??= c; }
+        // Priority 3 — Nordic UART Service
+        if (c.characteristicUuid == _nusWrite)     _writeChar  ??= c;
+        if (c.characteristicUuid == _nusNotify)    _notifyChar ??= c;
+        // Priority 4 — Microchip
+        if (c.characteristicUuid == _microchipWrite)  _writeChar  ??= c;
+        if (c.characteristicUuid == _microchipNotify) _notifyChar ??= c;
       }
     }
 
-    // Log result for the debug card.
+    // Log result so debug card shows exactly which char was picked and
+    // all discovered services, making it trivial to spot a UUID mismatch.
+    final svcList = services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
     if (_writeChar != null) {
       final p = _writeChar!.properties;
       final modes = <String>[
         if (p.writeWithoutResponse) 'NoResp',
         if (p.write)                'WithResp',
       ];
-      _writeCharStatus =
-          'found | props: ${modes.isEmpty ? "NONE" : modes.join("+")}';
+      _writeCharStatus = 'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
+          ' | props: ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs: [$svcList]';
     } else {
-      final discovered =
-          services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
-      _writeCharStatus =
-          'NOT FOUND | services: [$discovered]';
+      _writeCharStatus = 'NOT FOUND | svcs: [$svcList]';
     }
 
     if (_notifyChar != null) {
