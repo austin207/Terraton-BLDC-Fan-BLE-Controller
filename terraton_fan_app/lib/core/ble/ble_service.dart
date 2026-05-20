@@ -89,16 +89,17 @@ class BleServiceImpl implements BleService {
     // Without this, every Refresh tap stacks a new listener.
     await _scanResultsSub?.cancel();
     await _isScanSub?.cancel();
-    // Stop any running scan before starting a fresh one.
-    try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
 
-    // When connecting to a known MAC, scan for that device specifically.
-    // Android's BLE stack needs the peripheral in its scan cache before a
-    // direct GATT connection (BluetoothDevice.fromId) is reliable — without
-    // a preceding scan, connect() can hang or time out on many Android versions.
+    // Stop any previous scan only during open discovery.
+    // Skipped for targeted connection (targetMac != null) because the scan
+    // screen has already sent a stopScan on dispose; a second stop+start on
+    // some Android BLE drivers stalls the radio and delays connect().
+    if (targetMac == null) {
+      try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
+    }
+
     await FlutterBluePlus.startScan(
-      withServices: targetMac == null ? [_serviceGuid] : [],
-      withRemoteIds: targetMac != null ? [targetMac] : [],
+      withServices: [_serviceGuid],
       timeout: Duration(seconds: timeoutSeconds),
     );
 
