@@ -234,23 +234,21 @@ class BleServiceImpl implements BleService {
 
     _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
     try {
-      // autoConnect: false matches nRF Connect / Serial Bluetooth Terminal —
-      // direct GATT connect with explicit TRANSPORT_LE. autoConnect: true was
-      // making things worse for the BLE60 (Android keeps it pending until the
-      // peripheral re-advertises, which Amp'ed RF modules duty-cycle).
-      // Future.timeout(_connectHardCap) is the dart-side safety net in case
-      // BluetoothGatt.connect() itself hangs past the requested timeout.
-      // mtu: 512 triggers BluetoothGatt.requestMtu(512) right after
-      // STATE_CONNECTED, matching Serial Bluetooth Terminal's sequence.
-      // Without an explicit MTU request, some peripherals (including Amp'ed RF
-      // modules) use the default 23-byte ATT_MTU, which can cause issues on
-      // first GATT discovery.
+      // autoConnect: false = direct connectGatt with TRANSPORT_LE, matching
+      // SimpleBluetoothLeTerminal. autoConnect: true was causing hangs because
+      // Android holds the connection pending until the peripheral re-advertises.
+      //
+      // mtu is NOT set here. SBT calls requestMtu() separately after receiving
+      // STATE_CONNECTED — passing mtu inline causes flutter_blue_plus to wait
+      // for onMtuChanged() before resolving the future. On some Android stacks
+      // the BLE60 drops or delays that callback, blocking connect() past the
+      // 18s hard cap and keeping the UI stuck on "connecting" indefinitely.
+      // Our frames are 9 bytes; the default 23-byte ATT_MTU is sufficient.
       await target
           .connect(
             license: License.free,
             timeout: _connectTimeout,
             autoConnect: false,
-            mtu: 512,
           )
           .timeout(_connectHardCap);
     } on Object catch (e) {
