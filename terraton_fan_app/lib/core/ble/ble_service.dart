@@ -80,11 +80,6 @@ class BleServiceImpl implements BleService {
   Future<void> startScan({String? targetMac, int timeoutSeconds = 10}) async {
     _targetMac = targetMac;
 
-    // When a target MAC is already known, _doConnect uses BluetoothDevice.fromId()
-    // directly — no scan needed. Running a scan with an active connection attempt
-    // can interfere with GATT connection establishment on Android's shared radio.
-    if (targetMac != null) return;
-
     // Clears previous results so the list doesn't grow unboundedly across
     // multiple scans. Side-effect: scan results briefly empty on Refresh.
     _discovered.clear();
@@ -97,8 +92,13 @@ class BleServiceImpl implements BleService {
     // Stop any running scan before starting a fresh one.
     try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
 
+    // When connecting to a known MAC, scan for that device specifically.
+    // Android's BLE stack needs the peripheral in its scan cache before a
+    // direct GATT connection (BluetoothDevice.fromId) is reliable — without
+    // a preceding scan, connect() can hang or time out on many Android versions.
     await FlutterBluePlus.startScan(
-      withServices: [_serviceGuid],
+      withServices: targetMac == null ? [_serviceGuid] : [],
+      withRemoteIds: targetMac != null ? [targetMac] : [],
       timeout: Duration(seconds: timeoutSeconds),
     );
 
