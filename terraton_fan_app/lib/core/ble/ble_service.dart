@@ -41,7 +41,6 @@ class BleServiceImpl implements BleService {
   static const Duration      _retryDelay        = Duration(seconds: 2);
   // Match nRF Connect's defaults: autoConnect=false, 15s per attempt.
   static const Duration      _connectTimeout    = Duration(seconds: 15);
-  static const Duration      _connectHardCap    = Duration(seconds: 18); // dart-side safety net
   static const Duration      _disconnectTimeout = Duration(seconds: 3);  // disconnect can hang on Android
 
   bool   _disposed        = false;
@@ -52,14 +51,18 @@ class BleServiceImpl implements BleService {
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
   static final _advServiceGuid  = Guid(kAdvServiceUUID);
   static final _serviceGuid     = Guid(kServiceUUID);
+  // Priority 1 — Mesh Proxy Data In/Out (confirmed working with the BLE60 fan).
+  static final _meshProxyIn     = Guid(kMeshProxyDataInUUID);
+  static final _meshProxyOut    = Guid(kMeshProxyDataOutUUID);
+  // Priority 2 — firmware-team proprietary UUIDs.
   static final _writeGuid       = Guid(kWriteCharUUID);
-  // Fallback UART profiles — same order Serial Bluetooth Terminal uses.
+  static final _notifyGuid      = Guid(kNotifyCharUUID);
+  // Priority 3-5 — standard UART-over-BLE fallback profiles.
   static final _cc254xWrite     = Guid(kCC254xCharUUID);
   static final _nusWrite        = Guid(kNusWriteCharUUID);
   static final _nusNotify       = Guid(kNusNotifyCharUUID);
   static final _microchipWrite  = Guid(kMicrochipWriteCharUUID);
   static final _microchipNotify = Guid(kMicrochipNotifyCharUUID);
-  static final _notifyGuid     = Guid(kNotifyCharUUID);
 
   // Stored so they can be cancelled before re-subscribing and on dispose.
   StreamSubscription<List<ScanResult>>? _scanResultsSub;
@@ -163,56 +166,16 @@ class BleServiceImpl implements BleService {
     return _doConnect();
   }
 
-  /// Scans without a service UUID filter to find a specific MAC address.
-  /// Returns the live BluetoothDevice (which carries the correct address type)
-  /// or null if the device is not seen within [timeout].
-  Future<BluetoothDevice?> _scanForDevice(String mac, {Duration timeout = const Duration(seconds: 8)}) async {
-    final completer = Completer<BluetoothDevice>();
-    StreamSubscription<List<ScanResult>>? sub;
-    sub = FlutterBluePlus.scanResults.listen((results) {
-      for (final r in results) {
-        if (r.device.remoteId.str == mac && !completer.isCompleted) {
-          _discoveredDevices[mac] = r.device;
-          completer.complete(r.device);
-          break;
-        }
-      }
-    });
-    // Scan with no service filter so we find the device regardless of what
-    // it is currently advertising. We know the exact MAC so filtering is
-    // unnecessary and risks missing a device that duty-cycles its UUID.
-    try {
-      await FlutterBluePlus.startScan(timeout: timeout);
-    } on Object catch (_) {}
-    try {
-      return await completer.future.timeout(timeout);
-    } on TimeoutException {
-      return null;
-    } finally {
-      await sub.cancel();
-      try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
-    }
-  }
-
   Future<String> _doConnect() async {
     if (_disposed) throw StateError('BleService disposed');
     _setState(app.BleConnectionState.connecting);
 
-    BluetoothDevice? target;
-
+    // Prefer the live scan-result device — it carries the correct BLE address
+    // type (public vs random). BluetoothDevice.fromId() works when Android has
+    // the address type cached from a prior scan or pairing.
+    final BluetoothDevice target;
     if (_targetMac != null) {
-      // Prefer the live scan-result device — it carries the correct BLE address
-      // type (public vs random). BluetoothDevice.fromId() always assumes public,
-      // which fails silently on phones that have never seen this peripheral.
-      // _discoveredDevices is populated by the BLE scan screen; for home-screen
-      // reconnections where no scan has run this session we do a brief targeted
-      // scan first, then fall back to fromId() as a last resort.
-      target = _discoveredDevices[_targetMac];
-      if (target == null) {
-        _connectStatus = 'scanning for device...';
-        target = await _scanForDevice(_targetMac!, timeout: const Duration(seconds: 8));
-        target ??= BluetoothDevice.fromId(_targetMac!);
-      }
+      target = _discoveredDevices[_targetMac] ?? BluetoothDevice.fromId(_targetMac!);
     } else {
       final completer = Completer<BluetoothDevice>();
       StreamSubscription<List<ScanResult>>? sub;
@@ -228,41 +191,95 @@ class BleServiceImpl implements BleService {
         });
       } finally {
         await sub.cancel();
-        sub = null;
       }
     }
 
     _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
     try {
-      // autoConnect: false = direct connectGatt with TRANSPORT_LE, matching
-      // SimpleBluetoothLeTerminal. autoConnect: true was causing hangs because
-      // Android holds the connection pending until the peripheral re-advertises.
-      //
-      // mtu is NOT set here. SBT calls requestMtu() separately after receiving
-      // STATE_CONNECTED — passing mtu inline causes flutter_blue_plus to wait
-      // for onMtuChanged() before resolving the future. On some Android stacks
-      // the BLE60 drops or delays that callback, blocking connect() past the
-      // 18s hard cap and keeping the UI stuck on "connecting" indefinitely.
-      // Our frames are 9 bytes; the default 23-byte ATT_MTU is sufficient.
-      await target
-          .connect(
-            license: License.free,
-            timeout: _connectTimeout,
-            autoConnect: false,
-          )
-          .timeout(_connectHardCap);
+      // Direct GATT connect — autoConnect:false = immediate TRANSPORT_LE connect,
+      // matching nRF Connect and SimpleBluetoothLeTerminal.
+      // No mtu parameter: MTU negotiation is not needed for 9-byte frames, and
+      // passing mtu blocks the connect() future on onMtuChanged() which some
+      // Android/BLE60 combinations never deliver.
+      await target.connect(
+        license: License.free,
+        timeout: _connectTimeout,
+        autoConnect: false,
+      );
+
+      _connectStatus = 'discovering services...';
+      _device = target;
+
+      // No extra timeout on discoverServices() — the flutter_blue_plus
+      // internal GATT callback handles failure. Adding a Dart-side timeout
+      // throws OUTSIDE the try-catch, leaving state stuck on connecting.
+      final services = await target.discoverServices();
+
+      // Search ALL services for write/notify chars.
+      // Priority 1 — Mesh Proxy Data In/Out (confirmed working with BLE60).
+      // Priority 2 — Firmware-team proprietary UUIDs (26cc3fc2 / 26cc3fc1).
+      // Priority 3 — HM-10 / CC254X (0000ffe1).
+      // Priority 4 — Nordic UART Service.
+      // Priority 5 — Microchip RN4870.
+      for (final svc in services) {
+        for (final c in svc.characteristics) {
+          if (c.characteristicUuid == _meshProxyIn)     _writeChar  ??= c;
+          if (c.characteristicUuid == _meshProxyOut)    _notifyChar ??= c;
+          if (c.characteristicUuid == _writeGuid)       _writeChar  ??= c;
+          if (c.characteristicUuid == _notifyGuid)      _notifyChar ??= c;
+          if (c.characteristicUuid == _cc254xWrite)     { _writeChar ??= c; _notifyChar ??= c; }
+          if (c.characteristicUuid == _nusWrite)        _writeChar  ??= c;
+          if (c.characteristicUuid == _nusNotify)       _notifyChar ??= c;
+          if (c.characteristicUuid == _microchipWrite)  _writeChar  ??= c;
+          if (c.characteristicUuid == _microchipNotify) _notifyChar ??= c;
+        }
+      }
+
+      final svcList = services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
+      if (_writeChar != null) {
+        final p = _writeChar!.properties;
+        final modes = <String>[
+          if (p.writeWithoutResponse) 'NoResp',
+          if (p.write)                'WithResp',
+        ];
+        _writeCharStatus = 'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
+            ' | props: ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs: [$svcList]';
+      } else {
+        _writeCharStatus = 'NOT FOUND | svcs: [$svcList]';
+      }
+
+      if (_notifyChar != null) {
+        await _notifyChar!.setNotifyValue(true);
+        await _notifyValueSub?.cancel();
+        _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
+          _notifyController.add(bytes);
+        });
+      }
+
+      await _connStateSub?.cancel();
+      _connStateSub = target.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _setState(app.BleConnectionState.disconnected);
+          if (_retryCount < _maxRetries) {
+            _retryCount++;
+            _retryTimer?.cancel();
+            _retryTimer = Timer(_retryDelay, () => unawaited(_doConnect()));
+          }
+        }
+      });
+
+      _retryCount = 0;
+      _connectStatus = 'connected';
+      _setState(app.BleConnectionState.connected);
+      return target.remoteId.str;
+
     } on Object catch (e) {
       _connectStatus = 'attempt ${_retryCount + 1} failed: ${e.toString().split('\n').first}';
-      // Disconnect the partial connection before retrying to avoid "already
-      // connected" errors. Wrap in timeout — disconnect() can also hang for
-      // 30+ seconds on Android when the peer never ACKs the disconnect.
       try {
         await target.disconnect().timeout(_disconnectTimeout);
       } on Object catch (_) {}
       if (_retryCount < _maxRetries) {
         _retryCount++;
-        // Cancel stale connection-state subscription so a previous listener
-        // cannot trigger a concurrent retry chain on the same device.
         await _connStateSub?.cancel();
         _connStateSub = null;
         await Future<void>.delayed(_retryDelay);
@@ -271,82 +288,6 @@ class BleServiceImpl implements BleService {
       _setState(app.BleConnectionState.disconnected);
       rethrow;
     }
-    _connectStatus = 'discovering services...';
-
-    _device = target;
-
-    final services = await target.discoverServices()
-        .timeout(const Duration(seconds: 15), onTimeout: () {
-      throw TimeoutException('discoverServices() timed out after 15s');
-    });
-    // Search ALL services for the write/notify chars by UUID. The BLE60
-    // Search for write/notify chars using the same priority order as Serial
-    // Bluetooth Terminal, which is confirmed to work with the BLE60 module.
-    //
-    // Priority:
-    //   1. Firmware-team proprietary UUIDs (26cc3fc2 / 26cc3fc1)
-    //   2. HM-10 / CC254X profile (0000ffe1) — most common for Amp'ed RF
-    //   3. Nordic UART Service (6e400002 write / 6e400003 notify)
-    //   4. Microchip RN4870 profile
-    //
-    // All services are searched so the char can live inside any service UUID.
-    for (final svc in services) {
-      for (final c in svc.characteristics) {
-        // Priority 1 — proprietary
-        if (c.characteristicUuid == _writeGuid)    _writeChar  ??= c;
-        if (c.characteristicUuid == _notifyGuid)   _notifyChar ??= c;
-        // Priority 2 — HM-10 / CC254X (RW char doubles as write+notify)
-        if (c.characteristicUuid == _cc254xWrite)  { _writeChar ??= c; _notifyChar ??= c; }
-        // Priority 3 — Nordic UART Service
-        if (c.characteristicUuid == _nusWrite)     _writeChar  ??= c;
-        if (c.characteristicUuid == _nusNotify)    _notifyChar ??= c;
-        // Priority 4 — Microchip
-        if (c.characteristicUuid == _microchipWrite)  _writeChar  ??= c;
-        if (c.characteristicUuid == _microchipNotify) _notifyChar ??= c;
-      }
-    }
-
-    // Log result so debug card shows exactly which char was picked and
-    // all discovered services, making it trivial to spot a UUID mismatch.
-    final svcList = services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
-    if (_writeChar != null) {
-      final p = _writeChar!.properties;
-      final modes = <String>[
-        if (p.writeWithoutResponse) 'NoResp',
-        if (p.write)                'WithResp',
-      ];
-      _writeCharStatus = 'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
-          ' | props: ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs: [$svcList]';
-    } else {
-      _writeCharStatus = 'NOT FOUND | svcs: [$svcList]';
-    }
-
-    if (_notifyChar != null) {
-      await _notifyChar!.setNotifyValue(true);
-      await _notifyValueSub?.cancel();
-      _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
-        _notifyController.add(bytes);
-      });
-    }
-
-    // Cancel any previous listener before attaching a new one.
-    // Without this, each reconnect adds a duplicate callback.
-    await _connStateSub?.cancel();
-    _connStateSub = target.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.disconnected) {
-        _setState(app.BleConnectionState.disconnected);
-        if (_retryCount < _maxRetries) {
-          _retryCount++;
-          _retryTimer?.cancel();
-          _retryTimer = Timer(_retryDelay, () => unawaited(_doConnect()));
-        }
-      }
-    });
-
-    _retryCount = 0;
-    _connectStatus = 'connected';
-    _setState(app.BleConnectionState.connected);
-    return target.remoteId.str;
   }
 
   @override

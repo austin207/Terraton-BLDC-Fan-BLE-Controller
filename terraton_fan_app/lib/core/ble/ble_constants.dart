@@ -5,6 +5,12 @@
 // What the BLE60 puts in its advertisement packet (BLE Mesh Proxy profile).
 const String kAdvServiceUUID = "00001827-0000-1000-8000-00805f9b34fb";
 
+// ── BLE Mesh Proxy standard characteristics (confirmed working with BLE60) ───
+// The BLE60 advertises 0x1827 (Mesh Proxy Service) and exposes these standard
+// Mesh Proxy Data In/Out characteristics. Confirmed working in APK f793216.
+const String kMeshProxyDataInUUID  = "00002adb-0000-1000-8000-00805f9b34fb"; // Write
+const String kMeshProxyDataOutUUID = "00002adc-0000-1000-8000-00805f9b34fb"; // Notify
+
 // ── Firmware-team GATT UUIDs (proprietary Amp'ed RF service) ────────────────
 const String kServiceUUID    = "26cc3fc0-6241-f5b4-5347-63a3097f6764";
 const String kWriteCharUUID  = "26cc3fc2-6241-f5b4-5347-63a3097f6764";
