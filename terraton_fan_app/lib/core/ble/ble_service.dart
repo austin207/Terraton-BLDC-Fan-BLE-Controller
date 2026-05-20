@@ -42,9 +42,10 @@ class BleServiceImpl implements BleService {
   String _writeCharStatus = 'pending';
 
   // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
-  static final _serviceGuid = Guid(kServiceUUID);
-  static final _writeGuid   = Guid(kWriteCharUUID);
-  static final _notifyGuid  = Guid(kNotifyCharUUID);
+  static final _advServiceGuid = Guid(kAdvServiceUUID); // what the module advertises
+  static final _serviceGuid    = Guid(kServiceUUID);    // GATT service after connect
+  static final _writeGuid      = Guid(kWriteCharUUID);
+  static final _notifyGuid     = Guid(kNotifyCharUUID);
 
   // Stored so they can be cancelled before re-subscribing and on dispose.
   StreamSubscription<List<ScanResult>>? _scanResultsSub;
@@ -98,8 +99,12 @@ class BleServiceImpl implements BleService {
       try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
     }
 
+    // Filter on BOTH the advertised UUID (BLE Mesh Proxy — what the BLE60
+    // actually puts in its advertisement packet) and the proprietary GATT
+    // UUID (what ESP32 prototypes are flashed with). withServices is an OR
+    // match, so this finds both real hardware and dev test peripherals.
     await FlutterBluePlus.startScan(
-      withServices: [_serviceGuid],
+      withServices: [_advServiceGuid, _serviceGuid],
       timeout: Duration(seconds: timeoutSeconds),
     );
 
@@ -184,12 +189,15 @@ class BleServiceImpl implements BleService {
     _device = target;
 
     final services = await target.discoverServices();
+    // Search ALL services for the write/notify chars by UUID. The BLE60
+    // module exposes its data characteristics inside the proprietary
+    // service (kServiceUUID), but ESP32 test peripherals and some firmware
+    // variants put them under the Mesh Proxy service. Matching by char UUID
+    // directly is robust to either layout.
     for (final svc in services) {
-      if (svc.serviceUuid == _serviceGuid) {
-        for (final c in svc.characteristics) {
-          if (c.characteristicUuid == _writeGuid)  _writeChar  = c;
-          if (c.characteristicUuid == _notifyGuid) _notifyChar = c;
-        }
+      for (final c in svc.characteristics) {
+        if (c.characteristicUuid == _writeGuid)  _writeChar  ??= c;
+        if (c.characteristicUuid == _notifyGuid) _notifyChar ??= c;
       }
     }
 
