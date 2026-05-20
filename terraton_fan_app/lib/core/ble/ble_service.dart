@@ -104,8 +104,16 @@ class BleServiceImpl implements BleService {
   Future<void> startScan({String? targetMac, int timeoutSeconds = 10}) async {
     _targetMac = targetMac;
 
-    // Clears previous results so the list doesn't grow unboundedly across
-    // multiple scans. Side-effect: scan results briefly empty on Refresh.
+    // When a target MAC is known (called from control_screen to set up a
+    // connection), only record the target — do NOT clear _discoveredDevices
+    // and do NOT start a new BLE scan. The live BluetoothDevice (with its
+    // correct address type) is already in _discoveredDevices from the scan
+    // screen's earlier open-discovery scan. Clearing here destroys it and
+    // forces a fallback to BluetoothDevice.fromId() which has no address
+    // type — causing silent connection failures on many Android phones.
+    if (targetMac != null) return;
+
+    // Open discovery: clear previous results and start a fresh scan.
     _discovered.clear();
     _discoveredDevices.clear();
     _setState(app.BleConnectionState.scanning);
@@ -115,18 +123,8 @@ class BleServiceImpl implements BleService {
     await _scanResultsSub?.cancel();
     await _isScanSub?.cancel();
 
-    // Stop any previous scan only during open discovery.
-    // Skipped for targeted connection (targetMac != null) because the scan
-    // screen has already sent a stopScan on dispose; a second stop+start on
-    // some Android BLE drivers stalls the radio and delays connect().
-    if (targetMac == null) {
-      try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
-    }
+    try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
 
-    // Filter on BOTH the advertised UUID (BLE Mesh Proxy — what the BLE60
-    // actually puts in its advertisement packet) and the proprietary GATT
-    // UUID (what ESP32 prototypes are flashed with). withServices is an OR
-    // match, so this finds both real hardware and dev test peripherals.
     await FlutterBluePlus.startScan(
       withServices: [_advServiceGuid, _serviceGuid],
       timeout: Duration(seconds: timeoutSeconds),
