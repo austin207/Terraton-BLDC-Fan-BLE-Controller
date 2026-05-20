@@ -38,11 +38,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   bool _connecting = false;
 
-  // Debug
-  List<int>? _lastSentFrame;
-  List<int>? _lastReceivedFrame;
-  String     _lastSentLabel  = '';
-  String?    _lastWriteError;
+  // Debug state isolated in a ValueNotifier so only _DebugCard rebuilds on
+  // each BLE notification — not the entire ControlScreen.
+  final _debug = ValueNotifier(const _DebugSnapshot());
 
   bool get _isDemo => widget.fan.deviceId == '__demo__';
 
@@ -77,9 +75,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _lastRpmAt   = null;
       _startTelemetry();
       _subscribeNotify();
+    } on Error {
+      // Programming bug — let it propagate to the global error handler so it
+      // surfaces in debug mode and is reported in release. Do NOT swallow it.
+      rethrow;
     } on Object catch (_) {
-      // Connection failed — connectionStateStream emits disconnected, which
-      // surfaces the ConnectionLostCard with a Retry button.
+      // Expected connection Exception — connectionStateStream emits disconnected,
+      // surfacing the ConnectionLostCard with a Retry button.
     } finally {
       if (mounted) _connecting = false;
     }
@@ -89,7 +91,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
-      setState(() => _lastReceivedFrame = bytes);
+      _debug.value = _debug.value.copyWith(receivedFrame: bytes);
       final response = BleResponseParser.parse(bytes);
       if (response == null) return;
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
@@ -161,6 +163,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _telemetryTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     if (!_isDemo) unawaited(_ble.disconnect());
+    _debug.dispose();
     super.dispose();
   }
 
@@ -194,13 +197,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
       return;
     }
-    if (mounted) {
-      setState(() {
-        _lastSentFrame  = frame;
-        _lastSentLabel  = label;
-        _lastWriteError = null;
-      });
-    }
+    _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
@@ -208,8 +205,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     try {
       await _ble.writeFrame(frame);
     } on Object catch (e) {
-      // Surface write errors to the debug card; connection state stream handles reconnect.
-      if (mounted) setState(() => _lastWriteError = e.toString());
+      _debug.value = _debug.value.copyWith(writeError: e.toString());
     }
     if (!mounted) return;
   }
@@ -429,15 +425,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                 ),
 
-                // ── Debug card (always visible — outside the IgnorePointer) ─
+                // ── Debug card — uses ValueListenableBuilder so only the
+                // card rebuilds on each BLE notification, not the whole screen.
                 const SizedBox(height: 16),
-                _DebugCard(
-                  sentFrame: _lastSentFrame,
-                  sentLabel: _lastSentLabel,
-                  receivedFrame: _lastReceivedFrame,
-                  writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
-                  connectStatus:   _isDemo ? 'demo' : _ble.connectStatus,
-                  writeError: _lastWriteError,
+                ValueListenableBuilder<_DebugSnapshot>(
+                  valueListenable: _debug,
+                  builder: (_, snap, __) => _DebugCard(
+                    sentFrame: snap.sentFrame,
+                    sentLabel: snap.sentLabel,
+                    receivedFrame: snap.receivedFrame,
+                    writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
+                    connectStatus:   _isDemo ? 'demo' : _ble.connectStatus,
+                    writeError: snap.writeError,
+                  ),
                 ),
 
               ],
@@ -471,6 +471,38 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     };
     return Text(text, style: TextStyle(fontSize: 11, color: color, letterSpacing: 0.5));
   }
+}
+
+// ── Debug snapshot ────────────────────────────────────────────────────────────
+
+class _DebugSnapshot {
+  final List<int>? sentFrame;
+  final String sentLabel;
+  final List<int>? receivedFrame;
+  final String? writeError;
+
+  const _DebugSnapshot({
+    this.sentFrame,
+    this.sentLabel = '',
+    this.receivedFrame,
+    this.writeError,
+  });
+
+  _DebugSnapshot copyWith({
+    List<int>? sentFrame,
+    String? sentLabel,
+    List<int>? receivedFrame,
+    Object? writeError = _sentinel,
+  }) => _DebugSnapshot(
+    sentFrame: sentFrame ?? this.sentFrame,
+    sentLabel: sentLabel ?? this.sentLabel,
+    receivedFrame: receivedFrame ?? this.receivedFrame,
+    writeError: identical(writeError, _sentinel)
+        ? this.writeError
+        : writeError as String?,
+  );
+
+  static const Object _sentinel = Object();
 }
 
 // ── Debug card ────────────────────────────────────────────────────────────────
