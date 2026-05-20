@@ -39,11 +39,9 @@ class BleServiceImpl implements BleService {
   int                        _retryCount = 0;
   static const int           _maxRetries        = 2;
   static const Duration      _retryDelay        = Duration(seconds: 2);
-  // autoConnect=true does its own waiting for the peripheral to advertise,
-  // so the timeout has to be generous — Amp'ed RF / random-address modules
-  // can take 20–30s to be picked up on the first cold connect.
-  static const Duration      _connectTimeout    = Duration(seconds: 30);
-  static const Duration      _connectHardCap    = Duration(seconds: 33); // dart-side safety net
+  // Match nRF Connect's defaults: autoConnect=false, 15s per attempt.
+  static const Duration      _connectTimeout    = Duration(seconds: 15);
+  static const Duration      _connectHardCap    = Duration(seconds: 18); // dart-side safety net
   static const Duration      _disconnectTimeout = Duration(seconds: 3);  // disconnect can hang on Android
 
   bool   _disposed        = false;
@@ -66,7 +64,11 @@ class BleServiceImpl implements BleService {
   final _notifyController      = StreamController<List<int>>.broadcast();
   final _stateController       = StreamController<app.BleConnectionState>.broadcast();
   final _scanResultsController = StreamController<List<DiscoveredFan>>.broadcast();
-  final Map<String, DiscoveredFan> _discovered = {};
+  final Map<String, DiscoveredFan>      _discovered        = {};
+  // Live BluetoothDevice instances from scan results, keyed by MAC. These
+  // carry the address type that BluetoothDevice.fromId(mac) loses, which
+  // is required for connecting to random-address peripherals like Amp'ed RF.
+  final Map<String, BluetoothDevice>    _discoveredDevices = {};
 
   app.BleConnectionState _currentState = app.BleConnectionState.disconnected;
 
@@ -96,6 +98,7 @@ class BleServiceImpl implements BleService {
     // Clears previous results so the list doesn't grow unboundedly across
     // multiple scans. Side-effect: scan results briefly empty on Refresh.
     _discovered.clear();
+    _discoveredDevices.clear();
     _setState(app.BleConnectionState.scanning);
 
     // Cancel previous scan subscriptions before re-subscribing.
@@ -130,7 +133,8 @@ class BleServiceImpl implements BleService {
             : r.device.platformName.isNotEmpty
                 ? r.device.platformName
                 : mac;
-        _discovered[mac] = DiscoveredFan(macAddress: mac, name: name, rssi: r.rssi);
+        _discovered[mac]        = DiscoveredFan(macAddress: mac, name: name, rssi: r.rssi);
+        _discoveredDevices[mac] = r.device; // keep the live device for connect()
       }
       _scanResultsController.add(_discovered.values.toList());
     });
@@ -160,7 +164,52 @@ class BleServiceImpl implements BleService {
     BluetoothDevice? target;
 
     if (_targetMac != null) {
-      target = BluetoothDevice.fromId(_targetMac!);
+      // Wait for the target to appear in scan results before connecting.
+      // The BluetoothDevice instance from a scan carries the address type
+      // (PUBLIC / RANDOM / RANDOM_RESOLVABLE) that Android needs to initiate
+      // GATT. BluetoothDevice.fromId(mac) defaults to PUBLIC, which silently
+      // hangs for Amp'ed RF / Nordic modules using random addresses. nRF
+      // Connect always works because it connects straight from the scan
+      // result, not from a stored MAC.
+      _connectStatus = 'waiting for scan to find device...';
+      final found = _discoveredDevices[_targetMac];
+      if (found != null) {
+        target = found;
+        _connectStatus = 'using scan-result device (cached)';
+      } else {
+        final completer = Completer<BluetoothDevice?>();
+        StreamSubscription<List<ScanResult>>? sub;
+        sub = FlutterBluePlus.scanResults.listen((results) {
+          for (final r in results) {
+            if (r.device.remoteId.str == _targetMac && !completer.isCompleted) {
+              completer.complete(r.device);
+              return;
+            }
+          }
+        });
+        try {
+          target = await completer.future.timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => null,
+          );
+        } finally {
+          await sub.cancel();
+        }
+        if (target != null) {
+          _connectStatus = 'using scan-result device';
+        } else {
+          target = BluetoothDevice.fromId(_targetMac!);
+          _connectStatus = 'scan did not find device — using fromId()';
+        }
+      }
+
+      // Clear Android's stale GATT cache for this peripheral. Previous failed
+      // attempts can leave a poisoned service cache that makes connect() hang
+      // during service discovery. nRF Connect's "Refresh services" does the
+      // same thing under the hood.
+      try {
+        await target.clearGattCache();
+      } on Object catch (_) {}
     } else {
       final completer = Completer<BluetoothDevice>();
       StreamSubscription<List<ScanResult>>? sub;
@@ -180,23 +229,19 @@ class BleServiceImpl implements BleService {
       }
     }
 
-    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1} (autoConnect)';
+    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
     try {
-      // autoConnect: true is the canonical Android fix for peripherals that
-      // BluetoothGatt.connect() can't pick up directly — Amp'ed RF modules,
-      // Nordic devices, anything using random / resolvable private addresses.
-      // Android queues the connection until the peripheral's next advertisement
-      // is seen, then initiates the GATT link. Much more reliable than the
-      // direct-connect path (autoConnect: false) for modules that work fine
-      // with nRF Connect / generic BLE apps but hang in flutter_blue_plus.
-      //
-      // Trade-off: initial connection is slower (Android uses its background
-      // scan interval, ~5–10s typical, up to 30s). Future.timeout() caps it.
+      // autoConnect: false matches nRF Connect / Serial Bluetooth Terminal —
+      // direct GATT connect with explicit TRANSPORT_LE. autoConnect: true was
+      // making things worse for the BLE60 (Android keeps it pending until the
+      // peripheral re-advertises, which Amp'ed RF modules duty-cycle).
+      // Future.timeout(_connectHardCap) is the dart-side safety net in case
+      // BluetoothGatt.connect() itself hangs past the requested timeout.
       await target
           .connect(
             license: License.free,
             timeout: _connectTimeout,
-            autoConnect: true,
+            autoConnect: false,
           )
           .timeout(_connectHardCap);
     } on Object catch (e) {
