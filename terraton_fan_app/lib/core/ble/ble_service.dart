@@ -164,52 +164,11 @@ class BleServiceImpl implements BleService {
     BluetoothDevice? target;
 
     if (_targetMac != null) {
-      // Wait for the target to appear in scan results before connecting.
-      // The BluetoothDevice instance from a scan carries the address type
-      // (PUBLIC / RANDOM / RANDOM_RESOLVABLE) that Android needs to initiate
-      // GATT. BluetoothDevice.fromId(mac) defaults to PUBLIC, which silently
-      // hangs for Amp'ed RF / Nordic modules using random addresses. nRF
-      // Connect always works because it connects straight from the scan
-      // result, not from a stored MAC.
-      _connectStatus = 'waiting for scan to find device...';
-      final found = _discoveredDevices[_targetMac];
-      if (found != null) {
-        target = found;
-        _connectStatus = 'using scan-result device (cached)';
-      } else {
-        final completer = Completer<BluetoothDevice?>();
-        StreamSubscription<List<ScanResult>>? sub;
-        sub = FlutterBluePlus.scanResults.listen((results) {
-          for (final r in results) {
-            if (r.device.remoteId.str == _targetMac && !completer.isCompleted) {
-              completer.complete(r.device);
-              return;
-            }
-          }
-        });
-        try {
-          target = await completer.future.timeout(
-            const Duration(seconds: 8),
-            onTimeout: () => null,
-          );
-        } finally {
-          await sub.cancel();
-        }
-        if (target != null) {
-          _connectStatus = 'using scan-result device';
-        } else {
-          target = BluetoothDevice.fromId(_targetMac!);
-          _connectStatus = 'scan did not find device — using fromId()';
-        }
-      }
-
-      // Clear Android's stale GATT cache for this peripheral. Previous failed
-      // attempts can leave a poisoned service cache that makes connect() hang
-      // during service discovery. nRF Connect's "Refresh services" does the
-      // same thing under the hood.
-      try {
-        await target.clearGattCache();
-      } on Object catch (_) {}
+      // Mirror Serial Bluetooth Terminal's approach exactly:
+      //   BluetoothAdapter.getRemoteDevice(mac) → connectGatt(ctx, false, cb, TRANSPORT_LE)
+      // No scan waiting, no cache clearing — both add latency or interfere
+      // with the Amp'ed RF module. fromId() maps directly to getRemoteDevice().
+      target = BluetoothDevice.fromId(_targetMac!);
     } else {
       final completer = Completer<BluetoothDevice>();
       StreamSubscription<List<ScanResult>>? sub;
@@ -270,11 +229,14 @@ class BleServiceImpl implements BleService {
       _setState(app.BleConnectionState.disconnected);
       rethrow;
     }
-    _connectStatus = 'connected, discovering services...';
+    _connectStatus = 'discovering services...';
 
     _device = target;
 
-    final services = await target.discoverServices();
+    final services = await target.discoverServices()
+        .timeout(const Duration(seconds: 15), onTimeout: () {
+      throw TimeoutException('discoverServices() timed out after 15s');
+    });
     // Search ALL services for the write/notify chars by UUID. The BLE60
     // module exposes its data characteristics inside the proprietary
     // service (kServiceUUID), but ESP32 test peripherals and some firmware
