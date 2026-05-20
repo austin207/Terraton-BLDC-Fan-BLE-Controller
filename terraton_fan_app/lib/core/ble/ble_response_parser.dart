@@ -16,7 +16,8 @@ class BleResponseParser {
     if (bytes.length < 5 + dataLen + 1) return null;
     final data = bytes.sublist(5, 5 + dataLen);
     final received = bytes[5 + dataLen];
-    int sum = bytes[2] + bytes[3] + bytes[4];
+    // Checksum = sum of ALL frame bytes before the checksum (including 0x55 0xAA header).
+    int sum = bytes[0] + bytes[1] + bytes[2] + bytes[3] + bytes[4];
     for (final b in data) { sum += b; }
     if ((sum & 0xFF) != received) return null;
     return FanResponse(command: command, data: data);

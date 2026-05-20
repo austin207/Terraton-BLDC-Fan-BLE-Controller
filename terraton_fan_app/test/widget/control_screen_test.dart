@@ -100,10 +100,10 @@ void main() {
   // Pump connected AND simulate a power-on BLE notification so that
   // controlsEnabled = true (controls require isPowered as well as connected).
   // Power-on response frame: [55 AA 07 02 01 01 0B]
-  //   checksum = (0x07 + 0x02 + 0x01 + 0x01) & 0xFF = 0x0B
+  //   checksum = (0x55+0xAA+0x07+0x02+0x01+0x01) & 0xFF = 266 & 0xFF = 0x0A
   Future<void> pumpPoweredOn(WidgetTester tester) async {
     await pumpConnected(tester);
-    notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0B]);
+    notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]);
     await tester.pump(); // notification delivered → updatePower(true)
     await tester.pump(); // widget rebuilds with controlsEnabled = true
   }
@@ -162,7 +162,7 @@ void main() {
     await tester.pump();
 
     verify(
-      () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x01, 0x29]),
+      () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x01, 0x28]),
     ).called(1);
   });
 

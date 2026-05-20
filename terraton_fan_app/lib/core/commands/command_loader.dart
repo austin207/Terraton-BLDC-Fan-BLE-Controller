@@ -29,7 +29,8 @@ class CommandLoader {
     if (commandByte == null || data == null) return null;
     const reqId = 0x06;
     final len = data.length;
-    int sum = reqId + commandByte + len;
+    // Checksum = sum of ALL frame bytes before the checksum (including 0x55 0xAA header).
+    int sum = 0x55 + 0xAA + reqId + commandByte + len;
     for (final b in data) { sum += b; }
     return [0x55, 0xAA, reqId, commandByte, len, ...data, sum & 0xFF];
   }

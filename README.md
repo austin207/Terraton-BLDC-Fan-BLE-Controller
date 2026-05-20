@@ -62,22 +62,33 @@ assets/commands.yaml
 
 **Frame format:** `[0x55, 0xAA, packetId, command, dataLen, ...data, checksum]`
 - Request: `packetId = 0x06` · Response: `packetId = 0x07`
-- Checksum: lower byte of `(packetId + command + dataLen + sum(data))`
+- **Checksum:** lower byte of the sum of **all** bytes before the checksum (including `0x55` and `0xAA`):
+  `checksum = (0x55 + 0xAA + packetId + command + dataLen + sum(data)) & 0xFF`
 
-**Command table** (all bytes in `assets/commands.yaml`):
+**BLE60 bridge note:** The Amp'ed RF BLE60 is a BLE-to-UART transparent bridge. It buffers incoming BLE writes and only flushes to the MCU's UART when it receives `\r\n` (0x0D 0x0A). The app appends `0x0D 0x0A` to every frame automatically. The MCU UART parser must scan for the `55 AA` header and ignore the trailing `0D 0A` bytes.
+
+**Command table** — manually verified against hardware (exact frames the MCU accepts):
 
 | Operation | Frame (hex) |
 |---|---|
-| Power ON | `55 AA 06 02 01 01 0A` |
-| Power OFF | `55 AA 06 02 01 00 09` |
-| Speed 1–6 | `55 AA 06 04 01 0N checksum` |
-| Boost | `55 AA 06 21 01 01 29` |
-| Nature | `55 AA 06 21 01 02 2A` |
-| Reverse | `55 AA 06 21 01 03 2B` |
-| Smart | `55 AA 06 21 01 04 2C` |
-| Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 ...` |
-| Query power (watts) | `55 AA 06 23 01 00 2A` |
-| Query speed (RPM) | `55 AA 06 24 01 00 2B` |
+| Power ON | `55 AA 06 02 01 01 09` |
+| Power OFF | `55 AA 06 02 01 00 08` |
+| Speed 1 | `55 AA 06 04 01 01 0B` |
+| Speed 2 | `55 AA 06 04 01 02 0C` |
+| Speed 3 | `55 AA 06 04 01 03 0D` |
+| Speed 4 | `55 AA 06 04 01 04 0E` |
+| Speed 5 | `55 AA 06 04 01 05 0F` |
+| Speed 6 | `55 AA 06 04 01 06 10` |
+| Boost mode | `55 AA 06 21 01 01 28` |
+| Nature mode | `55 AA 06 21 01 02 29` |
+| Reverse mode | `55 AA 06 21 01 03 2A` |
+| Smart mode | `55 AA 06 21 01 04 2B` |
+| Timer OFF | `55 AA 06 22 01 00 28` |
+| Timer 2 h | `55 AA 06 22 01 02 2A` |
+| Timer 4 h | `55 AA 06 22 01 04 2C` |
+| Timer 8 h | `55 AA 06 22 01 08 30` |
+| Query power (watts) | `55 AA 06 23 01 00 29` |
+| Query speed (RPM) | `55 AA 06 24 01 00 2A` |
 
 ---
 
