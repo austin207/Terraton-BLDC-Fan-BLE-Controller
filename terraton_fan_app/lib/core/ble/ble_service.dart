@@ -177,9 +177,8 @@ class BleServiceImpl implements BleService {
           }
         }
 
-        final svcList = services
-            .map((s) => s.serviceUuid.toString().substring(0, 8))
-            .join(', ');
+        String shortId(Guid g) { final s = g.toString(); return s.length > 8 ? s.substring(0, 8) : s; }
+        final svcList = services.map((s) => shortId(s.serviceUuid)).join(', ');
         if (_writeChar != null) {
           final p     = _writeChar!.properties;
           final modes = [
@@ -187,7 +186,7 @@ class BleServiceImpl implements BleService {
             if (p.write)                'WithResp',
           ];
           _writeCharStatus =
-              'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
+              'found ${shortId(_writeChar!.characteristicUuid)}'
               ' | ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs:[$svcList]';
         } else {
           _writeCharStatus = 'NOT FOUND | svcs:[$svcList]';
