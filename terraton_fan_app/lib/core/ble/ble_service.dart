@@ -163,6 +163,37 @@ class BleServiceImpl implements BleService {
     return _doConnect();
   }
 
+  /// Scans without a service UUID filter to find a specific MAC address.
+  /// Returns the live BluetoothDevice (which carries the correct address type)
+  /// or null if the device is not seen within [timeout].
+  Future<BluetoothDevice?> _scanForDevice(String mac, {Duration timeout = const Duration(seconds: 8)}) async {
+    final completer = Completer<BluetoothDevice>();
+    StreamSubscription<List<ScanResult>>? sub;
+    sub = FlutterBluePlus.scanResults.listen((results) {
+      for (final r in results) {
+        if (r.device.remoteId.str == mac && !completer.isCompleted) {
+          _discoveredDevices[mac] = r.device;
+          completer.complete(r.device);
+          break;
+        }
+      }
+    });
+    // Scan with no service filter so we find the device regardless of what
+    // it is currently advertising. We know the exact MAC so filtering is
+    // unnecessary and risks missing a device that duty-cycles its UUID.
+    try {
+      await FlutterBluePlus.startScan(timeout: timeout);
+    } on Object catch (_) {}
+    try {
+      return await completer.future.timeout(timeout);
+    } on TimeoutException {
+      return null;
+    } finally {
+      await sub.cancel();
+      try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
+    }
+  }
+
   Future<String> _doConnect() async {
     if (_disposed) throw StateError('BleService disposed');
     _setState(app.BleConnectionState.connecting);
@@ -170,11 +201,18 @@ class BleServiceImpl implements BleService {
     BluetoothDevice? target;
 
     if (_targetMac != null) {
-      // Mirror Serial Bluetooth Terminal's approach exactly:
-      //   BluetoothAdapter.getRemoteDevice(mac) → connectGatt(ctx, false, cb, TRANSPORT_LE)
-      // No scan waiting, no cache clearing — both add latency or interfere
-      // with the Amp'ed RF module. fromId() maps directly to getRemoteDevice().
-      target = BluetoothDevice.fromId(_targetMac!);
+      // Prefer the live scan-result device — it carries the correct BLE address
+      // type (public vs random). BluetoothDevice.fromId() always assumes public,
+      // which fails silently on phones that have never seen this peripheral.
+      // _discoveredDevices is populated by the BLE scan screen; for home-screen
+      // reconnections where no scan has run this session we do a brief targeted
+      // scan first, then fall back to fromId() as a last resort.
+      target = _discoveredDevices[_targetMac];
+      if (target == null) {
+        _connectStatus = 'scanning for device...';
+        target = await _scanForDevice(_targetMac!, timeout: const Duration(seconds: 8));
+        target ??= BluetoothDevice.fromId(_targetMac!);
+      }
     } else {
       final completer = Completer<BluetoothDevice>();
       StreamSubscription<List<ScanResult>>? sub;
