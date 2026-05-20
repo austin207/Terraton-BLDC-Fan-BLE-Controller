@@ -57,35 +57,31 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   Future<void> _connect() async {
     if (_connecting) return;
+    final mac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
+    if (mac == null) return;
+
     _connecting = true;
     try {
-      final repo = ref.read(fanRepositoryProvider);
-      final mac  = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
-
-      await _ble.startScan(targetMac: mac, timeoutSeconds: 10);
+      final returnedMac = await _ble.connect(mac);
       if (!mounted) return;
 
-      try {
-        final returnedMac = await _ble.connect();
+      if (widget.fan.macAddress.isEmpty && !_isDemo) {
+        final repo = ref.read(fanRepositoryProvider);
+        await repo.updateMac(widget.fan.deviceId, returnedMac);
+        widget.fan.macAddress = returnedMac;
         if (!mounted) return;
-        if (widget.fan.macAddress.isEmpty && !_isDemo) {
-          await repo.updateMac(widget.fan.deviceId, returnedMac);
-          widget.fan.macAddress = returnedMac;
-          if (!mounted) return;
-          ref.invalidate(savedFansProvider);
-        }
-      } on Object catch (_) {
-        if (!mounted) return;
-        return;
+        ref.invalidate(savedFansProvider);
       }
 
-      if (!mounted) return;
       _lastWattsAt = null;
       _lastRpmAt   = null;
       _startTelemetry();
       _subscribeNotify();
+    } on Object catch (_) {
+      // Connection failed — connectionStateStream emits disconnected, which
+      // surfaces the ConnectionLostCard with a Retry button.
     } finally {
-      _connecting = false;
+      if (mounted) _connecting = false;
     }
   }
 

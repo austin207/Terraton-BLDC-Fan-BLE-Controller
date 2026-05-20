@@ -53,17 +53,16 @@ void main() {
         .thenReturn(BleConnectionState.disconnected);
     when(() => mockBle.scanResultsStream)
         .thenAnswer((_) => const Stream.empty());
-    when(() => mockBle.startScan(
-              targetMac:      any(named: 'targetMac'),
-              timeoutSeconds: any(named: 'timeoutSeconds'),
-            ))
+    when(() => mockBle.startScan(timeoutSeconds: any(named: 'timeoutSeconds')))
         .thenAnswer((_) async {});
-    when(() => mockBle.connect())
+    when(() => mockBle.connect(any()))
         .thenAnswer((_) async => 'AA:BB:CC:DD:EE:FF');
     when(() => mockBle.disconnect())
         .thenAnswer((_) async {});
     when(() => mockBle.writeFrame(any()))
         .thenAnswer((_) async {});
+    when(() => mockBle.writeCharStatus).thenReturn('pending');
+    when(() => mockBle.connectStatus).thenReturn('idle');
 
     when(() => mockRepo.getState(any()))
         .thenReturn(FanState()..deviceId = 'TT-001');

@@ -13,214 +13,153 @@ class DiscoveredFan {
 }
 
 abstract class BleService {
-  Future<void> startScan({String? targetMac, int timeoutSeconds = 10});
+  /// Open discovery scan — populates scanResultsStream.
+  Future<void> startScan({int timeoutSeconds = 10});
   Future<void> stopScan();
-  Future<String> connect();
+
+  /// Connect to a specific device by MAC. Uses the live BluetoothDevice from
+  /// the most recent scan when available (preserves BLE address type).
+  Future<String> connect(String mac);
   Future<void> disconnect();
   Future<void> writeFrame(List<int> frame);
   Future<void> dispose();
-  Stream<List<int>>               get notifyStream;
-  Stream<app.BleConnectionState>  get connectionStateStream;
-  app.BleConnectionState          get currentState;
-  Stream<List<DiscoveredFan>>     get scanResultsStream;
-  /// Human-readable diagnostic: whether the write characteristic was found
-  /// after the last service discovery, and what ATT properties it has.
-  String get writeCharStatus;
-  /// Human-readable diagnostic: last connection attempt outcome — useful
-  /// for surfacing why connect() is failing (timeouts, GATT errors, etc.).
-  String get connectStatus;
+
+  Stream<List<int>>              get notifyStream;
+  Stream<app.BleConnectionState> get connectionStateStream;
+  app.BleConnectionState         get currentState;
+  Stream<List<DiscoveredFan>>    get scanResultsStream;
+  String                         get writeCharStatus;
+  String                         get connectStatus;
 }
 
 class BleServiceImpl implements BleService {
-  BluetoothDevice?           _device;
-  BluetoothCharacteristic?   _writeChar;
-  BluetoothCharacteristic?   _notifyChar;
-  String?                    _targetMac;
-  int                        _retryCount = 0;
-  static const int           _maxRetries        = 2;
-  static const Duration      _retryDelay        = Duration(seconds: 2);
-  // Match nRF Connect's defaults: autoConnect=false, 15s per attempt.
-  static const Duration      _connectTimeout    = Duration(seconds: 15);
-  static const Duration      _disconnectTimeout = Duration(seconds: 3);  // disconnect can hang on Android
+  BluetoothDevice?          _device;
+  BluetoothCharacteristic?  _writeChar;
+  BluetoothCharacteristic?  _notifyChar;
+  bool                      _disposed = false;
 
-  bool   _disposed        = false;
-  Timer? _retryTimer;
   String _writeCharStatus = 'pending';
   String _connectStatus   = 'idle';
 
-  // Cached Guid objects — avoids re-parsing constant UUID strings on every scan/discovery.
+  // Scan cache: live BluetoothDevice objects keyed by MAC.
+  // These carry the BLE address type (public vs random) which is lost when
+  // constructing a device from a MAC string alone via BluetoothDevice.fromId().
+  final Map<String, BluetoothDevice> _scanCache  = {};
+  final Map<String, DiscoveredFan>   _discovered = {};
+
+  StreamSubscription<List<ScanResult>>?         _scanResultsSub;
+  StreamSubscription<bool>?                     _scanStateSub;
+  StreamSubscription<BluetoothConnectionState>? _connStateSub;
+  StreamSubscription<List<int>>?                _notifyValueSub;
+
+  final _notifyCtrl = StreamController<List<int>>.broadcast();
+  final _stateCtrl  = StreamController<app.BleConnectionState>.broadcast();
+  final _scanCtrl   = StreamController<List<DiscoveredFan>>.broadcast();
+
+  app.BleConnectionState _currentState = app.BleConnectionState.disconnected;
+
+  // Cached Guids — parse once, reuse on every scan/discovery.
   static final _advServiceGuid  = Guid(kAdvServiceUUID);
   static final _serviceGuid     = Guid(kServiceUUID);
-  // Priority 1 — Mesh Proxy Data In/Out (confirmed working with the BLE60 fan).
   static final _meshProxyIn     = Guid(kMeshProxyDataInUUID);
   static final _meshProxyOut    = Guid(kMeshProxyDataOutUUID);
-  // Priority 2 — firmware-team proprietary UUIDs.
   static final _writeGuid       = Guid(kWriteCharUUID);
   static final _notifyGuid      = Guid(kNotifyCharUUID);
-  // Priority 3-5 — standard UART-over-BLE fallback profiles.
   static final _cc254xWrite     = Guid(kCC254xCharUUID);
   static final _nusWrite        = Guid(kNusWriteCharUUID);
   static final _nusNotify       = Guid(kNusNotifyCharUUID);
   static final _microchipWrite  = Guid(kMicrochipWriteCharUUID);
   static final _microchipNotify = Guid(kMicrochipNotifyCharUUID);
 
-  // Stored so they can be cancelled before re-subscribing and on dispose.
-  StreamSubscription<List<ScanResult>>? _scanResultsSub;
-  StreamSubscription<bool>?             _isScanSub;
-  StreamSubscription<BluetoothConnectionState>? _connStateSub;
-  StreamSubscription<List<int>>?        _notifyValueSub;
-
-  final _notifyController      = StreamController<List<int>>.broadcast();
-  final _stateController       = StreamController<app.BleConnectionState>.broadcast();
-  final _scanResultsController = StreamController<List<DiscoveredFan>>.broadcast();
-  final Map<String, DiscoveredFan>      _discovered        = {};
-  // Live BluetoothDevice instances from scan results, keyed by MAC. These
-  // carry the address type that BluetoothDevice.fromId(mac) loses, which
-  // is required for connecting to random-address peripherals like Amp'ed RF.
-  final Map<String, BluetoothDevice>    _discoveredDevices = {};
-
-  app.BleConnectionState _currentState = app.BleConnectionState.disconnected;
-
-  @override
-  Stream<List<int>>               get notifyStream        => _notifyController.stream;
-  @override
-  Stream<app.BleConnectionState>  get connectionStateStream => _stateController.stream;
-  @override
-  Stream<List<DiscoveredFan>>     get scanResultsStream   => _scanResultsController.stream;
-  @override
-  app.BleConnectionState          get currentState        => _currentState;
-  @override
-  String                          get writeCharStatus     => _writeCharStatus;
-  @override
-  String                          get connectStatus       => _connectStatus;
+  @override Stream<List<int>>              get notifyStream        => _notifyCtrl.stream;
+  @override Stream<app.BleConnectionState> get connectionStateStream => _stateCtrl.stream;
+  @override Stream<List<DiscoveredFan>>    get scanResultsStream   => _scanCtrl.stream;
+  @override app.BleConnectionState         get currentState        => _currentState;
+  @override String                         get writeCharStatus     => _writeCharStatus;
+  @override String                         get connectStatus       => _connectStatus;
 
   void _setState(app.BleConnectionState s) {
     if (_disposed) return;
     _currentState = s;
-    _stateController.add(s);
+    _stateCtrl.add(s);
   }
 
+  // ── Scan ──────────────────────────────────────────────────────────────────
+
   @override
-  Future<void> startScan({String? targetMac, int timeoutSeconds = 10}) async {
-    _targetMac = targetMac;
-
-    // When a target MAC is known (called from control_screen to set up a
-    // connection), only record the target — do NOT clear _discoveredDevices
-    // and do NOT start a new BLE scan. The live BluetoothDevice (with its
-    // correct address type) is already in _discoveredDevices from the scan
-    // screen's earlier open-discovery scan. Clearing here destroys it and
-    // forces a fallback to BluetoothDevice.fromId() which has no address
-    // type — causing silent connection failures on many Android phones.
-    if (targetMac != null) return;
-
-    // Open discovery: clear previous results and start a fresh scan.
+  Future<void> startScan({int timeoutSeconds = 10}) async {
     _discovered.clear();
-    _discoveredDevices.clear();
+    _scanCache.clear();
     _setState(app.BleConnectionState.scanning);
 
-    // Cancel previous scan subscriptions before re-subscribing.
-    // Without this, every Refresh tap stacks a new listener.
     await _scanResultsSub?.cancel();
-    await _isScanSub?.cancel();
-
+    await _scanStateSub?.cancel();
     try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
+
+    _scanResultsSub = FlutterBluePlus.scanResults.listen((results) {
+      for (final r in results) {
+        final mac     = r.device.remoteId.str;
+        final advName = r.advertisementData.advName;
+        final name    = advName.isNotEmpty
+            ? advName
+            : r.device.platformName.isNotEmpty
+                ? r.device.platformName
+                : mac;
+        _scanCache[mac]  = r.device;
+        _discovered[mac] = DiscoveredFan(macAddress: mac, name: name, rssi: r.rssi);
+      }
+      _scanCtrl.add(_discovered.values.toList());
+    });
+
+    _scanStateSub = FlutterBluePlus.isScanning.listen((scanning) {
+      if (!scanning && _currentState == app.BleConnectionState.scanning) {
+        _setState(app.BleConnectionState.disconnected);
+      }
+    });
 
     await FlutterBluePlus.startScan(
       withServices: [_advServiceGuid, _serviceGuid],
       timeout: Duration(seconds: timeoutSeconds),
     );
-
-    _scanResultsSub = FlutterBluePlus.scanResults.listen((results) {
-      for (final r in results) {
-        final mac  = r.device.remoteId.str;
-        // Prefer advertisement name; fall back to cached platform name then MAC.
-        final advName = r.advertisementData.advName;
-        final name = advName.isNotEmpty
-            ? advName
-            : r.device.platformName.isNotEmpty
-                ? r.device.platformName
-                : mac;
-        _discovered[mac]        = DiscoveredFan(macAddress: mac, name: name, rssi: r.rssi);
-        _discoveredDevices[mac] = r.device; // keep the live device for connect()
-      }
-      _scanResultsController.add(_discovered.values.toList());
-    });
-
-    _isScanSub = FlutterBluePlus.isScanning.listen((scanning) {
-      if (!scanning && _currentState == app.BleConnectionState.scanning) {
-        _setState(app.BleConnectionState.disconnected);
-      }
-    });
   }
 
   @override
-  Future<void> stopScan() async {
-    await FlutterBluePlus.stopScan();
-  }
+  Future<void> stopScan() => FlutterBluePlus.stopScan();
+
+  // ── Connect ───────────────────────────────────────────────────────────────
 
   @override
-  Future<String> connect() async {
-    _retryCount = 0;
-    return _doConnect();
-  }
-
-  Future<String> _doConnect() async {
+  Future<String> connect(String mac) async {
     if (_disposed) throw StateError('BleService disposed');
     _setState(app.BleConnectionState.connecting);
+    _connectStatus = 'connecting...';
+    _writeCharStatus = 'pending';
 
-    // Prefer the live scan-result device — it carries the correct BLE address
-    // type (public vs random). BluetoothDevice.fromId() works when Android has
-    // the address type cached from a prior scan or pairing.
-    final BluetoothDevice target;
-    if (_targetMac != null) {
-      target = _discoveredDevices[_targetMac] ?? BluetoothDevice.fromId(_targetMac!);
-    } else {
-      final completer = Completer<BluetoothDevice>();
-      StreamSubscription<List<ScanResult>>? sub;
-      sub = FlutterBluePlus.scanResults.listen((results) {
-        if (results.isNotEmpty && !completer.isCompleted) {
-          completer.complete(results.first.device);
-        }
-      });
-      await startScan(timeoutSeconds: 10);
-      try {
-        target = await completer.future.timeout(const Duration(seconds: 12), onTimeout: () {
-          throw TimeoutException('No fan found during scan.');
-        });
-      } finally {
-        await sub.cancel();
-      }
-    }
+    // Use the live scan-result device when available — it carries the correct
+    // BLE address type. On reconnects after the first session, Android caches
+    // the address type so fromId() also works.
+    final device = _scanCache[mac] ?? BluetoothDevice.fromId(mac);
 
-    _connectStatus = 'attempt ${_retryCount + 1}/${_maxRetries + 1}';
     try {
-      // Direct GATT connect — autoConnect:false = immediate TRANSPORT_LE connect,
-      // matching nRF Connect and SimpleBluetoothLeTerminal.
-      // No mtu parameter: MTU negotiation is not needed for 9-byte frames, and
-      // passing mtu blocks the connect() future on onMtuChanged() which some
-      // Android/BLE60 combinations never deliver.
-      await target.connect(
+      await device.connect(
         license: License.free,
-        timeout: _connectTimeout,
         autoConnect: false,
+        timeout: const Duration(seconds: 15),
       );
 
       _connectStatus = 'discovering services...';
-      _device = target;
+      final services = await device.discoverServices();
 
-      // No extra timeout on discoverServices() — the flutter_blue_plus
-      // internal GATT callback handles failure. Adding a Dart-side timeout
-      // throws OUTSIDE the try-catch, leaving state stuck on connecting.
-      final services = await target.discoverServices();
-
-      // Search ALL services for write/notify chars.
-      // Priority 1 — Mesh Proxy Data In/Out (confirmed working with BLE60).
-      // Priority 2 — Firmware-team proprietary UUIDs (26cc3fc2 / 26cc3fc1).
-      // Priority 3 — HM-10 / CC254X (0000ffe1).
-      // Priority 4 — Nordic UART Service.
-      // Priority 5 — Microchip RN4870.
+      _writeChar  = null;
+      _notifyChar = null;
       for (final svc in services) {
         for (final c in svc.characteristics) {
+          // Priority order — first match wins (??= never overwrites):
+          // 1. BLE Mesh Proxy Data In/Out  (confirmed working with BLE60 fan)
+          // 2. Firmware-team proprietary   (26cc3fc2 / 26cc3fc1)
+          // 3. HM-10 / CC254X              (0000ffe1 — common on Amp'ed RF)
+          // 4. Nordic UART Service
+          // 5. Microchip RN4870
           if (c.characteristicUuid == _meshProxyIn)     _writeChar  ??= c;
           if (c.characteristicUuid == _meshProxyOut)    _notifyChar ??= c;
           if (c.characteristicUuid == _writeGuid)       _writeChar  ??= c;
@@ -233,106 +172,95 @@ class BleServiceImpl implements BleService {
         }
       }
 
-      final svcList = services.map((s) => s.serviceUuid.toString().substring(0, 8)).join(', ');
+      final svcList = services
+          .map((s) => s.serviceUuid.toString().substring(0, 8))
+          .join(', ');
       if (_writeChar != null) {
-        final p = _writeChar!.properties;
-        final modes = <String>[
+        final p     = _writeChar!.properties;
+        final modes = [
           if (p.writeWithoutResponse) 'NoResp',
           if (p.write)                'WithResp',
         ];
-        _writeCharStatus = 'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
-            ' | props: ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs: [$svcList]';
+        _writeCharStatus =
+            'found ${_writeChar!.characteristicUuid.toString().substring(0, 8)}'
+            ' | ${modes.isEmpty ? "NONE" : modes.join("+")} | svcs:[$svcList]';
       } else {
-        _writeCharStatus = 'NOT FOUND | svcs: [$svcList]';
+        _writeCharStatus = 'NOT FOUND | svcs:[$svcList]';
       }
 
       if (_notifyChar != null) {
         await _notifyChar!.setNotifyValue(true);
         await _notifyValueSub?.cancel();
-        _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
-          _notifyController.add(bytes);
-        });
+        _notifyValueSub = _notifyChar!.onValueReceived.listen(_notifyCtrl.add);
       }
 
+      _device = device;
+      _scanCache[mac] = device; // keep for future reconnects in this session
+
       await _connStateSub?.cancel();
-      _connStateSub = target.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected) {
+      _connStateSub = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected && !_disposed) {
+          _writeChar  = null;
+          _notifyChar = null;
+          _device     = null;
           _setState(app.BleConnectionState.disconnected);
-          if (_retryCount < _maxRetries) {
-            _retryCount++;
-            _retryTimer?.cancel();
-            _retryTimer = Timer(_retryDelay, () => unawaited(_doConnect()));
-          }
         }
       });
 
-      _retryCount = 0;
       _connectStatus = 'connected';
       _setState(app.BleConnectionState.connected);
-      return target.remoteId.str;
+      return mac;
 
     } on Object catch (e) {
-      _connectStatus = 'attempt ${_retryCount + 1} failed: ${e.toString().split('\n').first}';
-      try {
-        await target.disconnect().timeout(_disconnectTimeout);
-      } on Object catch (_) {}
-      if (_retryCount < _maxRetries) {
-        _retryCount++;
-        await _connStateSub?.cancel();
-        _connStateSub = null;
-        await Future<void>.delayed(_retryDelay);
-        return _doConnect();
-      }
+      _connectStatus = 'failed: ${e.toString().split('\n').first}';
+      try { await device.disconnect(); } on Object catch (_) {}
+      _writeChar  = null;
+      _notifyChar = null;
+      _device     = null;
       _setState(app.BleConnectionState.disconnected);
       rethrow;
     }
   }
 
+  // ── Disconnect ────────────────────────────────────────────────────────────
+
   @override
   Future<void> disconnect() async {
-    _retryCount = _maxRetries; // Prevent auto-reconnect on intentional disconnect
-    _retryTimer?.cancel();
-    _retryTimer = null;
     await _connStateSub?.cancel();
     _connStateSub = null;
-    try {
-      await _device?.disconnect().timeout(_disconnectTimeout);
-    } on Object catch (_) {}
-    _writeChar        = null;
-    _notifyChar       = null;
-    _device           = null;
-    _writeCharStatus  = 'disconnected';
-    _connectStatus    = 'idle';
+    try { await _device?.disconnect(); } on Object catch (_) {}
+    _writeChar       = null;
+    _notifyChar      = null;
+    _device          = null;
+    _writeCharStatus = 'disconnected';
+    _connectStatus   = 'idle';
     _setState(app.BleConnectionState.disconnected);
   }
+
+  // ── Write ─────────────────────────────────────────────────────────────────
 
   @override
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
     if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
-    // The Amp'ed RF BLE60 module is a BLE-to-UART bridge. It buffers incoming
-    // BLE data and only flushes it to the MCU's UART when it receives \r\n
-    // (0x0D 0x0A). Without the newline, frames sit in the module's buffer and
-    // never reach the MCU — confirmed by Serial Bluetooth Terminal's log which
-    // shows 0D 0A appended to every sent frame and the fan responding.
+    // BLE60 is a BLE-to-UART bridge: buffers incoming BLE data and only
+    // flushes to the MCU UART when it receives \r\n (0x0D 0x0A).
     final payload = Uint8List.fromList([...frame, 0x0D, 0x0A]);
-    await char.write(
-      payload,
-      withoutResponse: char.properties.writeWithoutResponse,
-    );
+    await char.write(payload, withoutResponse: char.properties.writeWithoutResponse);
   }
+
+  // ── Dispose ───────────────────────────────────────────────────────────────
 
   @override
   Future<void> dispose() async {
     _disposed = true;
-    _retryTimer?.cancel();
     try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
     await _scanResultsSub?.cancel();
-    await _isScanSub?.cancel();
+    await _scanStateSub?.cancel();
     await _connStateSub?.cancel();
     await _notifyValueSub?.cancel();
-    await _notifyController.close();
-    await _stateController.close();
-    await _scanResultsController.close();
+    await _notifyCtrl.close();
+    await _stateCtrl.close();
+    await _scanCtrl.close();
   }
 }
