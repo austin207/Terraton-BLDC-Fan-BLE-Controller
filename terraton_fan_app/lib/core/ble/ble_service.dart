@@ -237,11 +237,17 @@ class BleServiceImpl implements BleService {
       // peripheral re-advertises, which Amp'ed RF modules duty-cycle).
       // Future.timeout(_connectHardCap) is the dart-side safety net in case
       // BluetoothGatt.connect() itself hangs past the requested timeout.
+      // mtu: 512 triggers BluetoothGatt.requestMtu(512) right after
+      // STATE_CONNECTED, matching Serial Bluetooth Terminal's sequence.
+      // Without an explicit MTU request, some peripherals (including Amp'ed RF
+      // modules) use the default 23-byte ATT_MTU, which can cause issues on
+      // first GATT discovery.
       await target
           .connect(
             license: License.free,
             timeout: _connectTimeout,
             autoConnect: false,
+            mtu: 512,
           )
           .timeout(_connectHardCap);
     } on Object catch (e) {
