@@ -1,8 +1,8 @@
 // lib/features/splash/splash_screen.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
@@ -17,15 +17,15 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _dotCtrl;
+  late final AnimationController _breatheCtrl;
 
   @override
   void initState() {
     super.initState();
-    _dotCtrl = AnimationController(
+    _breatheCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
+      duration: const Duration(milliseconds: 3400),
+    )..repeat(reverse: true);
 
     unawaited(Future.delayed(const Duration(seconds: 2), () async {
       if (!mounted) return;
@@ -40,75 +40,153 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _dotCtrl.dispose();
+    _breatheCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground,
-      body: Column(
+      backgroundColor: kBg,
+      body: Stack(
+        alignment: Alignment.center,
         children: [
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          // Aura rings
+          AnimatedBuilder(
+            animation: _breatheCtrl,
+            builder: (_, __) {
+              final t = _breatheCtrl.value;
+              return Stack(
+                alignment: Alignment.center,
                 children: [
-                  // Logo — shown directly on the light background; no coloured box
-                  // so the icon's own white background blends with kBackground.
-                  const FanIcon(size: 180, semanticLabel: 'Terraton fan'),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Terraton®',
-                    style: GoogleFonts.poppins(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
-                      color: const Color(0xFF5F6368),
+                  // Outer glow
+                  Container(
+                    width: 460,
+                    height: 460,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          kYellow.withAlpha(((0.04 + t * 0.16) * 255).round()),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.72],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'SMART BLDC FAN CONTROL',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      letterSpacing: 2.5,
-                      color: Colors.blueGrey.shade400,
-                      fontWeight: FontWeight.w400,
+                  // Inner ring
+                  Container(
+                    width: 240 + t * 20,
+                    height: 240 + t * 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: kYellow.withAlpha(((0.08 + t * 0.10) * 255).round()),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                  // Outer ring
+                  Container(
+                    width: 340 + t * 30,
+                    height: 340 + t * 30,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: kYellow.withAlpha(((0.05 + t * 0.05) * 255).round()),
+                        width: 1,
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 52),
-            child: AnimatedBuilder(
-              animation: _dotCtrl,
-              builder: (_, __) {
-                final active = (_dotCtrl.value * 3).floor() % 3;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (i) {
-                    final isActive = i == active;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: isActive ? 22 : 8,
-                      height: 8,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: isActive ? kPrimary : Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    );
-                  }),
-                );
-              },
+
+          // Fan icon with breathe
+          AnimatedBuilder(
+            animation: _breatheCtrl,
+            builder: (_, child) => Transform.scale(
+              scale: 0.97 + _breatheCtrl.value * 0.03,
+              child: child,
+            ),
+            child: const FanIcon(size: 148, semanticLabel: 'Terraton fan'),
+          ),
+
+          // Loading dots + version at bottom
+          Positioned(
+            bottom: 64,
+            child: Column(
+              children: [
+                _BreatheDots(ctrl: _breatheCtrl),
+                const SizedBox(height: 16),
+                Text(
+                  'v1.0.0 · SMART BLDC',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 10,
+                    color: kTextDim,
+                    letterSpacing: 2.4,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BreatheDots extends StatefulWidget {
+  final AnimationController ctrl;
+  const _BreatheDots({required this.ctrl});
+
+  @override
+  State<_BreatheDots> createState() => _BreathDotsState();
+}
+
+class _BreathDotsState extends State<_BreatheDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _dotCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _dotCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _dotCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _dotCtrl,
+      builder: (_, __) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final phase = (_dotCtrl.value - i * 0.15).clamp(0.0, 1.0);
+            final opacity = 0.30 + 0.60 * math.sin(phase * math.pi);
+            return Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: kYellow.withAlpha((opacity * 255).round()),
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }

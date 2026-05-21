@@ -10,7 +10,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -18,122 +17,108 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: kBackground,
-        surfaceTintColor: Colors.transparent,
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w800)),
-        centerTitle: true,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
-        children: [
-          // ── DATA MANAGEMENT ───────────────────────────────────────────────
-          const _SectionLabel('DATA MANAGEMENT', isFirst: true),
-          _TileGroup(tiles: [
-            _TileData(
-              icon: Icons.upload_rounded,
-              iconBg: const Color(0xFFEFF6FF),
-              iconColor: const Color(0xFF3B82F6),
-              title: 'Export Fans Data',
-              onTap: () => _export(context, ref),
-            ),
-            _TileData(
-              icon: Icons.download_rounded,
-              iconBg: const Color(0xFFF0FDF4),
-              iconColor: const Color(0xFF22C55E),
-              title: 'Import Fans Data',
-              onTap: () => _import(context, ref),
-            ),
-          ]),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+      children: [
+        // Profile card
+        const SizedBox(height: 8),
+        _ProfileCard(),
 
-          // ── ABOUT ─────────────────────────────────────────────────────────
-          const _SectionLabel('ABOUT'),
-          _TileGroup(tiles: [
-            _TileData(
-              icon: Icons.info_outline_rounded,
-              iconBg: const Color(0xFFF8FAFC),
-              iconColor: const Color(0xFF64748B),
-              title: 'App Version',
-              trailingText: ref.watch(packageInfoProvider).when(
-                data: (info) => 'v${info.version} (${info.buildNumber})',
-                loading: () => '…',
-                error: (_, __) => 'v—',
-              ),
-            ),
-            const _TileData(
-              icon: Icons.devices_rounded,
-              iconBg: Color(0xFFF8FAFC),
-              iconColor: Color(0xFF64748B),
-              title: 'Firmware Support',
-              trailingWidget: _PillBadge(
-                label: 'Up to Date',
-                icon: Icons.check_circle_rounded,
-                textColor: Color(0xFF16A34A),
-                bg: Color(0xFFF0FDF4),
-                border: Color(0xFFBBF7D0),
-              ),
-            ),
-            const _TileData(
-              icon: Icons.bluetooth_rounded,
-              iconBg: Color(0xFFEFF6FF),
-              iconColor: Color(0xFF3B82F6),
-              title: 'BLE Protocol',
-              trailingWidget: _PillBadge(
-                label: 'BLE 5.2',
-                textColor: Color(0xFF1D4ED8),
-                bg: Color(0xFFEFF6FF),
-                border: Color(0xFFBFDBFE),
-              ),
-            ),
-          ]),
-
-          // ── SUPPORT ───────────────────────────────────────────────────────
-          const _SectionLabel('SUPPORT'),
-          _TileGroup(tiles: [
-            _TileData(
-              icon: Icons.menu_book_rounded,
-              iconBg: const Color(0xFFFFFBEB),
-              iconColor: const Color(0xFFD97706),
-              title: 'User Manual',
-              onTap: () => unawaited(context.push(AppRoutes.userManual)),
-            ),
-          ]),
-
-          // ── Terraton footer ───────────────────────────────────────────────
-          const SizedBox(height: 48),
-          const Divider(height: 1, color: Color(0xFFEDF0F4)),
-          const SizedBox(height: 36),
-          Center(
-            child: Column(
-              children: [
-                const FanIcon(size: 88, semanticLabel: 'Terraton fan'),
-                const SizedBox(height: 12),
-                Text(
-                  'Terraton®',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.5,
-                    color: const Color(0xFF5F6368),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'SMART BLDC FAN CONTROL',
-                  style: TextStyle(
-                    fontSize: 9,
-                    letterSpacing: 1.6,
-                    color: Colors.blueGrey.shade300,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+        // DATA MANAGEMENT
+        _SectionLabel('DATA MANAGEMENT'),
+        _SettingsGroup(tiles: [
+          _SettingRow(
+            iconBg: const Color(0x26507FFF),
+            iconColor: const Color(0xFF7AA7FF),
+            icon: Icons.upload_rounded,
+            label: 'Export Fans Data',
+            divider: true,
+            onTap: () => _export(context, ref),
           ),
-        ],
-      ),
+          _SettingRow(
+            iconBg: const Color(0x207AE582),
+            iconColor: kGreen,
+            icon: Icons.download_rounded,
+            label: 'Import Fans Data',
+            onTap: () => _import(context, ref),
+          ),
+        ]),
+
+        // ABOUT
+        _SectionLabel('ABOUT'),
+        _SettingsGroup(tiles: [
+          _SettingRow(
+            iconBg: kCardHi,
+            iconColor: kText,
+            icon: Icons.info_outline_rounded,
+            label: 'App Version',
+            trailingText: ref.watch(packageInfoProvider).when(
+              data: (info) => 'v${info.version} (${info.buildNumber})',
+              loading: () => '…',
+              error: (_, __) => 'v—',
+            ),
+            divider: true,
+          ),
+          const _SettingRow(
+            iconBg: kCardHi,
+            iconColor: kText,
+            icon: Icons.devices_rounded,
+            label: 'Firmware Support',
+            trailingPill: _PillData(label: '✓ Up to Date', color: kGreen),
+            divider: true,
+          ),
+          const _SettingRow(
+            iconBg: Color(0x207AA7FF),
+            iconColor: Color(0xFF7AA7FF),
+            icon: Icons.bluetooth_rounded,
+            label: 'BLE Protocol',
+            trailingPill: _PillData(label: 'BLE 5.2', color: Color(0xFF7AA7FF), outlined: true),
+          ),
+        ]),
+
+        // SUPPORT
+        _SectionLabel('SUPPORT'),
+        _SettingsGroup(tiles: [
+          _SettingRow(
+            iconBg: kYellow.withAlpha(38),
+            iconColor: kYellow,
+            icon: Icons.menu_book_rounded,
+            label: 'User Manual',
+            chevron: true,
+            onTap: () => unawaited(context.push(AppRoutes.userManual)),
+            divider: true,
+          ),
+          _SettingRow(
+            iconBg: kYellow.withAlpha(38),
+            iconColor: kYellow,
+            icon: Icons.qr_code_rounded,
+            label: 'Service QR',
+            chevron: true,
+          ),
+        ]),
+
+        // Footer
+        const SizedBox(height: 48),
+        Divider(height: 1, color: kHairline),
+        const SizedBox(height: 36),
+        Center(
+          child: Column(
+            children: [
+              const Icon(Icons.air_rounded, size: 48, color: kYellow),
+              const SizedBox(height: 12),
+              Text('Terraton®',
+                  style: GoogleFonts.manrope(
+                    fontSize: 18, fontWeight: FontWeight.w600, color: kTextMut,
+                  )),
+              const SizedBox(height: 3),
+              Text('SMART BLDC FAN CONTROL',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 9, letterSpacing: 1.6, color: kTextDim, fontWeight: FontWeight.w500,
+                  )),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -183,47 +168,51 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-// ── Pill badge (trailing status indicator) ────────────────────────────────────
+// ── Profile card ──────────────────────────────────────────────────────────────
 
-class _PillBadge extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final Color textColor;
-  final Color bg;
-  final Color border;
-
-  const _PillBadge({
-    required this.label,
-    this.icon,
-    required this.textColor,
-    required this.bg,
-    required this.border,
-  });
-
+class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    const userName = 'Terraton User';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(50),
-        border: Border.all(color: border),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [Color(0x14FFEC00), Color(0x03FFEC00)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x38FFEC00)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 11, color: textColor),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: textColor,
-              letterSpacing: 0.1,
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: kYellow,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 18)],
             ),
+            alignment: Alignment.center,
+            child: Text('T',
+                style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.black)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(userName,
+                style: GoogleFonts.manrope(fontSize: 17, fontWeight: FontWeight.w700, color: kText)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: kHairlineStrong),
+            ),
+            child: Text('EDIT',
+                style: GoogleFonts.manrope(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: kText, letterSpacing: 0.6,
+                )),
           ),
         ],
       ),
@@ -235,132 +224,125 @@ class _PillBadge extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String label;
-  final bool isFirst;
-  const _SectionLabel(this.label, {this.isFirst = false});
+  const _SectionLabel(this.label);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(4, isFirst ? 4 : 20, 4, 8),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF6B7F95),
-          letterSpacing: 1.4,
-        ),
-      ),
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+      child: Text(label,
+          style: GoogleFonts.jetBrainsMono(
+            fontSize: 10, fontWeight: FontWeight.w700,
+            color: kTextMut, letterSpacing: 2.2,
+          )),
     );
   }
 }
 
-// ── Grouped tile container ─────────────────────────────────────────────────────
+// ── Settings group ────────────────────────────────────────────────────────────
 
-class _TileData {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String title;
-  final String? trailingText;
-  final Widget? trailingWidget;
-  final VoidCallback? onTap;
-
-  const _TileData({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.title,
-    this.trailingText,
-    this.trailingWidget,
-    this.onTap,
-  });
-}
-
-class _TileGroup extends StatelessWidget {
-  final List<_TileData> tiles;
-  const _TileGroup({required this.tiles});
+class _SettingsGroup extends StatelessWidget {
+  final List<_SettingRow> tiles;
+  const _SettingsGroup({required this.tiles});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE8EDF2)),
+        color: kCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kHairline),
       ),
-      child: Column(
-        children: [
-          for (int i = 0; i < tiles.length; i++) ...[
-            _SettingsTile(data: tiles[i], isFirst: i == 0, isLast: i == tiles.length - 1),
-            if (i < tiles.length - 1)
-              const Divider(height: 1, indent: 70, endIndent: 0, color: Color(0xFFF1F5F9)),
-          ],
-        ],
-      ),
+      child: Column(children: tiles),
     );
   }
 }
 
-class _SettingsTile extends StatelessWidget {
-  final _TileData data;
-  final bool isFirst;
-  final bool isLast;
+// ── Pill data ─────────────────────────────────────────────────────────────────
 
-  const _SettingsTile({required this.data, required this.isFirst, required this.isLast});
+class _PillData {
+  final String label;
+  final Color color;
+  final bool outlined;
+  const _PillData({required this.label, required this.color, this.outlined = false});
+}
+
+// ── Setting row ───────────────────────────────────────────────────────────────
+
+class _SettingRow extends StatelessWidget {
+  final Color iconBg;
+  final Color iconColor;
+  final IconData icon;
+  final String label;
+  final String? trailingText;
+  final _PillData? trailingPill;
+  final bool chevron;
+  final bool divider;
+  final VoidCallback? onTap;
+
+  const _SettingRow({
+    required this.iconBg,
+    required this.iconColor,
+    required this.icon,
+    required this.label,
+    this.trailingText,
+    this.trailingPill,
+    this.chevron = false,
+    this.divider = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final borderRadius = BorderRadius.vertical(
-      top:    isFirst ? const Radius.circular(16) : Radius.zero,
-      bottom: isLast  ? const Radius.circular(16) : Radius.zero,
-    );
-
-    Widget trailing;
-    if (data.trailingWidget != null) {
-      trailing = data.trailingWidget!;
-    } else if (data.trailingText != null) {
-      trailing = Text(
-        data.trailingText!,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+    Widget? trailing;
+    if (trailingText != null) {
+      trailing = Text(trailingText!,
+          style: GoogleFonts.jetBrainsMono(fontSize: 12, color: kTextMut));
+    } else if (trailingPill != null) {
+      final pill = trailingPill!;
+      trailing = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: pill.outlined ? Colors.transparent : pill.color.withAlpha(34),
+          borderRadius: BorderRadius.circular(100),
+          border: pill.outlined ? Border.all(color: pill.color.withAlpha(102)) : null,
+        ),
+        child: Text(pill.label,
+            style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w700, color: pill.color)),
       );
-    } else if (data.onTap != null) {
-      trailing = const Icon(Icons.chevron_right_rounded, color: Color(0xFFCBD5E1), size: 22);
-    } else {
-      trailing = const SizedBox.shrink();
+    } else if (chevron) {
+      trailing = const Icon(Icons.chevron_right_rounded, color: kTextMut, size: 20);
     }
 
-    return InkWell(
-      onTap: data.onTap,
-      borderRadius: borderRadius,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: data.iconBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(data.icon, color: data.iconColor, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                data.title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+    return Column(
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(11)),
+                  child: Icon(icon, color: iconColor, size: 18),
                 ),
-              ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(label,
+                      style: GoogleFonts.manrope(
+                        fontSize: 15, fontWeight: FontWeight.w600, color: kText,
+                      )),
+                ),
+                if (trailing != null) trailing,
+              ],
             ),
-            trailing,
-          ],
+          ),
         ),
-      ),
+        if (divider) Divider(height: 1, indent: 70, color: kHairline),
+      ],
     );
   }
 }

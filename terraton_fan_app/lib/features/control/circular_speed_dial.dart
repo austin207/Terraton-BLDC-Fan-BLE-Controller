@@ -1,12 +1,15 @@
 // lib/features/control/circular_speed_dial.dart
+// Class name kept as CircularSpeedDial for test compatibility.
+// Implements the radial dot-ring design from the JSX fan-control.jsx spec.
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class CircularSpeedDial extends StatelessWidget {
-  final int currentSpeed; // 0 = none; 1–6
+  final int currentSpeed;  // 0 = none; 1–6
   final int? watts;
   final int? rpm;
   final bool enabled;
@@ -25,255 +28,405 @@ class CircularSpeedDial extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // ── Decorative arc with white disc and telemetry ─────────────────────
-        SizedBox(
-          width: 260,
-          height: 260,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // White disc behind the arc (speedometer look)
-              Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: isBoost
-                          ? const Color(0xFFFF6600).withAlpha(60)
-                          : Colors.black.withAlpha(18),
-                      blurRadius: isBoost ? 28 : 14,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-              ),
-              // Arc — gap opens at the BOTTOM
-              CustomPaint(
-                size: const Size(260, 260),
-                painter: _DecorativeArcPainter(
-                  currentSpeed: currentSpeed,
-                  enabled: enabled,
-                  isBoost: isBoost,
-                ),
-              ),
-              // Telemetry text centred in the disc
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    watts != null ? '$watts W' : '-- W',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: isBoost
-                          ? const Color(0xFFFF6600)
-                          : (enabled ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1)),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    rpm != null ? '$rpm RPM' : '-- RPM',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: isBoost
-                          ? const Color(0xFFFF8C00).withAlpha(180)
-                          : (enabled ? const Color(0xFF94A3B8) : const Color(0xFFE2E8F0)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
+    return _RadialDial(
+      speed: currentSpeed,
+      watts: watts,
+      rpm: rpm,
+      enabled: enabled,
+      boost: isBoost,
+      onSpeedTap: (s) {
+        if (!enabled) return;
+        unawaited(HapticFeedback.lightImpact());
+        onSpeedSelected(s);
+      },
+    );
+  }
+}
 
-        // ── 3×2 speed button grid ─────────────────────────────────────────────
-        GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 10,
-            childAspectRatio: 2.0,
-            children: List.generate(6, (i) {
-              final speed    = i + 1;
-              final isActive = speed == currentSpeed;
-              return Semantics(
-                button: true,
-                label: 'Speed $speed',
-                selected: isActive,
-                child: GestureDetector(
-                  onTap: enabled
-                      ? () {
-                          unawaited(HapticFeedback.lightImpact());
-                          onSpeedSelected(speed);
-                        }
-                      : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    decoration: BoxDecoration(
-                      color: isActive ? kPrimary : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isActive ? kPrimary : const Color(0xFFE2E8F0),
-                        width: 1.5,
-                      ),
-                      boxShadow: isActive
-                          ? [BoxShadow(color: kPrimary.withAlpha(50), blurRadius: 8, offset: const Offset(0, 2))]
-                          : null,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$speed',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: isActive
-                              ? Colors.white
-                              : (enabled ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                        ),
-                      ),
-                    ),
+// ── Radial dot-ring dial ──────────────────────────────────────────────────────
+
+class _RadialDial extends StatelessWidget {
+  final int speed;        // 0 = none; 1–6
+  final int? watts;
+  final int? rpm;
+  final bool enabled;
+  final bool boost;
+  final void Function(int) onSpeedTap;
+
+  const _RadialDial({
+    required this.speed,
+    required this.watts,
+    required this.rpm,
+    required this.enabled,
+    required this.boost,
+    required this.onSpeedTap,
+  });
+
+  static const int _pos   = 7;       // 7 indicators: speed 1–6 + boost placeholder
+  static const double _size = 320;
+  static const double _r    = 110;   // ring radius
+  static const double _dotD = 14;    // dot diameter
+  static const double _hitD = 36;    // hit target diameter
+  static const double _lblR = 142;   // label radius
+
+  Offset _polar(double cx, double cy, double radius, double angleDeg) {
+    final a = (angleDeg - 90) * math.pi / 180;
+    return Offset(cx + radius * math.cos(a), cy + radius * math.sin(a));
+  }
+
+  // State for each dot: 'selected', 'progress', 'off'
+  String _stateOf(int i) {
+    if (!enabled) return 'off';
+    if (boost) return 'selected';
+    if (speed <= 0) return 'off';
+    if (i == speed - 1) return 'selected';
+    if (i < speed - 1) return 'progress';
+    return 'off';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const cx = _size / 2;
+    const cy = _size / 2;
+    final angStep = 360.0 / _pos;
+
+    return SizedBox(
+      width: _size,
+      height: _size,
+      child: Stack(
+        children: [
+          // SVG-style ring + arc + dots painted via CustomPaint
+          CustomPaint(
+            size: const Size(_size, _size),
+            painter: _DialPainter(
+              speed: speed,
+              boost: boost,
+              enabled: enabled,
+              pos: _pos,
+              r: _r,
+              dotD: _dotD,
+              angStep: angStep,
+            ),
+          ),
+
+          // Hit areas for speed 1–6 (no hit area for 7th boost dot; boost is
+          // controlled from the mode section)
+          for (int i = 0; i < 6; i++) ...[
+            Builder(builder: (_) {
+              final ang = i * angStep;
+              final pos = _polar(cx, cy, _r, ang);
+              return Positioned(
+                left: pos.dx - _hitD / 2,
+                top: pos.dy - _hitD / 2,
+                width: _hitD,
+                height: _hitD,
+                child: Semantics(
+                  button: true,
+                  label: 'Speed ${i + 1}',
+                  enabled: enabled,
+                  child: GestureDetector(
+                    onTap: enabled ? () => onSpeedTap(i + 1) : null,
+                    child: const SizedBox.expand(),
                   ),
                 ),
               );
             }),
+          ],
+
+          // Static numeric labels (outside ring) — non-interactive
+          for (int i = 0; i < _pos; i++) ...[
+            Builder(builder: (_) {
+              final ang = i * angStep;
+              final pos = _polar(cx, cy, _lblR, ang);
+              final isLast = i == 6; // lightning = boost indicator
+              final lit = _stateOf(i) != 'off';
+              final color = lit ? kText : (enabled ? kTextMut : kTextDim);
+              return Positioned(
+                left: pos.dx - 16,
+                top: pos.dy - 16,
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: isLast
+                      ? Icon(Icons.bolt_rounded, size: 16, color: color)
+                      : Text('${i + 1}',
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 13, fontWeight: FontWeight.w700, color: color,
+                          )),
+                ),
+              );
+            }),
+          ],
+
+          // Center readout
+          Positioned.fill(
+            child: _CenterReadout(
+              speed: speed,
+              watts: watts,
+              rpm: rpm,
+              boost: boost,
+              enabled: enabled,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Dial painter ──────────────────────────────────────────────────────────────
+
+class _DialPainter extends CustomPainter {
+  final int speed;
+  final bool boost;
+  final bool enabled;
+  final int pos;
+  final double r;
+  final double dotD;
+  final double angStep;
+
+  const _DialPainter({
+    required this.speed,
+    required this.boost,
+    required this.enabled,
+    required this.pos,
+    required this.r,
+    required this.dotD,
+    required this.angStep,
+  });
+
+  Offset _polar(double cx, double cy, double radius, double angleDeg) {
+    final a = (angleDeg - 90) * math.pi / 180;
+    return Offset(cx + radius * math.cos(a), cy + radius * math.sin(a));
+  }
+
+  String _stateOf(int i) {
+    if (!enabled) return 'off';
+    if (boost) return 'selected';
+    if (speed <= 0) return 'off';
+    if (i == speed - 1) return 'selected';
+    if (i < speed - 1) return 'progress';
+    return 'off';
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    // Dark core circle
+    canvas.drawCircle(
+      Offset(cx, cy), r - 16,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.4),
+          colors: [const Color(0xFF1F1F1F), const Color(0xFF0A0A0A)],
+        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r - 16))
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      Offset(cx, cy), r - 16,
+      Paint()
+        ..color = const Color(0x0AFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    // Full thin track ring (only when not boost)
+    if (!boost) {
+      canvas.drawCircle(
+        Offset(cx, cy), r,
+        Paint()
+          ..color = const Color(0x1AFFFFFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // Boost: glowing closed ring
+    if (enabled && boost) {
+      final paint = Paint()
+        ..color = kYellow
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawCircle(Offset(cx, cy), r, paint);
+      canvas.drawCircle(
+        Offset(cx, cy), r,
+        Paint()
+          ..color = kYellow
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+    }
+
+    // Active arc from dot 0 → selected dot
+    if (enabled && !boost && speed > 1) {
+      final startRad = (0 - 90) * math.pi / 180;
+      final sweepRad = (speed - 1) * angStep * math.pi / 180;
+      final arcPaint = Paint()
+        ..color = const Color(0xFFC2B100)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(cx, cy), radius: r),
+        startRad, sweepRad, false, arcPaint,
+      );
+    }
+
+    // Tick marks + dots at each position
+    for (int i = 0; i < pos; i++) {
+      final ang = i * angStep;
+      final st = _stateOf(i);
+
+      // Tick (short radial mark inside ring)
+      final tickOuter = _polar(cx, cy, r - 10, ang);
+      final tickInner = _polar(cx, cy, r - 18, ang);
+      final tickColor = st == 'selected' ? kYellow
+          : st == 'progress' ? const Color(0xFFC2B100)
+          : const Color(0x38FFFFFF);
+      canvas.drawLine(
+        tickInner, tickOuter,
+        Paint()
+          ..color = tickColor
+          ..strokeWidth = st == 'selected' ? 2 : 1.5
+          ..strokeCap = StrokeCap.round,
+      );
+
+      // Dot on the ring
+      final dotPos = _polar(cx, cy, r, ang);
+      final dotFill = st == 'selected' ? kYellow
+          : st == 'progress' ? const Color(0xFFC2B100)
+          : const Color(0xFF1A1A1A);
+      final dotStroke = st == 'selected' ? kYellow
+          : st == 'progress' ? const Color(0xFFC2B100)
+          : const Color(0x38FFFFFF);
+
+      // Bloom/glow for selected dot
+      if (st == 'selected') {
+        canvas.drawCircle(
+          dotPos, dotD / 2 + 6,
+          Paint()
+            ..color = kYellow.withAlpha(40)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        );
+        canvas.drawCircle(
+          dotPos, dotD / 2 + 3,
+          Paint()
+            ..color = kYellow.withAlpha(20)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+      }
+
+      canvas.drawCircle(
+        dotPos, dotD / 2,
+        Paint()..color = dotFill,
+      );
+      canvas.drawCircle(
+        dotPos, dotD / 2,
+        Paint()
+          ..color = dotStroke
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.25,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DialPainter old) =>
+      old.speed != speed || old.boost != boost || old.enabled != enabled;
+}
+
+// ── Center readout ────────────────────────────────────────────────────────────
+
+class _CenterReadout extends StatelessWidget {
+  final int speed;
+  final int? watts;
+  final int? rpm;
+  final bool boost;
+  final bool enabled;
+
+  const _CenterReadout({
+    required this.speed,
+    required this.watts,
+    required this.rpm,
+    required this.boost,
+    required this.enabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (boost) ...[
+          Text('BOOST',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.8,
+              )),
+          const SizedBox(height: 8),
+          Icon(Icons.bolt_rounded, size: 60, color: kYellow,
+              shadows: [Shadow(color: kYellow.withAlpha(128), blurRadius: 20)]),
+        ] else ...[
+          Text('GEAR',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.2,
+              )),
+          const SizedBox(height: 2),
+          Text(
+            enabled && speed > 0 ? '$speed' : '—',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 80, fontWeight: FontWeight.w600,
+              color: enabled ? kText : kTextDim,
+              letterSpacing: -3,
+              height: 1,
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        // RPM | WATTS stat row
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Stat(
+              label: 'RPM',
+              value: (enabled && (speed > 0 || boost)) ? (rpm != null ? '$rpm' : '—') : '—',
+            ),
+            Container(width: 1, height: 28, color: kHairline, margin: const EdgeInsets.symmetric(horizontal: 18)),
+            _Stat(
+              label: 'WATTS',
+              value: (enabled && (speed > 0 || boost)) ? (watts != null ? '$watts' : '—') : '—',
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-class _DecorativeArcPainter extends CustomPainter {
-  final int currentSpeed;
-  final bool enabled;
-  final bool isBoost;
-
-  const _DecorativeArcPainter({
-    required this.currentSpeed,
-    required this.enabled,
-    required this.isBoost,
-  });
-
-  // Gap centred at the bottom (π/2 = 6 o'clock).
-  // Gap width ≈ 110°  →  arc sweeps ≈ 250°
-  static const double _gapDeg    = 110.0;
-  static const double _startAngle = (90 + _gapDeg / 2) * math.pi / 180;
-  static const double _totalSweep = (360 - _gapDeg)    * math.pi / 180;
-  static const double _segGap     = 0.04;
-  static const double _segAngle   = (_totalSweep - _segGap * 6) / 6;
-
-  // Full-circle speed gradient: 6 arc colours + Green repeated at 360° so the
-  // StrokeCap.round start cap (~6.23 rad) is never clamped to Red by TileMode.clamp.
-  static const List<Color> _speedGradientColors = [
-    Color(0xFF22C55E), // Green
-    Color(0xFF06B6D4), // Cyan
-    Color(0xFF3B82F6), // Blue
-    Color(0xFF8B5CF6), // Violet
-    Color(0xFFF97316), // Orange
-    Color(0xFFEF4444), // Red — arc end (~250°)
-    Color(0xFF22C55E), // Green — 360° gap fill, clamps start cap to green
-  ];
-  static const List<double> _speedGradientStops = [
-    0.0, 0.139, 0.278, 0.417, 0.556, 0.694, 1.0,
-  ];
-
-  // Full-circle boost gradient: 4 colours + Amber repeated at 360°
-  static const List<Color> _boostGradientColors = [
-    Color(0xFFFFAA00), // Amber
-    Color(0xFFFF6600), // Orange
-    Color(0xFFFF3300), // Red-orange
-    Color(0xFFDC2626), // Red — arc end (~250°)
-    Color(0xFFFFAA00), // Amber — 360° gap fill, clamps start cap to amber
-  ];
-  static const List<double> _boostGradientStops = [
-    0.0, 0.231, 0.463, 0.694, 1.0,
-  ];
+class _Stat extends StatelessWidget {
+  final String label;
+  final String value;
+  const _Stat({required this.label, required this.value});
 
   @override
-  void paint(Canvas canvas, Size size) {
-    const segAngle   = _segAngle;
-    final centre     = Offset(size.width / 2, size.height / 2);
-    final radius     = size.width / 2 - 16;
-    final arcRect    = Rect.fromCircle(center: centre, radius: radius);
-    final shaderRect = Offset.zero & size;
-
-    // ── Background track: thin dimmed rings always visible ────────────────
-    for (int i = 0; i < 6; i++) {
-      final start = _startAngle + i * (segAngle + _segGap);
-      canvas.drawArc(
-        arcRect, start, segAngle, false,
-        Paint()
-          ..style       = PaintingStyle.stroke
-          ..strokeWidth = 6.0
-          ..strokeCap   = StrokeCap.round
-          ..color       = kSpeedColors[i].withAlpha(enabled ? 38 : 20),
-      );
-    }
-
-    // ── Filled overlay: ONE continuous arc with smooth gradient ──────────
-    // The arc runs from _startAngle to _startAngle + filledSweep on screen,
-    // but that range crosses the 2π wrap (395° > 360°). SweepGradient with
-    // TileMode.clamp would pin any angle < startAngle to the first colour,
-    // making the final segment show green instead of red.
-    //
-    // Fix: rotate the canvas by −_startAngle so the arc spans [0, filledSweep]
-    // in the rotated system. SweepGradient(0, _totalSweep) then maps cleanly
-    // without crossing 2π. The rotation is around the sweep centre so the
-    // shader alignment is preserved.
-    if (isBoost || currentSpeed > 0) {
-      final filledSweep = isBoost
-          ? _totalSweep - _segGap   // matches the last segment end, same as speed 6
-          : currentSpeed * segAngle + (currentSpeed - 1) * _segGap;
-
-      final gradient = isBoost
-          ? const SweepGradient(
-              startAngle: 0,
-              endAngle: math.pi * 2,
-              colors: _boostGradientColors,
-              stops: _boostGradientStops,
-              tileMode: TileMode.clamp,
-            )
-          : const SweepGradient(
-              startAngle: 0,
-              endAngle: math.pi * 2,
-              colors: _speedGradientColors,
-              stops: _speedGradientStops,
-              tileMode: TileMode.clamp,
-            );
-
-      final paint = Paint()
-        ..style       = PaintingStyle.stroke
-        ..strokeWidth = 13.0
-        ..strokeCap   = StrokeCap.round;
-
-      if (enabled) {
-        paint.shader = gradient.createShader(shaderRect);
-      } else {
-        paint.color = isBoost
-            ? const Color(0xFFFF6600).withAlpha(55)
-            : kSpeedColors[currentSpeed - 1].withAlpha(55);
-      }
-
-      canvas.save();
-      canvas.translate(centre.dx, centre.dy);
-      canvas.rotate(_startAngle);
-      canvas.translate(-centre.dx, -centre.dy);
-      canvas.drawArc(arcRect, 0, filledSweep, false, paint);
-      canvas.restore();
-    }
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 18, fontWeight: FontWeight.w600, color: kText, height: 1,
+            )),
+        const SizedBox(height: 4),
+        Text(label,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 9, fontWeight: FontWeight.w600, color: kTextDim, letterSpacing: 1.8,
+            )),
+      ],
+    );
   }
-
-  @override
-  bool shouldRepaint(_DecorativeArcPainter old) =>
-      old.currentSpeed != currentSpeed ||
-      old.enabled != enabled ||
-      old.isBoost != isBoost;
 }

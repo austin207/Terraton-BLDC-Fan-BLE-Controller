@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
@@ -76,8 +77,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _startTelemetry();
       _subscribeNotify();
     } on Error {
-      // Programming bug — let it propagate to the global error handler so it
-      // surfaces in debug mode and is reported in release. Do NOT swallow it.
       rethrow;
     } on Object catch (_) {
       // Expected connection Exception — connectionStateStream emits disconnected,
@@ -103,7 +102,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           final v = BleResponseParser.parseSpeed(response);
           if (v != null) {
             notifier.updateSpeed(v);
-            // Speed > 0 from the module implies the fan is powered on.
             if (v > 0) notifier.updatePower(true);
           }
         case 0x21:
@@ -139,8 +137,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _lastRpmAt = null;
       }
 
-      // Only poll when powered on — avoids noise while the fan is off.
-      // Status poll returns ON/OFF, mode, power (W), and speed (RPM) in one frame.
       final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
       if (!fanState.isPowered) return;
 
@@ -225,84 +221,74 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final connState = ref.watch(bleConnectionStateProvider).value
         ?? BleConnectionState.disconnected;
 
-    // Power button is always tappable when connected/demo.
-    final enabled = _isDemo || connState == BleConnectionState.connected;
-    // All other controls require the fan to also be powered on.
-    final controlsEnabled   = enabled && fanState.isPowered;
-    final isDisconnected     = !_isDemo && connState == BleConnectionState.disconnected;
+    final enabled         = _isDemo || connState == BleConnectionState.connected;
+    final controlsEnabled = enabled && fanState.isPowered;
+    final isDisconnected  = !_isDemo && connState == BleConnectionState.disconnected;
 
     return Scaffold(
-      backgroundColor: kBackground,
+      backgroundColor: kBg,
       appBar: AppBar(
-        backgroundColor: kBackground,
+        backgroundColor: kBg,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: Colors.black87,
-        iconTheme: const IconThemeData(color: Colors.black54),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(AppRoutes.home);
+            }
+          },
+        ),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(widget.fan.nickname,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.black87)),
-            _connectionStatusLabel(connState),
+                style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
+            _connStatusLabel(connState),
           ],
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () => unawaited(context.push(AppRoutes.settings)),
+          // Bluetooth icon top-right
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _BluetoothIndicator(
+              isConnected: !_isDemo && connState == BleConnectionState.connected,
+              isConnecting: !_isDemo && (connState == BleConnectionState.connecting ||
+                  connState == BleConnectionState.scanning),
+            ),
           ),
         ],
       ),
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(20, 28, 20, isDisconnected ? 180 : 28),
+            padding: EdgeInsets.fromLTRB(20, 16, 20, isDisconnected ? 200 : 28),
             child: Column(
               children: [
 
-                // ── Power button + hint ───────────────────────────────────
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _PowerButton(
-                      isPowered: fanState.isPowered,
-                      enabled: enabled,
-                      onPower: (on) {
-                        // Optimistic update — most modules don't echo a 0x02 response.
-                        ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                            .updatePower(on);
-                        unawaited(_send(
-                          on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
-                          label: on ? 'Power ON' : 'Power OFF',
-                        ));
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    // Reserve space always so the layout doesn't jump
-                    AnimatedOpacity(
-                      opacity: enabled && !fanState.isPowered ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 250),
-                      child: const Text(
-                        'Tap to turn on',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF94A3B8),
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                  ],
+                // ── Power button ───────────────────────────────────────────
+                _PowerButton(
+                  isPowered: fanState.isPowered,
+                  enabled: enabled,
+                  onPower: (on) {
+                    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                        .updatePower(on);
+                    unawaited(_send(
+                      on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
+                      label: on ? 'Power ON' : 'Power OFF',
+                    ));
+                  },
                 ),
 
                 const SizedBox(height: 20),
 
-                // ── Controls — grayed out until fan is powered on ─────────
+                // ── Controls — dimmed when fan is off ──────────────────────
                 IgnorePointer(
                   ignoring: !controlsEnabled,
                   child: AnimatedOpacity(
-                    opacity: controlsEnabled ? 1.0 : 0.55,
+                    opacity: controlsEnabled ? 1.0 : 0.45,
                     duration: const Duration(milliseconds: 300),
                     child: Column(
                       children: [
@@ -322,12 +308,31 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             },
                           ),
                         ),
-                        const SizedBox(height: 14),
 
-                        // Boost button
-                        _BoostButton(
+                        const SizedBox(height: 12),
+
+                        // Operating modes (4-col grid including Boost)
+                        _SectionHeader('OPERATING MODES'),
+                        const SizedBox(height: 10),
+                        ModeControlWidget(
+                          activeMode: fanState.activeMode,
                           isBoost: fanState.isBoost,
                           enabled: controlsEnabled,
+                          onMode: (m) {
+                            final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+                            if (fanState.activeMode == m && !fanState.isBoost) {
+                              notifier.updateMode(null);
+                              return;
+                            }
+                            notifier.updateMode(m);
+                            final frame = switch (m) {
+                              'nature'  => BleFrameBuilder.setNature(),
+                              'reverse' => BleFrameBuilder.setReverse(),
+                              'smart'   => BleFrameBuilder.setSmart(),
+                              _         => null,
+                            };
+                            unawaited(_send(frame, label: 'Mode: $m'));
+                          },
                           onBoost: () {
                             final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
                             if (fanState.isBoost) {
@@ -338,61 +343,44 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             }
                           },
                         ),
-                        const SizedBox(height: 12),
 
-                        // Operating modes card
-                        _SectionCard(
-                          header: 'OPERATING MODES',
-                          child: ModeControlWidget(
-                            activeMode: fanState.activeMode,
-                            enabled: controlsEnabled,
-                            onMode: (m) {
-                              final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-                              if (fanState.activeMode == m) {
-                                notifier.updateMode(null);
-                                return;
-                              }
-                              notifier.updateMode(m);
-                              final frame = switch (m) {
-                                'nature'  => BleFrameBuilder.setNature(),
-                                'reverse' => BleFrameBuilder.setReverse(),
-                                'smart'   => BleFrameBuilder.setSmart(),
-                                _         => null,
-                              };
-                              unawaited(_send(frame, label: 'Mode: $m'));
-                            },
-                          ),
-                        ),
+                        const SizedBox(height: 20),
+
+                        // Sleep timer
+                        _SectionHeader('SLEEP TIMER',
+                            trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
+                                ? Text(
+                                    '${_timerLabel(fanState.activeTimerCode)} REMAINING',
+                                    style: GoogleFonts.jetBrainsMono(
+                                        fontSize: 10, color: kYellow, fontWeight: FontWeight.w700, letterSpacing: 1.6),
+                                  )
+                                : null),
                         const SizedBox(height: 10),
-
-                        // Sleep timer card
-                        _SectionCard(
-                          header: 'SLEEP TIMER',
-                          child: TimerControlWidget(
-                            activeTimerCode: fanState.activeTimerCode,
-                            enabled: controlsEnabled,
-                            onTimer: (a) {
-                              final code = switch (a) {
-                                '2h' => 0x02,
-                                '4h' => 0x04,
-                                '8h' => 0x08,
-                                _    => 0x00,
-                              };
-                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                                  .updateTimer(code);
-                              final frame = switch (a) {
-                                '2h'  => BleFrameBuilder.timer2h(),
-                                '4h'  => BleFrameBuilder.timer4h(),
-                                '8h'  => BleFrameBuilder.timer8h(),
-                                _     => BleFrameBuilder.timerOff(),
-                              };
-                              unawaited(_send(frame, label: 'Timer: $a'));
-                            },
-                          ),
+                        TimerControlWidget(
+                          activeTimerCode: fanState.activeTimerCode,
+                          enabled: controlsEnabled,
+                          onTimer: (a) {
+                            final code = switch (a) {
+                              '2h' => 0x02,
+                              '4h' => 0x04,
+                              '8h' => 0x08,
+                              _    => 0x00,
+                            };
+                            ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
+                                .updateTimer(code);
+                            final frame = switch (a) {
+                              '2h'  => BleFrameBuilder.timer2h(),
+                              '4h'  => BleFrameBuilder.timer4h(),
+                              '8h'  => BleFrameBuilder.timer8h(),
+                              _     => BleFrameBuilder.timerOff(),
+                            };
+                            unawaited(_send(frame, label: 'Timer: $a'));
+                          },
                         ),
-                        const SizedBox(height: 10),
 
-                        // Lighting card (already styled)
+                        const SizedBox(height: 20),
+
+                        // Lighting
                         LightingControlWidget(
                           enabled: controlsEnabled,
                           isLightOn: _isLightOn,
@@ -420,8 +408,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                 ),
 
-                // ── Debug card — uses ValueListenableBuilder so only the
-                // card rebuilds on each BLE notification, not the whole screen.
+                // ── Debug card ─────────────────────────────────────────────
                 const SizedBox(height: 16),
                 ValueListenableBuilder<_DebugSnapshot>(
                   valueListenable: _debug,
@@ -439,7 +426,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             ),
           ),
 
-          // ── Connection lost overlay ───────────────────────────────────
+          // Connection lost overlay
           if (isDisconnected)
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -453,18 +440,180 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     );
   }
 
-  Widget _connectionStatusLabel(BleConnectionState state) {
+  Widget _connStatusLabel(BleConnectionState state) {
     if (_isDemo) {
       return Text('● DEMO MODE',
-          style: TextStyle(fontSize: 11, color: Colors.amber.shade700, letterSpacing: 0.5));
+          style: GoogleFonts.manrope(fontSize: 10, color: Colors.amber.shade400,
+              fontWeight: FontWeight.w700, letterSpacing: 1.5));
     }
     final (String text, Color color) = switch (state) {
-      BleConnectionState.connected    => ('● CONNECTED',    const Color(0xFF16A34A)),
+      BleConnectionState.connected    => ('CONNECTED',    kYellow),
       BleConnectionState.connecting ||
-      BleConnectionState.scanning     => ('● CONNECTING…', const Color(0xFFF59E0B)),
-      BleConnectionState.disconnected => ('DISCONNECTED',  Colors.black45),
+      BleConnectionState.scanning     => ('CONNECTING…', kYellowSoft),
+      BleConnectionState.disconnected => ('DISCONNECTED', kTextDim),
     };
-    return Text(text, style: TextStyle(fontSize: 11, color: color, letterSpacing: 0.5));
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (state == BleConnectionState.connected)
+          Container(
+            width: 6, height: 6,
+            margin: const EdgeInsets.only(right: 5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle, color: kYellow,
+              boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 6)],
+            ),
+          ),
+        Text(text,
+            style: GoogleFonts.manrope(fontSize: 10, color: color,
+                fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+      ],
+    );
+  }
+
+  static String _timerLabel(int? code) => switch (code) {
+    0x02 => '2H',
+    0x04 => '4H',
+    0x08 => '8H',
+    _    => '',
+  };
+}
+
+// ── Bluetooth indicator ───────────────────────────────────────────────────────
+
+class _BluetoothIndicator extends StatefulWidget {
+  final bool isConnected;
+  final bool isConnecting;
+  const _BluetoothIndicator({required this.isConnected, required this.isConnecting});
+
+  @override
+  State<_BluetoothIndicator> createState() => _BluetoothIndicatorState();
+}
+
+class _BluetoothIndicatorState extends State<_BluetoothIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _blinkCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _blinkCtrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.isConnected) _blinkCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_BluetoothIndicator old) {
+    super.didUpdateWidget(old);
+    if (widget.isConnected && !old.isConnected) {
+      _blinkCtrl.repeat(reverse: true);
+    } else if (!widget.isConnected && old.isConnected) {
+      _blinkCtrl.stop();
+      _blinkCtrl.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _blinkCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40, height: 40,
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
+      child: AnimatedBuilder(
+        animation: _blinkCtrl,
+        builder: (_, __) => Icon(
+          Icons.bluetooth_rounded,
+          size: 20,
+          color: widget.isConnected
+              ? Color.lerp(const Color(0xFF409CFF), const Color(0xFF80BCFF), _blinkCtrl.value)!
+              : widget.isConnecting
+                  ? kYellowSoft
+                  : kTextMut,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final Widget? trailing;
+  const _SectionHeader(this.label, {this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 10, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.2,
+              )),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+// ── Power button ──────────────────────────────────────────────────────────────
+
+class _PowerButton extends StatelessWidget {
+  final bool isPowered;
+  final bool enabled;
+  final void Function(bool) onPower;
+
+  const _PowerButton({
+    required this.isPowered,
+    required this.enabled,
+    required this.onPower,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Power',
+      value: isPowered ? 'on' : 'off',
+      child: GestureDetector(
+        onTap: enabled
+            ? () {
+                unawaited(HapticFeedback.lightImpact());
+                onPower(!isPowered);
+              }
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 240),
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isPowered ? kYellow.withAlpha(25) : kCard,
+            border: Border.all(
+              color: isPowered ? kYellow : kHairlineStrong,
+              width: 1.5,
+            ),
+            boxShadow: isPowered
+                ? [BoxShadow(color: kYellowGlow, blurRadius: 22, spreadRadius: -4)]
+                : null,
+          ),
+          child: Icon(
+            Icons.power_settings_new_rounded,
+            size: 26,
+            color: isPowered ? kYellow : kText,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -582,95 +731,39 @@ class _DebugCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-
-          // Connect status line — surfaces retry attempts and timeouts so a
-          // hanging "CONNECTING…" UI has visible diagnostic context.
-          Row(
-            children: [
-              const Text('CONN ', style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w700,
-                color: Color(0xFF94A3B8), letterSpacing: 0.8,
-              )),
-              Expanded(
-                child: Text(
-                  connectStatus,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: connectStatus == 'connected'
-                        ? const Color(0xFF34D399)
-                        : connectStatus.contains('failed')
-                            ? const Color(0xFFFCA5A5)
-                            : const Color(0xFFFCD34D),
-                    fontFamily: 'monospace',
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+          _StatusRow(label: 'CONN', value: connectStatus,
+            color: connectStatus == 'connected' ? const Color(0xFF34D399)
+              : connectStatus.contains('failed') ? const Color(0xFFFCA5A5)
+              : const Color(0xFFFCD34D)),
           const SizedBox(height: 6),
-
-          // Char status line
-          Row(
-            children: [
-              const Text('CHAR ', style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w700,
-                color: Color(0xFF94A3B8), letterSpacing: 0.8,
-              )),
-              Expanded(
-                child: Text(
-                  writeCharStatus,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: writeCharStatus.startsWith('found')
-                        ? const Color(0xFF34D399)
-                        : writeCharStatus == 'pending' || writeCharStatus == 'disconnected'
-                            ? const Color(0xFF64748B)
-                            : const Color(0xFFFCA5A5),
-                    fontFamily: 'monospace',
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+          _StatusRow(label: 'CHAR', value: writeCharStatus,
+            color: writeCharStatus.startsWith('found') ? const Color(0xFF34D399)
+              : writeCharStatus == 'pending' || writeCharStatus == 'disconnected'
+                ? const Color(0xFF64748B)
+                : const Color(0xFFFCA5A5)),
           const SizedBox(height: 10),
-
-          // Sent frame
           _DebugRow(
             direction: 'TX',
-            color: writeError != null
-                ? const Color(0xFFFCA5A5)
-                : const Color(0xFF34D399),
+            color: writeError != null ? const Color(0xFFFCA5A5) : const Color(0xFF34D399),
             label: sentFrame != null ? sentLabel : '—',
             hex: sentFrame != null ? _hex(sentFrame!) : '',
-            decoded: sentFrame != null ? _frameLabel(sentFrame!) : '',
           ),
-
-          // Write error (shown below TX if write failed)
           if (writeError != null) ...[
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 36),
-              child: Text(
-                'ERR: $writeError',
-                style: const TextStyle(
-                  fontSize: 10, fontFamily: 'monospace',
-                  color: Color(0xFFFCA5A5), height: 1.4,
-                ),
-              ),
+              child: Text('ERR: $writeError', style: const TextStyle(
+                fontSize: 10, fontFamily: 'monospace',
+                color: Color(0xFFFCA5A5), height: 1.4,
+              )),
             ),
           ],
-
           const SizedBox(height: 10),
-
-          // Received frame
           _DebugRow(
             direction: 'RX',
             color: const Color(0xFF818CF8),
             label: receivedFrame != null ? _frameLabel(receivedFrame!) : '—',
             hex: receivedFrame != null ? _hex(receivedFrame!) : '',
-            decoded: '',
           ),
         ],
       ),
@@ -678,19 +771,40 @@ class _DebugCard extends StatelessWidget {
   }
 }
 
+class _StatusRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _StatusRow({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Text('$label ', style: const TextStyle(
+        fontSize: 10, fontWeight: FontWeight.w700,
+        color: Color(0xFF94A3B8), letterSpacing: 0.8,
+      )),
+      Expanded(
+        child: Text(value,
+          style: TextStyle(fontSize: 10, color: color, fontFamily: 'monospace'),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ],
+  );
+}
+
 class _DebugRow extends StatelessWidget {
   final String direction;
   final Color color;
   final String label;
   final String hex;
-  final String decoded;
 
   const _DebugRow({
     required this.direction,
     required this.color,
     required this.label,
     required this.hex,
-    required this.decoded,
   });
 
   @override
@@ -722,300 +836,12 @@ class _DebugRow extends StatelessWidget {
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 36),
-            child: Text(
-              hex,
-              style: const TextStyle(
-                fontSize: 11, fontFamily: 'monospace',
-                color: Color(0xFF94A3B8), letterSpacing: 0.5,
-                height: 1.6,
-              ),
-            ),
+            child: Text(hex, style: const TextStyle(
+              fontSize: 11, fontFamily: 'monospace',
+              color: Color(0xFF94A3B8), letterSpacing: 0.5, height: 1.6,
+            )),
           ),
         ],
-      ],
-    );
-  }
-}
-
-// ── Section card ──────────────────────────────────────────────────────────────
-
-class _SectionCard extends StatelessWidget {
-  final String header;
-  final Widget child;
-  const _SectionCard({required this.header, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE8EDF2)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionHeader(header),
-          const SizedBox(height: 10),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-// ── Section header ────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  const _SectionHeader(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: Color(0xFF6B7F95),
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-}
-
-// ── Power button ──────────────────────────────────────────────────────────────
-
-class _PowerButton extends StatelessWidget {
-  final bool isPowered;
-  final bool enabled;
-  final void Function(bool) onPower;
-
-  const _PowerButton({
-    required this.isPowered,
-    required this.enabled,
-    required this.onPower,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Power',
-      value: isPowered ? 'on' : 'off',
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: 92,
-        height: 92,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isPowered ? kPrimary.withAlpha(14) : const Color(0xFFF1F5F9),
-          border: Border.all(
-            color: isPowered ? kPrimary.withAlpha(55) : const Color(0xFFE2E8F0),
-            width: 1.5,
-          ),
-        ),
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 66,
-            height: 66,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isPowered ? kPrimary : Colors.white,
-              boxShadow: isPowered
-                  ? [BoxShadow(color: kPrimary.withAlpha(80), blurRadius: 18, spreadRadius: 2)]
-                  : [BoxShadow(color: Colors.black.withAlpha(14), blurRadius: 8, offset: const Offset(0, 2))],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: enabled
-                    ? () {
-                        unawaited(HapticFeedback.lightImpact());
-                        onPower(!isPowered);
-                      }
-                    : null,
-                child: Icon(
-                  Icons.power_settings_new,
-                  size: 30,
-                  color: isPowered ? Colors.white : Colors.grey.shade400,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Boost button ──────────────────────────────────────────────────────────────
-
-class _BoostButton extends StatefulWidget {
-  final bool isBoost;
-  final bool enabled;
-  final VoidCallback onBoost;
-
-  const _BoostButton({
-    required this.isBoost,
-    required this.enabled,
-    required this.onBoost,
-  });
-
-  @override
-  State<_BoostButton> createState() => _BoostButtonState();
-}
-
-class _BoostButtonState extends State<_BoostButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmerCtrl;
-
-  bool get _showShimmer => widget.isBoost && widget.enabled;
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmerCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-    if (_showShimmer) _shimmerCtrl.repeat();
-  }
-
-  @override
-  void didUpdateWidget(_BoostButton old) {
-    super.didUpdateWidget(old);
-    final wasShimmer = old.isBoost && old.enabled;
-    if (_showShimmer && !wasShimmer) {
-      _shimmerCtrl.repeat();
-    } else if (!_showShimmer && wasShimmer) {
-      _shimmerCtrl
-        ..stop()
-        ..reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _shimmerCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Boost mode',
-      value: widget.isBoost ? 'active' : 'inactive',
-      enabled: widget.enabled,
-      child: GestureDetector(
-        key: const ValueKey('boost_button'),
-        onTap: widget.enabled
-            ? () {
-                unawaited(HapticFeedback.lightImpact());
-                widget.onBoost();
-              }
-            : null,
-        child: SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: LayoutBuilder(
-            builder: (_, constraints) => AnimatedBuilder(
-              animation: _shimmerCtrl,
-              child: _BoostLabel(enabled: widget.enabled),
-              builder: (_, child) {
-                if (!_showShimmer) {
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    decoration: BoxDecoration(
-                      color: widget.enabled
-                          ? const Color(0xFF1A2F5E)
-                          : Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    alignment: Alignment.center,
-                    child: child,
-                  );
-                }
-
-                const shimmerW = 90.0;
-                final shimX = _shimmerCtrl.value *
-                    (constraints.maxWidth + shimmerW) -
-                    shimmerW;
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Stack(
-                    children: [
-                      const Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Color(0xFFBF2600),
-                                Color(0xFFFF5500),
-                                Color(0xFFCC2200),
-                              ],
-                              begin: Alignment(-1, -0.5),
-                              end: Alignment(1, 0.5),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: shimX,
-                        top: 0,
-                        bottom: 0,
-                        width: shimmerW,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                              colors: [
-                                Colors.white.withAlpha(0),
-                                Colors.white.withAlpha(45),
-                                Colors.white.withAlpha(0),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned.fill(child: Center(child: child)),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BoostLabel extends StatelessWidget {
-  final bool enabled;
-  const _BoostLabel({required this.enabled});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = enabled ? Colors.white : Colors.grey.shade400;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.bolt, size: 20, color: color),
-        const SizedBox(width: 8),
-        Text(
-          'BOOST MODE',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: color),
-        ),
       ],
     );
   }

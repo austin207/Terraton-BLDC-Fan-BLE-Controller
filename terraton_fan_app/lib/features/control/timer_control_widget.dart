@@ -30,9 +30,6 @@ class TimerControlWidget extends StatefulWidget {
 }
 
 class _TimerControlWidgetState extends State<TimerControlWidget> {
-  // Optimistic label: updated immediately on tap so the pill slides without
-  // waiting for the BLE round-trip. Reconciled in didUpdateWidget when the
-  // confirmed activeTimerCode arrives from the fan.
   late String _displayLabel;
 
   @override
@@ -45,9 +42,7 @@ class _TimerControlWidgetState extends State<TimerControlWidget> {
   void didUpdateWidget(TimerControlWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeTimerCode != widget.activeTimerCode) {
-      setState(() {
-        _displayLabel = TimerControlWidget._codeToLabel(widget.activeTimerCode);
-      });
+      setState(() => _displayLabel = TimerControlWidget._codeToLabel(widget.activeTimerCode));
     }
   }
 
@@ -60,79 +55,50 @@ class _TimerControlWidgetState extends State<TimerControlWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final activeIndex = TimerControlWidget._labels.indexOf(_displayLabel);
-
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: LayoutBuilder(
-        builder: (_, constraints) {
-          final segWidth = (constraints.maxWidth - 6) / TimerControlWidget._labels.length;
-          return Stack(
-            children: [
-              // ── Sliding white pill ──────────────────────────────────────
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                left: 3 + activeIndex * segWidth,
-                top: 3,
-                bottom: 3,
-                width: segWidth,
-                child: DecoratedBox(
+    return Row(
+      children: TimerControlWidget._labels.asMap().entries.map((e) {
+        final label    = e.value;
+        final isActive = label == _displayLabel;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: e.key < TimerControlWidget._labels.length - 1 ? 8 : 0,
+            ),
+            child: Semantics(
+              button: true,
+              label: label == 'OFF' ? 'Timer off' : '$label timer',
+              selected: isActive,
+              enabled: widget.enabled,
+              child: GestureDetector(
+                onTap: () => _onTap(label),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(9),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(20),
-                        blurRadius: 6,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+                    color: isActive ? kYellow : kCard,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: isActive ? kYellow : kHairline),
+                    boxShadow: isActive
+                        ? [BoxShadow(color: kYellow.withAlpha(46), blurRadius: 18, spreadRadius: -4)]
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isActive ? Colors.black : (widget.enabled ? kText : kTextDim),
+                      letterSpacing: 0.06,
+                    ),
                   ),
                 ),
               ),
-              // ── Labels (above the pill) ─────────────────────────────────
-              Row(
-                children: TimerControlWidget._labels.asMap().entries.map((e) {
-                  final label    = e.value;
-                  final isActive = e.key == activeIndex;
-                  return Expanded(
-                    child: Semantics(
-                      button: true,
-                      label: label == 'OFF' ? 'Timer off' : '$label timer',
-                      selected: isActive,
-                      enabled: widget.enabled,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _onTap(label),
-                        child: Center(
-                          child: AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 200),
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                              color: isActive
-                                  ? kPrimary
-                                  : (widget.enabled
-                                      ? const Color(0xFF64748B)
-                                      : const Color(0xFFCBD5E1)),
-                            ),
-                            child: Text(label),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          );
-        },
-      ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

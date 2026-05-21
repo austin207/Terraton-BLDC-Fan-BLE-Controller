@@ -1,133 +1,328 @@
 // lib/features/home/home_screen.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
-import 'package:terraton_fan_app/models/fan_device.dart';
-import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/router.dart';
-import 'package:terraton_fan_app/features/home/fan_card.dart';
+import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
+import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
+import 'package:terraton_fan_app/features/settings/settings_screen.dart';
+import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
-final _kDemoFan = FanDevice()
-  ..deviceId   = '__demo__'
-  ..macAddress = ''
-  ..nickname   = 'Living Room Fan'
-  ..model      = 'Terraton X1'
-  ..fwVersion  = '1.0'
-  ..addedAt    = DateTime(2026, 1, 1);
-
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final fansAsync = ref.watch(savedFansProvider);
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
+  int _tab = 1; // 0=analytics, 1=home, 2=settings
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Fans', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () => unawaited(context.push(AppRoutes.settings)),
+      backgroundColor: kBg,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _tab,
+            children: const [
+              AnalyticsScreen(),
+              _HomeTab(),
+              SettingsScreen(),
+            ],
+          ),
+          Positioned(
+            left: 16, right: 16, bottom: 16,
+            child: _BottomNav(
+              active: _tab,
+              onChanged: (t) => setState(() => _tab = t),
+            ),
           ),
         ],
-      ),
-      body: fansAsync.when(
-        data: (fans) => _FanList(fans: fans, showDemo: fans.isEmpty),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => const Center(child: Text('Could not load fans')),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => goToOnboarding(context),
-        tooltip: 'Add Fan',
-        child: const Icon(Icons.add),
       ),
     );
   }
 }
 
-class _FanList extends StatelessWidget {
-  final List<FanDevice> fans;
-  final bool showDemo;
-  const _FanList({required this.fans, this.showDemo = false});
+// ── Home tab ──────────────────────────────────────────────────────────────────
+
+class _HomeTab extends ConsumerWidget {
+  const _HomeTab();
 
   @override
-  Widget build(BuildContext context) {
-    final displayFans = showDemo ? [_kDemoFan] : fans;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fansAsync = ref.watch(savedFansProvider);
+    final fanCount  = fansAsync.when(data: (f) => f.length, loading: () => 0, error: (_, __) => 0);
+
+    final hour   = DateTime.now().hour;
+    final greet  = hour < 5 ? 'Sleep well' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
       children: [
-        // ── Header ───────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.only(bottom: 20),
+        // Tiny brand mark row
+        const SizedBox(height: 8),
+        Row(
+          children: [const FanIcon(size: 24), const SizedBox(width: 10)],
+        ),
+
+        // Greeting
+        const SizedBox(height: 20),
+        Text(
+          '$greet,',
+          style: GoogleFonts.manrope(
+            fontSize: 28, fontWeight: FontWeight.w600,
+            color: kText, letterSpacing: -0.5, height: 1.15,
+          ),
+        ),
+        Text(
+          'there.',
+          style: GoogleFonts.manrope(
+            fontSize: 28, fontWeight: FontWeight.w600,
+            color: kTextMut, letterSpacing: -0.5, height: 1.15,
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        // Fans tile
+        _DeviceTile(
+          icon: Icons.air_rounded,
+          title: 'Fans',
+          subtitle: '$fanCount paired · 0 running',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const FansListScreen()),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // Usage card (mock)
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kHairline),
+          ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
             children: [
-              const Text(
-                'Welcome back',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF94A3B8),
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.1,
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0x1AFFEC00),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0x38FFEC00)),
+                ),
+                child: const Icon(Icons.bolt_rounded, color: kYellow, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("TODAY'S USAGE",
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10, fontWeight: FontWeight.w700,
+                          color: kTextMut, letterSpacing: 2.0,
+                        )),
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text('2.4',
+                            style: GoogleFonts.jetBrainsMono(
+                              fontSize: 26, fontWeight: FontWeight.w600,
+                              color: kText, letterSpacing: -0.5,
+                            )),
+                        const SizedBox(width: 6),
+                        Text('kWh · ₹13.0',
+                            style: GoogleFonts.jetBrainsMono(
+                              fontSize: 12, color: kTextMut, letterSpacing: 0.6,
+                            )),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(50),
+                  color: const Color(0x1AFFEC00),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0x38FFEC00)),
                 ),
-                child: Text(
-                  '${displayFans.length} fan${displayFans.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A56A0),
-                  ),
-                ),
+                child: Text('↓ 18%',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10, fontWeight: FontWeight.w700,
+                      color: kYellow, letterSpacing: 1.2,
+                    )),
               ),
             ],
           ),
         ),
+      ],
+    );
+  }
+}
 
-        // ── Demo banner ───────────────────────────────────────────────────
-        if (showDemo)
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFBEB),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFFDE68A)),
+// ── Device category tile ──────────────────────────────────────────────────────
+
+class _DeviceTile extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _DeviceTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_DeviceTile> createState() => _DeviceTileState();
+}
+
+class _DeviceTileState extends State<_DeviceTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              kYellow.withAlpha(_pressed ? 40 : 25),
+              kYellow.withAlpha(_pressed ? 10 : 5),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: kYellow.withAlpha(76)),
+          boxShadow: [
+            BoxShadow(
+              color: kYellow.withAlpha(_pressed ? 20 : 40),
+              blurRadius: 30,
+              spreadRadius: -4,
             ),
-            child: Row(
-              children: [
-                Icon(Icons.science_outlined, size: 15, color: Colors.amber.shade700),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    'Demo mode — add a real fan to get started',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.amber.shade800,
-                    ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: kYellow.withAlpha(38),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: kYellow.withAlpha(76)),
+              ),
+              child: Icon(widget.icon, size: 28, color: kYellow),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title,
+                      style: GoogleFonts.manrope(
+                        fontSize: 18, fontWeight: FontWeight.w700,
+                        color: kText, letterSpacing: -0.2,
+                      )),
+                  const SizedBox(height: 4),
+                  Text(widget.subtitle,
+                      style: GoogleFonts.manrope(fontSize: 12, color: kTextMut)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Bottom navigation ─────────────────────────────────────────────────────────
+
+class _BottomNav extends StatelessWidget {
+  final int active;
+  final void Function(int) onChanged;
+
+  const _BottomNav({required this.active, required this.onChanged});
+
+  static const _items = [
+    (Icons.bar_chart_rounded, 'Analytics'),
+    (Icons.home_rounded, 'Home'),
+    (Icons.settings_rounded, 'Settings'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 68,
+      decoration: BoxDecoration(
+        color: const Color(0xD9141414),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: kHairlineStrong),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withAlpha(128), blurRadius: 40, offset: const Offset(0, 16)),
+        ],
+      ),
+      padding: const EdgeInsets.all(6),
+      child: Row(
+        children: List.generate(_items.length, (i) {
+          final on = i == active;
+          final (icon, label) = _items[i];
+          return Expanded(
+            child: Semantics(
+              button: true,
+              label: label,
+              selected: on,
+              child: GestureDetector(
+                onTap: () => onChanged(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOut,
+                  decoration: BoxDecoration(
+                    color: on ? kYellow : Colors.transparent,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: on
+                        ? [BoxShadow(color: kYellow.withAlpha(89), blurRadius: 28, spreadRadius: -4)]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, size: 20, color: on ? Colors.black : kTextMut),
+                      if (on) ...[
+                        const SizedBox(width: 8),
+                        Text(label,
+                            style: GoogleFonts.manrope(
+                              fontSize: 13, fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                            )),
+                      ],
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-
-        // ── Fan cards ─────────────────────────────────────────────────────
-        ...displayFans.map((fan) => FanCard(key: ValueKey(fan.deviceId), fan: fan)),
-      ],
+          );
+        }),
+      ),
     );
   }
 }
