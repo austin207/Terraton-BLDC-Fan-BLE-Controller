@@ -1,6 +1,7 @@
 // lib/features/analytics/analytics_screen.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -14,6 +15,20 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String _range = 'Week';
+  double _tariff = 5.4; // ₹ per unit — editable, matches analytics.jsx
+  late final TextEditingController _tariffCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tariffCtrl = TextEditingController(text: _tariff.toStringAsFixed(1));
+  }
+
+  @override
+  void dispose() {
+    _tariffCtrl.dispose();
+    super.dispose();
+  }
 
   static const _usageData = {
     'Day': [
@@ -38,8 +53,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final data = _usageData[_range]!;
+    final data  = _usageData[_range]!;
     final total = data.fold(0.0, (s, d) => s + d.$2);
+    final cost    = total * _tariff;
+    final savings = total * 0.32 * _tariff;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -133,7 +150,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       Text('↓ 18% vs last ${_range.toLowerCase()}',
                           style: kMonoStyle(size: 10, color: kYellow, letterSpacing: 1.6, weight: FontWeight.w700)),
                       const SizedBox(height: 6),
-                      Text('₹${(total * 5.4).toStringAsFixed(0)} est.',
+                      Text('₹${cost.toStringAsFixed(0)} est.',
                           style: kMonoStyle(size: 13, color: kTextMut)),
                     ],
                   ),
@@ -164,11 +181,57 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   children: [
                     const _SmallIconLabel(icon: Icons.eco_outlined, label: 'SAVED', iconColor: kYellow),
                     const SizedBox(height: 10),
-                    Text('₹${(total * 0.32 * 5.4).toStringAsFixed(0)}',
+                    Text('₹${savings.toStringAsFixed(0)}',
                         style: kMonoStyle(size: 24, color: kYellow, weight: FontWeight.w600, letterSpacing: -0.5)),
                     const SizedBox(height: 2),
                     Text('vs standard ceiling fan',
                         style: GoogleFonts.manrope(fontSize: 11, color: kTextMut)),
+                    const SizedBox(height: 12),
+                    // Tariff input — matches analytics.jsx tariff row exactly
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x0DFFEC00),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0x2EFFEC00)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text('TARIFF',
+                              style: kMonoStyle(size: 9, color: kTextMut, letterSpacing: 1.8,
+                                  weight: FontWeight.w700)),
+                          const Spacer(),
+                          Text('₹', style: kMonoStyle(size: 12, color: kTextMut)),
+                          const SizedBox(width: 2),
+                          SizedBox(
+                            width: 44,
+                            child: TextField(
+                              controller: _tariffCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                              ],
+                              textAlign: TextAlign.right,
+                              style: kMonoStyle(size: 13, weight: FontWeight.w700),
+                              cursorColor: kYellow,
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                isDense: true,
+                              ),
+                              onChanged: (v) {
+                                final parsed = double.tryParse(v);
+                                if (parsed != null && parsed >= 0) {
+                                  setState(() => _tariff = parsed);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text('/UNIT', style: kMonoStyle(size: 10, color: kTextMut)),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -230,12 +293,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 16),
 
-        // Per-fan breakdown
+        // Per-fan breakdown header with DETAILS stub
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('BY FAN',
                 style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.2, weight: FontWeight.w700)),
+            GestureDetector(
+              onTap: () {}, // stub — Phase 2
+              child: Text('DETAILS',
+                  style: kMonoStyle(size: 10, color: kYellow, letterSpacing: 2.0, weight: FontWeight.w700)),
+            ),
           ],
         ),
         const SizedBox(height: 10),
