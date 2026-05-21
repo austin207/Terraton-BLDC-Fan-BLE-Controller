@@ -1,11 +1,13 @@
 // lib/features/home/home_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
-import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
+import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -90,80 +92,87 @@ class _HomeTab extends ConsumerWidget {
         _DeviceTile(
           icon: Icons.air_rounded,
           title: 'Fans',
-          subtitle: '$fanCount paired · 0 running',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const FansListScreen()),
-          ),
+          subtitle: '$fanCount paired',
+          onTap: () => unawaited(context.push(AppRoutes.fans)),
         ),
 
         const SizedBox(height: 14),
+        const _UsageCard(),
+      ],
+    );
+  }
+}
 
-        // Usage card (mock)
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: kCard,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: kHairline),
+// ── Today's usage card (mock — Phase 2: wire to real energy data) ─────────────
+
+class _UsageCard extends StatelessWidget {
+  const _UsageCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: kHairline),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFEC00),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0x38FFEC00)),
+            ),
+            child: const Icon(Icons.bolt_rounded, color: kYellow, size: 24),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0x1AFFEC00),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0x38FFEC00)),
-                ),
-                child: const Icon(Icons.bolt_rounded, color: kYellow, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("TODAY'S USAGE",
-                        style: GoogleFonts.jetBrainsMono(
-                          fontSize: 10, fontWeight: FontWeight.w700,
-                          color: kTextMut, letterSpacing: 2.0,
-                        )),
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text('2.4',
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 26, fontWeight: FontWeight.w600,
-                              color: kText, letterSpacing: -0.5,
-                            )),
-                        const SizedBox(width: 6),
-                        Text('kWh · ₹13.0',
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 12, color: kTextMut, letterSpacing: 0.6,
-                            )),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0x1AFFEC00),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x38FFEC00)),
-                ),
-                child: Text('↓ 18%',
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("TODAY'S USAGE",
                     style: GoogleFonts.jetBrainsMono(
                       fontSize: 10, fontWeight: FontWeight.w700,
-                      color: kYellow, letterSpacing: 1.2,
+                      color: kTextMut, letterSpacing: 2.0,
                     )),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('2.4',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 26, fontWeight: FontWeight.w600,
+                          color: kText, letterSpacing: -0.5,
+                        )),
+                    const SizedBox(width: 6),
+                    Text('kWh · ₹13.0',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 12, color: kTextMut, letterSpacing: 0.6,
+                        )),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFEC00),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0x38FFEC00)),
+            ),
+            child: Text('↓ 18%',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10, fontWeight: FontWeight.w700,
+                  color: kYellow, letterSpacing: 1.2,
+                )),
+          ),
+        ],
+      ),
     );
   }
 }

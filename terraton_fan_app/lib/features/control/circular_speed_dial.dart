@@ -43,6 +43,26 @@ class CircularSpeedDial extends StatelessWidget {
   }
 }
 
+// ── Dot state enum ────────────────────────────────────────────────────────────
+
+enum _DotState { selected, progress, off }
+
+/// Single source of truth for dot state — used by both _RadialDial (hit areas
+/// / labels) and _DialPainter (canvas rendering) to prevent divergence.
+_DotState _dotStateOf({
+  required int index,
+  required int speed,
+  required bool boost,
+  required bool enabled,
+}) {
+  if (!enabled) return _DotState.off;
+  if (boost) return _DotState.selected;
+  if (speed <= 0) return _DotState.off;
+  if (index == speed - 1) return _DotState.selected;
+  if (index < speed - 1) return _DotState.progress;
+  return _DotState.off;
+}
+
 // ── Radial dot-ring dial ──────────────────────────────────────────────────────
 
 class _RadialDial extends StatelessWidget {
@@ -66,7 +86,7 @@ class _RadialDial extends StatelessWidget {
   static const double _size = 320;
   static const double _r    = 110;   // ring radius
   static const double _dotD = 14;    // dot diameter
-  static const double _hitD = 36;    // hit target diameter
+  static const double _hitD = 48;    // hit target — 48 dp meets accessibility minimum
   static const double _lblR = 142;   // label radius
 
   Offset _polar(double cx, double cy, double radius, double angleDeg) {
@@ -74,15 +94,9 @@ class _RadialDial extends StatelessWidget {
     return Offset(cx + radius * math.cos(a), cy + radius * math.sin(a));
   }
 
-  // State for each dot: 'selected', 'progress', 'off'
-  String _stateOf(int i) {
-    if (!enabled) return 'off';
-    if (boost) return 'selected';
-    if (speed <= 0) return 'off';
-    if (i == speed - 1) return 'selected';
-    if (i < speed - 1) return 'progress';
-    return 'off';
-  }
+  _DotState _stateOf(int i) => _dotStateOf(
+    index: i, speed: speed, boost: boost, enabled: enabled,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +153,7 @@ class _RadialDial extends StatelessWidget {
               final ang = i * angStep;
               final pos = _polar(cx, cy, _lblR, ang);
               final isLast = i == 6; // lightning = boost indicator
-              final lit = _stateOf(i) != 'off';
+              final lit = _stateOf(i) != _DotState.off;
               final color = lit ? kText : (enabled ? kTextMut : kTextDim);
               return Positioned(
                 left: pos.dx - 16,
@@ -200,14 +214,9 @@ class _DialPainter extends CustomPainter {
     return Offset(cx + radius * math.cos(a), cy + radius * math.sin(a));
   }
 
-  String _stateOf(int i) {
-    if (!enabled) return 'off';
-    if (boost) return 'selected';
-    if (speed <= 0) return 'off';
-    if (i == speed - 1) return 'selected';
-    if (i < speed - 1) return 'progress';
-    return 'off';
-  }
+  _DotState _stateOf(int i) => _dotStateOf(
+    index: i, speed: speed, boost: boost, enabled: enabled,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -283,28 +292,28 @@ class _DialPainter extends CustomPainter {
       // Tick (short radial mark inside ring)
       final tickOuter = _polar(cx, cy, r - 10, ang);
       final tickInner = _polar(cx, cy, r - 18, ang);
-      final tickColor = st == 'selected' ? kYellow
-          : st == 'progress' ? const Color(0xFFC2B100)
+      final tickColor = st == _DotState.selected ? kYellow
+          : st == _DotState.progress ? const Color(0xFFC2B100)
           : const Color(0x38FFFFFF);
       canvas.drawLine(
         tickInner, tickOuter,
         Paint()
           ..color = tickColor
-          ..strokeWidth = st == 'selected' ? 2 : 1.5
+          ..strokeWidth = st == _DotState.selected ? 2 : 1.5
           ..strokeCap = StrokeCap.round,
       );
 
       // Dot on the ring
       final dotPos = _polar(cx, cy, r, ang);
-      final dotFill = st == 'selected' ? kYellow
-          : st == 'progress' ? const Color(0xFFC2B100)
+      final dotFill = st == _DotState.selected ? kYellow
+          : st == _DotState.progress ? const Color(0xFFC2B100)
           : const Color(0xFF1A1A1A);
-      final dotStroke = st == 'selected' ? kYellow
-          : st == 'progress' ? const Color(0xFFC2B100)
+      final dotStroke = st == _DotState.selected ? kYellow
+          : st == _DotState.progress ? const Color(0xFFC2B100)
           : const Color(0x38FFFFFF);
 
       // Bloom/glow for selected dot
-      if (st == 'selected') {
+      if (st == _DotState.selected) {
         canvas.drawCircle(
           dotPos, dotD / 2 + 6,
           Paint()

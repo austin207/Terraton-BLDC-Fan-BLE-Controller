@@ -2,6 +2,7 @@
 abstract final class AppRoutes {
   static const splash             = '/splash';
   static const home               = '/';
+  static const fans               = '/fans';
   static const permissionRequired = '/permission-required';
   static const scanQr             = '/scan/qr';
   static const scanBle            = '/scan/ble';

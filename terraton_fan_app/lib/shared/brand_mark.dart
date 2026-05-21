@@ -10,7 +10,6 @@
 //   terraton-mark.png: canvas 408×612, logo at x=120 y=207 w=168 h=187
 //   terraton-full.png: canvas 537×464, logo at x=123 y=204 w=299 h=69
 import 'package:flutter/material.dart';
-import 'package:terraton_fan_app/shared/theme.dart';
 
 class _Crop {
   final String asset;
@@ -37,17 +36,14 @@ const _kFull = _Crop(
 ///
 /// [full]  = true  → icon + wordmark (terraton-full.png, used in app headers)
 /// [full]  = false → icon only       (terraton-mark.png, used on splash)
-/// [glow]  adds a soft yellow ambient glow (splash screen only)
 class BrandMark extends StatelessWidget {
   final double height;
   final bool full;
-  final bool glow;
 
   const BrandMark({
     super.key,
     this.height = 22,
     this.full = true,
-    this.glow = false,
   });
 
   @override
@@ -70,46 +66,38 @@ class BrandMark extends StatelessWidget {
     final bgX   = -(dispW / c.w) * c.x;
     final bgY   = -(dispH / c.h) * c.y;
 
+    // cacheWidth/cacheHeight: decode at display size (×2 for hdpi) to
+    // avoid allocating full-PNG memory for a 22 dp widget.
+    final cacheW = (dispW * 2).round();
+    final cacheH = (dispH * 2).round();
+
     // The crop: SizedBox clips to dispW×dispH; OverflowBox lets the image
-    // render at bgW×bgH; Transform.translate positions it so the logo
-    // region lands at (0,0).
-    final Widget crop = SizedBox(
-      width: dispW,
-      height: dispH,
-      child: ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.topLeft,
-          maxWidth: bgW,
-          maxHeight: bgH,
-          child: Transform.translate(
-            offset: Offset(bgX, bgY),
-            child: Image.asset(
-              c.asset,
-              width: bgW,
-              height: bgH,
-              fit: BoxFit.fill,
-              filterQuality: FilterQuality.high,
+    // render at bgW×bgH; Transform.translate positions the image so the
+    // logo region lands at (0,0).
+    return Semantics(
+      label: 'Terraton',
+      child: SizedBox(
+        width: dispW,
+        height: dispH,
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            maxWidth: bgW,
+            maxHeight: bgH,
+            child: Transform.translate(
+              offset: Offset(bgX, bgY),
+              child: Image.asset(
+                c.asset,
+                width: bgW,
+                height: bgH,
+                fit: BoxFit.fill,
+                filterQuality: FilterQuality.high,
+                cacheWidth: cacheW,
+                cacheHeight: cacheH,
+              ),
             ),
           ),
         ),
-      ),
-    );
-
-    if (!glow) return Semantics(label: 'Terraton', child: crop);
-
-    // Glow: ambient yellow shadow behind the logo (matches splash aura intent)
-    return Semantics(
-      label: 'Terraton',
-      child: Container(
-        width: dispW,
-        height: dispH,
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(color: kYellow.withAlpha(140), blurRadius: 28, spreadRadius: 8),
-            BoxShadow(color: kYellow.withAlpha(76),  blurRadius: 56, spreadRadius: 16),
-          ],
-        ),
-        child: crop,
       ),
     );
   }

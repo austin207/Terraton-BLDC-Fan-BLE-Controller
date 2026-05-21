@@ -110,7 +110,8 @@ class _SplashScreenState extends State<SplashScreen>
               scale: 0.97 + _breatheCtrl.value * 0.03,
               child: child,
             ),
-            child: const BrandMark(height: 148, full: false, glow: true),
+            // Aura rings (above) provide the glow; mark is icon-only
+            child: const BrandMark(height: 148, full: false),
           ),
 
           // Loading dots + version at bottom

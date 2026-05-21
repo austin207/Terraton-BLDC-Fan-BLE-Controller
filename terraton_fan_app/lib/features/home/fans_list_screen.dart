@@ -25,7 +25,7 @@ class FansListScreen extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => context.pop(),
         ),
         title: Text('Fans',
             style: GoogleFonts.manrope(fontSize: 22, fontWeight: FontWeight.w700, color: kText)),

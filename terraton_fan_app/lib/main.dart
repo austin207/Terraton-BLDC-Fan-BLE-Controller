@@ -16,14 +16,14 @@ Future<void> main() async {
     return true;
   };
   ErrorWidget.builder = (details) => const Material(
-    color: Colors.white,
+    color: Color(0xFF000000), // kBg — dark theme
     child: Center(
       child: Padding(
         padding: EdgeInsets.all(24),
         child: Text(
           'Something went wrong.\nPlease restart the app.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFFD32F2F)),
+          style: TextStyle(color: Color(0xFFFF6B6B), fontSize: 14),
         ),
       ),
     ),
