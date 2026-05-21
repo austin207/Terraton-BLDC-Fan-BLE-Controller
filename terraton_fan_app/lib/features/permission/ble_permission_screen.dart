@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/fan_icon.dart';
@@ -33,11 +34,10 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
 
     if (!mounted) return;
 
-    final allGranted = statuses.values.every((s) => s.isGranted || s.isLimited);
+    final allGranted  = statuses.values.every((s) => s.isGranted || s.isLimited);
     final anyPermanent = statuses.values.any((s) => s.isPermanentlyDenied);
 
     if (allGranted) {
-      // Best-effort: turn Bluetooth on now that we have permission.
       try {
         if (Platform.isAndroid &&
             FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
@@ -60,23 +60,31 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground,
+      backgroundColor: kBg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const FanIcon(size: 140, semanticLabel: 'Terraton fan'),
-              const SizedBox(height: 24),
+              // Fan icon with glow
+              Container(
+                width: 120, height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: kYellow.withAlpha(20),
+                  border: Border.all(color: kYellow.withAlpha(50)),
+                  boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 40)],
+                ),
+                child: const FanIcon(size: 70, semanticLabel: 'Terraton fan'),
+              ),
+              const SizedBox(height: 32),
 
-              const Text(
+              Text(
                 'Bluetooth Access Required',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1A2C4E),
+                style: GoogleFonts.manrope(
+                  fontSize: 22, fontWeight: FontWeight.w800, color: kText,
                 ),
               ),
               const SizedBox(height: 12),
@@ -85,35 +93,64 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                 'Terraton Fan Controller needs Bluetooth permissions '
                 'to scan for and connect to your fan.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.5,
-                  color: Colors.blueGrey.shade600,
+                style: GoogleFonts.manrope(
+                  fontSize: 14, height: 1.55, color: kTextMut,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 28),
 
-              // Permission list
-              const _PermissionRow(
-                icon: Icons.bluetooth,
-                label: 'Bluetooth Scan & Connect',
-                description: 'To find and pair with your fan',
+              // Permission row
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: kCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: kHairline),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: kYellow.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.bluetooth_rounded, size: 18, color: kYellow),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Bluetooth Scan & Connect',
+                              style: GoogleFonts.manrope(
+                                fontSize: 13, fontWeight: FontWeight.w600, color: kText,
+                              )),
+                          Text('To find and pair with your fan',
+                              style: GoogleFonts.manrope(fontSize: 11, color: kTextMut)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 28),
 
+              // Error message
               if (_errorMsg != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                    color: kRed.withAlpha(20),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: kRed.withAlpha(80)),
                   ),
                   child: Text(
                     _errorMsg!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: Color(0xFFDC2626)),
+                    style: GoogleFonts.manrope(fontSize: 13, color: kRed),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -122,7 +159,7 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
               if (_permanentDeny) ...[
                 SizedBox(
                   width: double.infinity,
-                  height: 50,
+                  height: 52,
                   child: ElevatedButton.icon(
                     onPressed: () => unawaited(openAppSettings()),
                     icon: const Icon(Icons.settings_outlined, size: 18),
@@ -132,97 +169,42 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: _loading ? null : _request,
-                  child: const Text('Try Again'),
+                  child: Text('Try Again',
+                      style: GoogleFonts.manrope(color: kTextMut, fontSize: 13)),
                 ),
               ] else ...[
                 SizedBox(
                   width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
+                  height: 52,
+                  child: ElevatedButton(
                     onPressed: _loading ? null : _request,
-                    icon: _loading
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kYellow,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _loading
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                           )
-                        : const Icon(Icons.bluetooth, size: 18),
-                    label: Text(_loading ? 'Requesting…' : 'Grant Permissions'),
+                        : Text('Grant Permissions',
+                            style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],
 
               const SizedBox(height: 16),
               TextButton(
-                onPressed: _loading
-                    ? null
-                    : () => context.go(AppRoutes.home),
+                onPressed: _loading ? null : () => context.go(AppRoutes.home),
                 child: Text(
                   'Use Demo Mode Instead',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.blueGrey.shade400,
-                  ),
+                  style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PermissionRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String description;
-
-  const _PermissionRow({
-    required this.icon,
-    required this.label,
-    required this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: kPrimary.withAlpha(15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 18, color: kPrimary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1E293B),
-                  ),
-                ),
-                Text(
-                  description,
-                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

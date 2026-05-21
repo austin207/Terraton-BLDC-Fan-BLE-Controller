@@ -312,7 +312,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                         const SizedBox(height: 12),
 
                         // Operating modes (4-col grid including Boost)
-                        _SectionHeader('OPERATING MODES'),
+                        const _SectionHeader('OPERATING MODES'),
                         const SizedBox(height: 10),
                         ModeControlWidget(
                           activeMode: fanState.activeMode,
@@ -459,7 +459,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           Container(
             width: 6, height: 6,
             margin: const EdgeInsets.only(right: 5),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle, color: kYellow,
               boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 6)],
             ),
@@ -603,7 +603,7 @@ class _PowerButton extends StatelessWidget {
               width: 1.5,
             ),
             boxShadow: isPowered
-                ? [BoxShadow(color: kYellowGlow, blurRadius: 22, spreadRadius: -4)]
+                ? [const BoxShadow(color: kYellowGlow, blurRadius: 22, spreadRadius: -4)]
                 : null,
           ),
           child: Icon(

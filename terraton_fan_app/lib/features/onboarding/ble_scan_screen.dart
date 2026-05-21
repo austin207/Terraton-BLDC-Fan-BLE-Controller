@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
@@ -24,7 +24,6 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   List<DiscoveredFan> _results = [];
   bool _scanning = false;
   bool _timedOut = false;
-  // null = not yet checked, false = denied, true = granted
   bool? _permissionGranted;
   StreamSubscription<List<DiscoveredFan>>? _sub;
   Timer? _timeout;
@@ -99,99 +98,136 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     };
 
     return Scaffold(
+      backgroundColor: kBg,
       appBar: AppBar(
-        title: const Text('Select Your Fan'),
+        backgroundColor: kBg,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
+          onPressed: () => context.pop(),
+        ),
+        title: Text('Select Your Fan',
+            style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
+        centerTitle: true,
         actions: [
           if (_permissionGranted == true)
             IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh_rounded, color: kYellow),
               tooltip: 'Refresh scan',
               onPressed: () => unawaited(_startScan()),
             ),
         ],
       ),
       body: Builder(builder: (_) {
-        // Permission not yet checked — brief pause before postFrameCallback fires
-        if (_permissionGranted == null) {
-          return const SizedBox.shrink();
-        }
+        if (_permissionGranted == null) return const SizedBox.shrink();
 
-        // Permission denied — static page, no scan spinner
-        if (_permissionGranted == false) {
-          return _buildPermissionDenied();
-        }
+        if (_permissionGranted == false) return _buildPermissionDenied();
 
         if (_scanning && _results.isEmpty) {
-          return const Center(child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Scanning for fans…'),
-            ],
-          ));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 48, height: 48,
+                  child: CircularProgressIndicator(color: kYellow, strokeWidth: 2),
+                ),
+                const SizedBox(height: 20),
+                Text('Scanning for fans…',
+                    style: GoogleFonts.manrope(fontSize: 15, color: kTextMut)),
+                const SizedBox(height: 6),
+                Text('Make sure your fan is powered on',
+                    style: GoogleFonts.manrope(fontSize: 12, color: kTextDim)),
+              ],
+            ),
+          );
         }
+
         if (_timedOut) {
-          return Center(child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.wifi_off, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text('No fans found.',
-                  style: TextStyle(fontSize: 16, color: Colors.grey)),
-              const Text('Make sure your fan is powered on.',
-                  style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
-                onPressed: () => unawaited(_startScan()),
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72, height: 72,
+                    decoration: BoxDecoration(
+                      color: kCard, borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: kHairline),
+                    ),
+                    child: const Icon(Icons.wifi_off_rounded, size: 36, color: kTextDim),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('No fans found.',
+                      style: GoogleFonts.manrope(fontSize: 17, fontWeight: FontWeight.w700, color: kText)),
+                  const SizedBox(height: 6),
+                  Text('Make sure your fan is powered on and within range.',
+                      style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity, height: 52,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text('Refresh',
+                          style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w700)),
+                      onPressed: () => unawaited(_startScan()),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ));
+            ),
+          );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: _results.length,
-          itemBuilder: (_, i) {
-            final fan = _results[i];
-            final alreadyAdded = savedMacs.contains(fan.macAddress);
-            return Card(
-              child: ListTile(
-                leading: const ExcludeSemantics(child: FanIcon(size: 24)),
-                title: Text(fan.name),
-                subtitle: Text(fan.macAddress),
-                trailing: alreadyAdded
-                    ? Chip(
-                        label: const Text('Already added',
-                            style: TextStyle(fontSize: 11)),
-                        backgroundColor: Colors.grey.shade200,
-                      )
-                    : Semantics(
-                        label: 'Signal strength: ${_rssiLabel(fan.rssi)}',
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.signal_cellular_alt,
-                                size: 16,
-                                color: _rssiColor(fan.rssi)),
-                            Text('${fan.rssi} dBm',
-                                style: const TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                enabled: !alreadyAdded,
-                onTap: alreadyAdded ? null : () {
-                  final device = FanDevice()
-                    ..deviceId   = fan.macAddress
-                    ..macAddress = fan.macAddress
-                    ..nickname   = ''
-                    ..addedAt    = DateTime.now();
-                  unawaited(context.push(AppRoutes.nameFan, extra: device));
+
+        // Results list
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: Row(
+                children: [
+                  Text('${_results.length} FOUND',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10, fontWeight: FontWeight.w700,
+                        color: kTextMut, letterSpacing: 2.2,
+                      )),
+                  const SizedBox(width: 8),
+                  if (_scanning)
+                    const SizedBox(
+                      width: 10, height: 10,
+                      child: CircularProgressIndicator(strokeWidth: 1.5, color: kYellow),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                itemCount: _results.length,
+                itemBuilder: (_, i) {
+                  final fan = _results[i];
+                  final alreadyAdded = savedMacs.contains(fan.macAddress);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _FanResultRow(
+                      fan: fan,
+                      alreadyAdded: alreadyAdded,
+                      onTap: alreadyAdded ? null : () {
+                        final device = FanDevice()
+                          ..deviceId   = fan.macAddress
+                          ..macAddress = fan.macAddress
+                          ..nickname   = ''
+                          ..addedAt    = DateTime.now();
+                        unawaited(context.push(AppRoutes.nameFan, extra: device));
+                      },
+                    ),
+                  );
                 },
               ),
-            );
-          },
+            ),
+          ],
         );
       }),
     );
@@ -204,76 +240,151 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 80,
-            height: 80,
+            width: 72, height: 72,
             decoration: BoxDecoration(
-              color: kPrimary,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: kPrimary.withAlpha(60),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+              color: kYellow.withAlpha(25), borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: kYellow.withAlpha(60)),
             ),
-            child: const FanIcon(size: 42, semanticLabel: 'Terraton fan'),
+            child: const Icon(Icons.bluetooth_disabled_rounded, size: 36, color: kYellow),
           ),
-          const SizedBox(height: 28),
-          const Text(
-            'Bluetooth Permission Required',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1A2C4E),
-            ),
-          ),
+          const SizedBox(height: 24),
+          Text('Bluetooth Permission Required',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w800, color: kText)),
           const SizedBox(height: 12),
           Text(
             'Terraton Fan Controller needs Bluetooth Scan and Connect '
             'permissions to search for nearby fans.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.5,
-              color: Colors.blueGrey.shade600,
-            ),
+            style: GoogleFonts.manrope(fontSize: 14, height: 1.5, color: kTextMut),
           ),
           const SizedBox(height: 32),
           SizedBox(
-            width: double.infinity,
-            height: 50,
+            width: double.infinity, height: 52,
             child: ElevatedButton.icon(
               onPressed: () => unawaited(openAppSettings()),
               icon: const Icon(Icons.settings_outlined, size: 18),
-              label: const Text('Open App Settings'),
+              label: Text('Open App Settings',
+                  style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(height: 12),
           SizedBox(
-            width: double.infinity,
-            height: 50,
+            width: double.infinity, height: 52,
             child: OutlinedButton.icon(
               onPressed: _checkPermissionAndScan,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Try Again'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kText,
+                side: const BorderSide(color: kHairlineStrong),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text('Try Again',
+                  style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+// ── Fan result row ─────────────────────────────────────────────────────────────
+
+class _FanResultRow extends StatelessWidget {
+  final DiscoveredFan fan;
+  final bool alreadyAdded;
+  final VoidCallback? onTap;
+
+  const _FanResultRow({
+    required this.fan,
+    required this.alreadyAdded,
+    required this.onTap,
+  });
 
   Color _rssiColor(int rssi) {
-    if (rssi >= -60) return Colors.green;
-    if (rssi >= -80) return Colors.orange;
-    return Colors.red;
+    if (rssi >= -60) return kGreen;
+    if (rssi >= -80) return const Color(0xFFF97316);
+    return kRed;
   }
 
   String _rssiLabel(int rssi) {
-    if (rssi >= -60) return 'strong';
-    if (rssi >= -80) return 'fair';
-    return 'weak';
+    if (rssi >= -60) return 'Strong';
+    if (rssi >= -80) return 'Fair';
+    return 'Weak';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: alreadyAdded ? 0.5 : 1.0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: kHairline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  color: kCardHi, borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.air_rounded, color: kYellow, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(fan.name,
+                        style: GoogleFonts.manrope(
+                          fontSize: 15, fontWeight: FontWeight.w700, color: kText,
+                        )),
+                    const SizedBox(height: 3),
+                    Text(fan.macAddress,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10, color: kTextMut, letterSpacing: 0.6,
+                        )),
+                  ],
+                ),
+              ),
+              if (alreadyAdded)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: kCardHi, borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('Added',
+                      style: GoogleFonts.manrope(
+                        fontSize: 11, fontWeight: FontWeight.w600, color: kTextMut,
+                      )),
+                )
+              else
+                Semantics(
+                  label: 'Signal: ${_rssiLabel(fan.rssi)}',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.signal_cellular_alt_rounded,
+                          size: 16, color: _rssiColor(fan.rssi)),
+                      const SizedBox(width: 4),
+                      Text('${fan.rssi} dBm',
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 10, color: kTextMut,
+                          )),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

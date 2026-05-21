@@ -8,9 +8,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 
-const _kDark       = Color(0xFF0D1423);
-const _kCardDark   = Color(0xFF1A2436);
-const _kBracket    = Color(0xFF3B82F6);
+const _kDark       = Color(0xFF000000);
+const _kCardDark   = Color(0xFF141414);
+const _kBracket    = Color(0xFFFFEC00); // yellow accent
 
 class QrScanScreen extends StatefulWidget {
   const QrScanScreen({super.key});
@@ -163,8 +163,8 @@ class _QrScanScreenState extends State<QrScanScreen>
                           color: _kCardDark,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.arrow_back,
-                            color: Colors.white, size: 18),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 16),
                       ),
                     ),
                   ),

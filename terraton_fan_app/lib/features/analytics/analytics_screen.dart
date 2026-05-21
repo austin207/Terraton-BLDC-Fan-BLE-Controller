@@ -45,9 +45,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       children: [
         // Header
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(children: [const FanIcon(size: 26), const SizedBox(width: 10)]),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Row(children: [FanIcon(size: 26), SizedBox(width: 10)]),
         ),
         Text(
           'Energy & savings',
@@ -161,7 +161,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _SmallIconLabel(icon: Icons.eco_outlined, label: 'SAVED', iconColor: kYellow),
+                    const _SmallIconLabel(icon: Icons.eco_outlined, label: 'SAVED', iconColor: kYellow),
                     const SizedBox(height: 10),
                     Text('₹${(total * 0.32 * 5.4).toStringAsFixed(0)}',
                         style: kMonoStyle(size: 24, color: kYellow, weight: FontWeight.w600, letterSpacing: -0.5)),
@@ -179,7 +179,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _SmallIconLabel(icon: Icons.bolt_outlined, label: 'AVG WATT', iconColor: kYellow),
+                    const _SmallIconLabel(icon: Icons.bolt_outlined, label: 'AVG WATT', iconColor: kYellow),
                     const SizedBox(height: 10),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -206,7 +206,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _DarkCard(
           child: Row(
             children: [
-              _RingChart(pct: 68),
+              const _RingChart(pct: 68),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(

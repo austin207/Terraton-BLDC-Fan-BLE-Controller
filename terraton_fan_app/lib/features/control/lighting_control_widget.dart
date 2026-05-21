@@ -139,7 +139,7 @@ class _LightToggle extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: kYellow,
                     borderRadius: BorderRadius.circular(50),
-                    boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 8)],
+                    boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 8)],
                   ),
                 ),
               ),

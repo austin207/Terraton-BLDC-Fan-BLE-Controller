@@ -67,7 +67,7 @@ class _Fab extends StatelessWidget {
           color: kYellow,
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
-            BoxShadow(color: kYellowGlow, blurRadius: 24, spreadRadius: 2),
+            const BoxShadow(color: kYellowGlow, blurRadius: 24, spreadRadius: 2),
           ],
         ),
         child: const Icon(Icons.add_rounded, color: Colors.black, size: 26),
@@ -99,13 +99,28 @@ class _FanList extends ConsumerWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
-      itemCount: fans.length,
-      itemBuilder: (_, i) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _FanRow(fan: fans[i]),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+          child: Text('${fans.length} PAIRED · LONG-PRESS FOR OPTIONS',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 10, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.2,
+              )),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 120),
+            itemCount: fans.length,
+            itemBuilder: (_, i) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _FanRow(fan: fans[i]),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -385,7 +400,7 @@ class _ActionRow extends StatelessWidget {
               child: Text(label,
                   style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w600, color: color)),
             ),
-            Icon(Icons.chevron_right_rounded, size: 20, color: kTextDim),
+            const Icon(Icons.chevron_right_rounded, size: 20, color: kTextDim),
           ],
         ),
       ),

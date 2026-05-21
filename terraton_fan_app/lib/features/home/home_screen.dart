@@ -64,8 +64,8 @@ class _HomeTab extends ConsumerWidget {
       children: [
         // Tiny brand mark row
         const SizedBox(height: 8),
-        Row(
-          children: [const FanIcon(size: 24), const SizedBox(width: 10)],
+        const Row(
+          children: [FanIcon(size: 24), SizedBox(width: 10)],
         ),
 
         // Greeting
@@ -247,7 +247,7 @@ class _DeviceTileState extends State<_DeviceTile> {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
+            const Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
           ],
         ),
       ),

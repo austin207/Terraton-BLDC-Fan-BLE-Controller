@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
@@ -56,12 +57,15 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: kBg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.black87,
+        backgroundColor: kBg,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
+          onPressed: () => context.pop(),
+        ),
       ),
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
@@ -76,33 +80,31 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                     clipBehavior: Clip.none,
                     children: [
                       Container(
-                        width: 120,
-                        height: 120,
+                        width: 120, height: 120,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.grey.shade100,
-                          border: Border.all(color: Colors.grey.shade200, width: 1.5),
+                          color: kYellow.withAlpha(20),
+                          border: Border.all(color: kYellow.withAlpha(60), width: 1.5),
+                          boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 30)],
                         ),
-                        child: const FanIcon(size: 60),
+                        child: const FanIcon(size: 68),
                       ),
                       Positioned(
-                        bottom: -6,
-                        left: 0,
-                        right: 0,
+                        bottom: -8, left: 0, right: 0,
                         child: Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1DB954),
+                              color: kGreen,
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: const Text(
+                            child: Text(
                               'DETECTED',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
+                              style: GoogleFonts.jetBrainsMono(
+                                color: Colors.black,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: 0.8,
+                                letterSpacing: 1.2,
                               ),
                             ),
                           ),
@@ -111,93 +113,106 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 40),
 
-                const Text(
-                  'Name Your Fan',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
-                  textAlign: TextAlign.center,
-                ),
+                Text('Name Your Fan',
+                    style: GoogleFonts.manrope(
+                      fontSize: 26, fontWeight: FontWeight.w700,
+                      color: kText, letterSpacing: -0.5,
+                    ),
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 10),
                 Text(
-                  '${widget.fan.model.isNotEmpty ? widget.fan.model : 'Fan'} detected! Give it a nickname to easily identify it later.',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600], height: 1.5),
+                  '${widget.fan.model.isNotEmpty ? widget.fan.model : 'Fan'} detected! '
+                  'Give it a nickname to easily identify it later.',
+                  style: GoogleFonts.manrope(fontSize: 14, color: kTextMut, height: 1.55),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 32),
 
-                // Text field — character counter shown as inline suffix.
-                // ValueListenableBuilder scoped to the Text only so the entire
-                // TextFormField does not rebuild on every keystroke.
-                TextFormField(
-                  controller: _ctrl,
-                  maxLength: 30,
-                  maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) =>
-                      const SizedBox.shrink(),
-                  decoration: InputDecoration(
-                    hintText: 'Living Room Fan',
-                    hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    suffix: ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _ctrl,
-                      builder: (_, value, __) => Text(
-                        '${value.text.length} / 30',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w500,
+                // Label
+                Text('YOUR NAME',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10, fontWeight: FontWeight.w700,
+                      color: kTextMut, letterSpacing: 2.2,
+                    )),
+                const SizedBox(height: 10),
+
+                // Text field
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _ctrl,
+                  builder: (_, value, __) => TextFormField(
+                    controller: _ctrl,
+                    maxLength: 30,
+                    maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                    autofocus: true,
+                    style: GoogleFonts.manrope(
+                      color: kText, fontSize: 18, fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Living Room Fan',
+                      hintStyle: GoogleFonts.manrope(color: kTextDim, fontSize: 18),
+                      filled: true,
+                      fillColor: kCard,
+                      counterText: '',
+                      suffix: Text(
+                        '${value.text.length}/30',
+                        style: kMonoStyle(size: 11, color: kTextMut),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: value.text.isNotEmpty
+                              ? kYellow.withAlpha(89)
+                              : kHairlineStrong,
                         ),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: value.text.isNotEmpty
+                              ? kYellow.withAlpha(89)
+                              : kHairlineStrong,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: kYellow, width: 1.5),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: kRed),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
                     ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: kPrimary, width: 1.5),
-                    ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFEF4444)),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    validator: _validate,
                   ),
-                  validator: _validate,
                 ),
+
                 const SizedBox(height: 16),
 
-                // Nickname requirements card
+                // Requirements card
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEAF8F0),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF1DB954).withAlpha(80)),
+                    color: kGreen.withAlpha(20),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kGreen.withAlpha(60)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.check_circle, color: Color(0xFF1DB954), size: 22),
+                      const Icon(Icons.check_circle_rounded, color: kGreen, size: 20),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Nickname Requirements',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0D6E38),
-                                fontSize: 14,
-                              ),
-                            ),
+                            Text('Nickname Requirements',
+                                style: GoogleFonts.manrope(
+                                  fontWeight: FontWeight.w700,
+                                  color: kGreen, fontSize: 13,
+                                )),
                             const SizedBox(height: 6),
                             _reqLine('Max 30 characters'),
                             _reqLine('Alphanumeric characters and spaces only'),
@@ -210,19 +225,40 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _save,
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: const Text(
-                      'Save & Continue',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                // Save button
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _ctrl,
+                  builder: (_, value, __) => SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: value.text.trim().isNotEmpty ? _save : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: value.text.trim().isNotEmpty ? kYellow : kCard,
+                        foregroundColor: value.text.trim().isNotEmpty ? Colors.black : kTextDim,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Save & Continue',
+                              style: GoogleFonts.manrope(
+                                fontSize: 16, fontWeight: FontWeight.w700,
+                              )),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_rounded, size: 18),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+
+                const SizedBox(height: 14),
+                Text('STEP 1 OF 1 · SETUP',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10, color: kTextDim, letterSpacing: 1.8,
+                    ),
+                    textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -232,13 +268,19 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
   }
 
   Widget _reqLine(String text) => Padding(
-        padding: const EdgeInsets.only(top: 3),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('• ', style: TextStyle(color: Colors.green.shade700, fontSize: 13)),
-            Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: Colors.green.shade800))),
-          ],
+    padding: const EdgeInsets.only(top: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 4, height: 4,
+          margin: const EdgeInsets.only(top: 7, right: 8),
+          decoration: const BoxDecoration(shape: BoxShape.circle, color: kGreen),
         ),
-      );
+        Expanded(
+          child: Text(text, style: GoogleFonts.manrope(fontSize: 13, color: kGreen)),
+        ),
+      ],
+    ),
+  );
 }

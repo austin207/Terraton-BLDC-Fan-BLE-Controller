@@ -218,9 +218,9 @@ class _DialPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(cx, cy), r - 16,
       Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(0, -0.4),
-          colors: [const Color(0xFF1F1F1F), const Color(0xFF0A0A0A)],
+        ..shader = const RadialGradient(
+          center: Alignment(0, -0.4),
+          colors: [Color(0xFF1F1F1F), Color(0xFF0A0A0A)],
         ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r - 16))
         ..style = PaintingStyle.fill,
     );

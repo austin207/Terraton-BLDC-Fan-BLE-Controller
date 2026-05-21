@@ -120,7 +120,7 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 _BreatheDots(ctrl: _breatheCtrl),
                 const SizedBox(height: 16),
-                Text(
+                const Text(
                   'v1.0.0 · SMART BLDC',
                   style: TextStyle(
                     fontFamily: 'monospace',

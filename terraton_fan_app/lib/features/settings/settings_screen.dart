@@ -25,7 +25,7 @@ class SettingsScreen extends ConsumerWidget {
         _ProfileCard(),
 
         // DATA MANAGEMENT
-        _SectionLabel('DATA MANAGEMENT'),
+        const _SectionLabel('DATA MANAGEMENT'),
         _SettingsGroup(tiles: [
           _SettingRow(
             iconBg: const Color(0x26507FFF),
@@ -45,7 +45,7 @@ class SettingsScreen extends ConsumerWidget {
         ]),
 
         // ABOUT
-        _SectionLabel('ABOUT'),
+        const _SectionLabel('ABOUT'),
         _SettingsGroup(tiles: [
           _SettingRow(
             iconBg: kCardHi,
@@ -77,7 +77,7 @@ class SettingsScreen extends ConsumerWidget {
         ]),
 
         // SUPPORT
-        _SectionLabel('SUPPORT'),
+        const _SectionLabel('SUPPORT'),
         _SettingsGroup(tiles: [
           _SettingRow(
             iconBg: kYellow.withAlpha(38),
@@ -99,7 +99,7 @@ class SettingsScreen extends ConsumerWidget {
 
         // Footer
         const SizedBox(height: 48),
-        Divider(height: 1, color: kHairline),
+        const Divider(height: 1, color: kHairline),
         const SizedBox(height: 36),
         Center(
           child: Column(
@@ -192,7 +192,7 @@ class _ProfileCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: kYellow,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 18)],
+              boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 18)],
             ),
             alignment: Alignment.center,
             child: Text('T',
@@ -341,7 +341,7 @@ class _SettingRow extends StatelessWidget {
             ),
           ),
         ),
-        if (divider) Divider(height: 1, indent: 70, color: kHairline),
+        if (divider) const Divider(height: 1, indent: 70, color: kHairline),
       ],
     );
   }
