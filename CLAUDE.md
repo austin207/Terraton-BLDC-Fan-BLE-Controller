@@ -86,16 +86,16 @@ Status poll uses a fixed non-standard 7-byte frame: `[55 AA 00 00 01 00 01]`
 
 | Operation | Frame (hex) |
 |-----------|-------------|
-| Power ON | `55 AA 06 02 01 01 0A` |
-| Power OFF | `55 AA 06 02 01 00 09` |
-| Speed 1–6 | `55 AA 06 04 01 0N (06+04+01+N)` |
-| Boost | `55 AA 06 21 01 01 29` |
-| Nature | `55 AA 06 21 01 02 2A` |
-| Reverse | `55 AA 06 21 01 03 2B` |
-| Smart | `55 AA 06 21 01 04 2C` |
-| Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 29/2B/2D/31` |
-| Query Power | `55 AA 06 23 01 00 2A` |
-| Query Speed | `55 AA 06 24 01 00 2B` |
+| Power ON | `55 AA 06 02 01 01 09` |
+| Power OFF | `55 AA 06 02 01 00 08` |
+| Speed 1–6 | `55 AA 06 04 01 0N (0x55+0xAA+06+04+01+N)&FF` |
+| Boost | `55 AA 06 21 01 01 28` |
+| Nature | `55 AA 06 21 01 02 29` |
+| Reverse | `55 AA 06 21 01 03 2A` |
+| Smart | `55 AA 06 21 01 04 2B` |
+| Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 28/2A/2C/30` |
+| Query Power | `55 AA 06 23 01 00 29` |
+| Query Speed | `55 AA 06 24 01 00 2A` |
 
 ### Onboarding flow
 

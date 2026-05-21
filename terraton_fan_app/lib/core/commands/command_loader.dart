@@ -41,7 +41,7 @@ class CommandLoader {
   static List<int> get frameHeader {
     final p = _safeGet(['protocol']);
     if (p == null) return const [0x55, 0xAA];
-    return _toIntList(p['header'])!;
+    return _toIntList(p['header']) ?? const [0x55, 0xAA];
   }
 
   /// Packet ID that identifies a response frame (0x07).
