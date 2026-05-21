@@ -1,11 +1,16 @@
 // test/unit/ble_response_parser_test.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
+import 'package:terraton_fan_app/core/commands/command_loader.dart';
 
 // Response checksum = sum of ALL frame bytes before the checksum (including 0x55 0xAA) & 0xFF.
 // Same formula as request frames, consistent across the full protocol.
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await CommandLoader.load();
+  });
   group('BleResponseParser.parse', () {
     test('returns null for too-short frame', () {
       expect(BleResponseParser.parse([0x55, 0xAA, 0x07]), isNull);

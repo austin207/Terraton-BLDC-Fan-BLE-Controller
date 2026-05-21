@@ -35,6 +35,30 @@ class CommandLoader {
     return [0x55, 0xAA, reqId, commandByte, len, ...data, sum & 0xFF];
   }
 
+  // ── Protocol byte accessors (read from YAML — no hardcoding in Dart) ────────
+
+  /// The two-byte frame header [0x55, 0xAA].
+  static List<int> get frameHeader {
+    final p = _safeGet(['protocol']);
+    if (p == null) return const [0x55, 0xAA];
+    return _toIntList(p['header'])!;
+  }
+
+  /// Packet ID that identifies a response frame (0x07).
+  static int get responsePacketId {
+    final p = _safeGet(['protocol']);
+    return (p?['response_packet_id'] as int?) ?? 0x07;
+  }
+
+  /// Command byte for a named response, e.g. 'power_watts', 'running_rpm'.
+  /// Returns null if the key is missing from response_commands in the YAML.
+  static int? responseCommand(String key) {
+    final rc = _safeGet(['response_commands']);
+    return rc?[key] as int?;
+  }
+
+  // ── Fixed frames ──────────────────────────────────────────────────────────
+
   static List<int> statusPoll() =>
       List<int>.from(((config['status_poll'] as YamlMap)['frame']) as YamlList);
 
