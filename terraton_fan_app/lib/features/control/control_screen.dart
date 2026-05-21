@@ -38,6 +38,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   DateTime? _lastRpmAt;
 
   bool _connecting = false;
+  bool _showDisconnectAlert = false;
 
   // Debug state isolated in a ValueNotifier so only _DebugCard rebuilds on
   // each BLE notification — not the entire ControlScreen.
@@ -268,11 +269,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             child: Column(
               children: [
 
-                // ── Power button ───────────────────────────────────────────
+                // ── Power button — 3-state: green (on) / red (off) / grey (disconnected)
                 _PowerButton(
                   isPowered: fanState.isPowered,
-                  enabled: enabled,
-                  onPower: (on) {
+                  isConnected: enabled, // true when connected or demo
+                  onTap: () {
+                    // Disconnected & trying to turn on → show alert instead
+                    if (!enabled && !_isDemo) {
+                      setState(() => _showDisconnectAlert = true);
+                      return;
+                    }
+                    final on = !fanState.isPowered;
                     ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
                         .updatePower(on);
                     unawaited(_send(
@@ -426,7 +433,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             ),
           ),
 
-          // Connection lost overlay
+          // Connection lost card (bottom-anchored, persistent while disconnected)
           if (isDisconnected)
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -434,6 +441,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 onRetry: _connect,
                 connectStatus: _isDemo ? null : _ble.connectStatus,
               ),
+            ),
+
+          // Disconnect alert (centered modal — shown when user taps power while disconnected)
+          if (_showDisconnectAlert)
+            _DisconnectAlertOverlay(
+              fanName: widget.fan.nickname,
+              onClose: () => setState(() => _showDisconnectAlert = false),
+              onRetry: () {
+                setState(() => _showDisconnectAlert = false);
+                unawaited(_connect());
+              },
             ),
         ],
       ),
@@ -565,51 +583,180 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Power button ──────────────────────────────────────────────────────────────
+// ── Power button — 3 visual states matching fan-control.jsx palette ─────────
+//   green  : connected + powered on
+//   red    : connected + powered off
+//   grey   : disconnected (no BLE link)
 
 class _PowerButton extends StatelessWidget {
   final bool isPowered;
-  final bool enabled;
-  final void Function(bool) onPower;
+  final bool isConnected; // true when BLE connected or demo
+  final VoidCallback onTap;
 
   const _PowerButton({
     required this.isPowered,
-    required this.enabled,
-    required this.onPower,
+    required this.isConnected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Colours from fan-control.jsx palette
+    final Color rim, iconColor, bgColor;
+    final List<BoxShadow> shadows;
+
+    if (!isConnected) {
+      rim       = const Color(0x47FFFFFF);
+      iconColor = const Color(0x8CFFFFFF);
+      bgColor   = kCard;
+      shadows   = const [BoxShadow(color: Color(0x0FFFFFFF), blurRadius: 8)];
+    } else if (isPowered) {
+      rim       = const Color(0xFF3FD37A);
+      iconColor = const Color(0xFF3FD37A);
+      bgColor   = const Color(0x1A3FD37A);
+      shadows   = const [
+        BoxShadow(color: Color(0x8C3FD37A), blurRadius: 14),
+        BoxShadow(color: Color(0x4D3FD37A), blurRadius: 28),
+      ];
+    } else {
+      rim       = const Color(0xFFE5484D);
+      iconColor = const Color(0xFFE5484D);
+      bgColor   = const Color(0x14E5484D);
+      shadows   = const [
+        BoxShadow(color: Color(0x4DE5484D), blurRadius: 10),
+        BoxShadow(color: Color(0x26E5484D), blurRadius: 22),
+      ];
+    }
+
     return Semantics(
       button: true,
       label: 'Power',
       value: isPowered ? 'on' : 'off',
       child: GestureDetector(
-        onTap: enabled
-            ? () {
-                unawaited(HapticFeedback.lightImpact());
-                onPower(!isPowered);
-              }
-            : null,
+        onTap: () {
+          unawaited(HapticFeedback.lightImpact());
+          onTap();
+        },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
+          duration: const Duration(milliseconds: 260),
           width: 56,
           height: 56,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isPowered ? kYellow.withAlpha(25) : kCard,
-            border: Border.all(
-              color: isPowered ? kYellow : kHairlineStrong,
-              width: 1.5,
-            ),
-            boxShadow: isPowered
-                ? [const BoxShadow(color: kYellowGlow, blurRadius: 22, spreadRadius: -4)]
-                : null,
+            color: bgColor,
+            border: Border.all(color: rim, width: 1.5),
+            boxShadow: shadows,
           ),
           child: Icon(
             Icons.power_settings_new_rounded,
             size: 26,
-            color: isPowered ? kYellow : kText,
+            color: iconColor,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Disconnect alert overlay ──────────────────────────────────────────────────
+// Shown as a centered modal (matching DisconnectAlert in fan-control.jsx) when
+// the user taps the power button while the fan is not connected.
+
+class _DisconnectAlertOverlay extends StatelessWidget {
+  final String fanName;
+  final VoidCallback onClose;
+  final VoidCallback onRetry;
+
+  const _DisconnectAlertOverlay({
+    required this.fanName,
+    required this.onClose,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onClose,
+      child: Container(
+        color: Colors.black.withAlpha(178), // rgba(0,0,0,0.7)
+        child: Center(
+          child: GestureDetector(
+            onTap: () {}, // stop propagation
+            child: Container(
+              margin: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: kSurface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: kHairlineStrong),
+                boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 80)],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // BT icon chip
+                  Container(
+                    width: 64, height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0x1AFFEC00),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0x47FFEC00)),
+                    ),
+                    child: const Icon(Icons.bluetooth_rounded, size: 28, color: kYellow),
+                  ),
+                  const SizedBox(height: 18),
+                  Text('Fan is disconnected',
+                      style: GoogleFonts.manrope(
+                        fontSize: 20, fontWeight: FontWeight.w700, color: kText,
+                      ),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 10),
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: GoogleFonts.manrope(fontSize: 13, color: kTextMut, height: 1.5),
+                      children: [
+                        const TextSpan(text: 'Please re-establish the Bluetooth connection to '),
+                        TextSpan(
+                          text: fanName,
+                          style: GoogleFonts.manrope(
+                            fontWeight: FontWeight.w700, color: kText,
+                          ),
+                        ),
+                        const TextSpan(text: ' before powering it on.'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: onRetry,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kYellow, foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: Text('Reconnect',
+                          style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w700,
+                              letterSpacing: 0.04)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: TextButton(
+                      onPressed: onClose,
+                      child: Text('Not now',
+                          style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600,
+                              color: kTextMut)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
