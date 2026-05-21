@@ -139,18 +139,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _lastRpmAt = null;
       }
 
-      // Only query telemetry when fan is powered on — avoids flooding the
-      // BLE module with query frames while the fan is off or during testing.
+      // Only poll when powered on — avoids noise while the fan is off.
+      // Status poll returns ON/OFF, mode, power (W), and speed (RPM) in one frame.
       final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
       if (!fanState.isPowered) return;
 
-      final pFrame = BleFrameBuilder.queryPower();
-      final sFrame = BleFrameBuilder.querySpeed();
       try {
-        if (pFrame != null) await _ble.writeFrame(pFrame);
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        if (!mounted) return;
-        if (sFrame != null) await _ble.writeFrame(sFrame);
+        await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;
       } on Object catch (_) {
         // Fan disconnected mid-poll; connection state stream handles recovery.
