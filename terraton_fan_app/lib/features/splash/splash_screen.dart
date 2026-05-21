@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -103,14 +103,14 @@ class _SplashScreenState extends State<SplashScreen>
             },
           ),
 
-          // Fan icon with breathe
+          // Brand mark (icon only) with breathe + glow
           AnimatedBuilder(
             animation: _breatheCtrl,
             builder: (_, child) => Transform.scale(
               scale: 0.97 + _breatheCtrl.value * 0.03,
               child: child,
             ),
-            child: const FanIcon(size: 148, semanticLabel: 'Terraton fan'),
+            child: const BrandMark(height: 148, full: false, glow: true),
           ),
 
           // Loading dots + version at bottom

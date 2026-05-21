@@ -2,7 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -45,9 +45,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       children: [
         // Header
+        // Brand wordmark header — matches analytics.jsx BrandMark header
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
-          child: Row(children: [FanIcon(size: 26), SizedBox(width: 10)]),
+          child: BrandMark(height: 22),
         ),
         Text(
           'Energy & savings',

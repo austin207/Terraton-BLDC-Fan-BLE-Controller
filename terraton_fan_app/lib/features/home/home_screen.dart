@@ -6,7 +6,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
 import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -64,9 +64,8 @@ class _HomeTab extends ConsumerWidget {
       children: [
         // Tiny brand mark row
         const SizedBox(height: 8),
-        const Row(
-          children: [FanIcon(size: 24), SizedBox(width: 10)],
-        ),
+        // Brand wordmark header — matches home.jsx BrandMark height=22
+        const BrandMark(height: 22),
 
         // Greeting
         const SizedBox(height: 20),
