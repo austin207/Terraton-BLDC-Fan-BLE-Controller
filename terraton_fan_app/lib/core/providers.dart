@@ -5,12 +5,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 
 final packageInfoProvider = FutureProvider<PackageInfo>(
     (_) => PackageInfo.fromPlatform());
+
+// ── User name ─────────────────────────────────────────────────────────────────
+// Persisted to app_settings.json via AppSettings. Loaded lazily on first watch.
+
+class UserNameNotifier extends StateNotifier<AsyncValue<String>> {
+  UserNameNotifier() : super(const AsyncLoading()) {
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final name = await AppSettings.loadUserName();
+      state = AsyncData(name);
+    } on Object {
+      state = const AsyncData('');
+    }
+  }
+
+  Future<void> save(String name) async {
+    await AppSettings.saveUserName(name);
+    state = AsyncData(name);
+  }
+}
+
+final userNameProvider =
+    StateNotifierProvider<UserNameNotifier, AsyncValue<String>>(
+        (_) => UserNameNotifier());
 
 final bluetoothAdapterStateProvider = StreamProvider<BluetoothAdapterState>(
     (_) => FlutterBluePlus.adapterState);

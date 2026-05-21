@@ -8,6 +8,7 @@ import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/features/splash/splash_screen.dart';
 import 'package:terraton_fan_app/features/home/home_screen.dart';
 import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
+import 'package:terraton_fan_app/features/onboarding/profile_setup_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/ble_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/name_fan_screen.dart';
@@ -23,6 +24,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.splash,
       builder: (_, __) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.profileSetup,
+      builder: (_, __) => const ProfileSetupScreen(),
     ),
     GoRoute(
       path: AppRoutes.home,

@@ -57,6 +57,8 @@ class _HomeTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final fansAsync = ref.watch(savedFansProvider);
     final fanCount  = fansAsync.when(data: (f) => f.length, loading: () => 0, error: (_, __) => 0);
+    final nameAsync = ref.watch(userNameProvider);
+    final userName  = nameAsync.valueOrNull ?? '';
 
     final hour   = DateTime.now().hour;
     final greet  = hour < 5 ? 'Sleep well' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -79,7 +81,7 @@ class _HomeTab extends ConsumerWidget {
           ),
         ),
         Text(
-          'there.',
+          '${userName.isNotEmpty ? userName : 'there'}.',
           style: GoogleFonts.manrope(
             fontSize: 28, fontWeight: FontWeight.w600,
             color: kTextMut, letterSpacing: -0.5, height: 1.15,

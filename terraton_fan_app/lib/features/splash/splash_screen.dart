@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -34,7 +35,14 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
       final granted = (scanGranted.isGranted    || scanGranted.isLimited) &&
                       (connectGranted.isGranted || connectGranted.isLimited);
-      context.go(granted ? AppRoutes.home : AppRoutes.permissionRequired);
+      if (!granted) {
+        context.go(AppRoutes.permissionRequired);
+        return;
+      }
+      // First launch → profile setup; returning user → home
+      final firstLaunch = await AppSettings.isFirstLaunch();
+      if (!mounted) return;
+      context.go(firstLaunch ? AppRoutes.profileSetup : AppRoutes.home);
     }));
   }
 
