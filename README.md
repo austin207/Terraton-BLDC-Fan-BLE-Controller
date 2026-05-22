@@ -179,13 +179,35 @@ terraton_fan_app/
 - Android device (API 21+) or emulator
 - Android SDK
 
+### Emulator
+
+Two AVDs are configured: **S24 Ultra** and **Medium Phone API 36.0**.
+
+```powershell
+# From repo root — launch S24 Ultra emulator
+.\launch-emulator.ps1
+
+# Launch and immediately run the app once boot finishes
+.\launch-emulator.ps1 -Run
+
+# Emulator is already running — just start the app
+.\launch-emulator.ps1 -RunOnly
+```
+
+> **Emulator already on but no app?**
+> The quickest way is:
+> ```powershell
+> cd terraton_fan_app; flutter run -d emulator-5554
+> ```
+
 ### Run locally
 
 ```powershell
 # From terraton_fan_app/
 flutter pub get
 dart run build_runner build --delete-conflicting-outputs  # regenerate ObjectBox code
-flutter run
+flutter run                    # auto-selects the connected device/emulator
+flutter run -d emulator-5554   # target a specific emulator by ID
 ```
 
 ### Release APK
