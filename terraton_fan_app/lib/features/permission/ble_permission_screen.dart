@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -62,10 +63,18 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
     return Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(32, 12, 32, 4),
+              child: BrandMark(height: 22),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Fan icon with glow
               Container(
@@ -202,10 +211,13 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                   style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
+                ],         // closes inner Column children
+              ),           // closes inner Column
+            ),             // closes Padding
+          ),               // closes Expanded
+        ],                 // closes outer Column children
+      ),                   // closes outer Column
+      ),                   // closes SafeArea
     );
   }
 }

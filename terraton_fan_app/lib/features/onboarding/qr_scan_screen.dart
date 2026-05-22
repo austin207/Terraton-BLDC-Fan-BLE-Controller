@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 
 const _kDark       = Color(0xFF000000);
 const _kCardDark   = Color(0xFF141414);
@@ -177,6 +178,15 @@ class _QrScanScreenState extends State<QrScanScreen>
                     ),
                   ),
                 ],
+              ),
+            ),
+
+            // Brand mark — top-left, below the nav header
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: BrandMark(height: 20),
               ),
             ),
 

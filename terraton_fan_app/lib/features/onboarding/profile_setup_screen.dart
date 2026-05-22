@@ -63,7 +63,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             // Top brand
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Center(child: BrandMark(height: 22)),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: BrandMark(height: 22),
+              ),
             ),
 
             // Main content — vertically centred

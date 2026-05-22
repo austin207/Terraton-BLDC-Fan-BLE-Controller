@@ -11,6 +11,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -119,7 +120,14 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             ),
         ],
       ),
-      body: Builder(builder: (_) {
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+            child: BrandMark(height: 22),
+          ),
+          Expanded(child: Builder(builder: (_) {
         if (_permissionGranted == null) return const SizedBox.shrink();
 
         if (_permissionGranted == false) return _buildPermissionDenied();
@@ -230,7 +238,9 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
             ),
           ],
         );
-      }),
+      })),   // closes builder func + Builder + Expanded
+        ],     // closes Column children
+      ),       // closes Column
     );
   }
 

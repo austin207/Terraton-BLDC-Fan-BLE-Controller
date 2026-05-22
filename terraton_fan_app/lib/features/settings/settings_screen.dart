@@ -11,7 +11,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -163,8 +162,13 @@ class SettingsScreen extends ConsumerWidget {
         Center(
           child: Column(
             children: [
-              const TerratonFanIcon(size: 48),
-              const SizedBox(height: 12),
+              Image.asset(
+                'assets/logos/terraton-mark.png',
+                height: 72,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+              const SizedBox(height: 10),
               Text('Terraton®',
                   style: GoogleFonts.manrope(
                     fontSize: 18, fontWeight: FontWeight.w600, color: kTextMut,

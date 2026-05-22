@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -66,15 +67,24 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
           onPressed: () => context.pop(),
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Fan icon with DETECTED badge
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
+            child: BrandMark(height: 22),
+          ),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Fan icon with DETECTED badge
                 Center(
                   child: Stack(
                     clipBehavior: Clip.none,
@@ -259,11 +269,14 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                       fontSize: 10, color: kTextDim, letterSpacing: 1.8,
                     ),
                     textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
-      ),
+                    ],         // closes Form Column children
+                  ),           // closes Form Column
+                ),             // closes Form
+              ),               // closes SingleChildScrollView
+            ),                 // closes SafeArea
+          ),                   // closes Expanded
+        ],                     // closes outer Column children
+      ),                       // closes outer Column (body)
     );
   }
 

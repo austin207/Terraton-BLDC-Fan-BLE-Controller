@@ -9,7 +9,6 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/router.dart';
-import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -29,7 +28,8 @@ class FansListScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const BrandMark(height: 22),
+        title: Text('My Fans',
+            style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
         centerTitle: true,
       ),
       body: Stack(

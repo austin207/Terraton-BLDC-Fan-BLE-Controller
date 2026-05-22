@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 // ── Section data ──────────────────────────────────────────────────────────────
@@ -149,10 +150,18 @@ class _UserManualScreenState extends State<UserManualScreen> {
             style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
         centerTitle: true,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ..._sections.map((s) => Padding(
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+            child: BrandMark(height: 22),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+              children: [
+                ..._sections.map((s) => Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: _ManualSection(
               section: s,
@@ -160,17 +169,20 @@ class _UserManualScreenState extends State<UserManualScreen> {
               onToggle: () => _toggle(s.id),
             ),
           )),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Center(
-              child: Text('END OF MANUAL · v1.0.0',
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 10, color: kTextDim, letterSpacing: 2.0,
-                  )),
-            ),
-          ),
-        ],
-      ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Center(
+                    child: Text('END OF MANUAL · v1.0.0',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10, color: kTextDim, letterSpacing: 2.0,
+                        )),
+                  ),
+                ),
+              ],          // closes ListView children
+            ),            // closes ListView
+          ),              // closes Expanded
+        ],                // closes Column children
+      ),                  // closes Column (body)
     );
   }
 }
