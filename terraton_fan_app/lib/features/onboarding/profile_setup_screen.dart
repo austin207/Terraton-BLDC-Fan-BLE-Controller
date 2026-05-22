@@ -87,11 +87,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         border: Border.all(color: const Color(0x40FFEC00)),
                         boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 40)],
                       ),
-                      child: Center(
-                        child: CustomPaint(
-                          size: const Size(36, 36),
-                          painter: _PersonIconPainter(),
-                        ),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        size: 38,
+                        color: kYellow,
                       ),
                     ),
 
@@ -225,29 +224,3 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   }
 }
 
-// Simple person icon matching the JSX SVG (circle head + arc body)
-class _PersonIconPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = kYellow
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round;
-    // Head: circle at (cx=12,cy=8,r=4) in 24×24 space
-    final scale = size.width / 24;
-    canvas.drawCircle(Offset(12 * scale, 8 * scale), 4 * scale, paint);
-    // Body arc: M4 21 a8 8 0 0 1 16 0
-    final path = Path()
-      ..moveTo(4 * scale, 21 * scale)
-      ..arcToPoint(
-        Offset(20 * scale, 21 * scale),
-        radius: Radius.circular(8 * scale),
-        clockwise: false,
-      );
-    canvas.drawPath(path, paint..style = PaintingStyle.stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter _) => false;
-}

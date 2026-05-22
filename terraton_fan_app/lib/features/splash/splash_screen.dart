@@ -111,17 +111,14 @@ class _SplashScreenState extends State<SplashScreen>
             },
           ),
 
-          // Brand mark — slightly above center
-          Align(
-            alignment: const Alignment(0, -0.22),
-            child: AnimatedBuilder(
-              animation: _breatheCtrl,
-              builder: (_, child) => Transform.scale(
-                scale: 0.97 + _breatheCtrl.value * 0.03,
-                child: child,
-              ),
-              child: const BrandMark(height: 148, full: false),
+          // Brand mark — centered within the rings
+          AnimatedBuilder(
+            animation: _breatheCtrl,
+            builder: (_, child) => Transform.scale(
+              scale: 0.97 + _breatheCtrl.value * 0.03,
+              child: child,
             ),
+            child: const BrandMark(height: 148, full: false),
           ),
 
           // Loading dots + version — bottom section
