@@ -109,9 +109,53 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "3:7745722999259312107",
+      "lastPropertyId": "7:1714395182981438629",
+      "name": "UsageLog",
+      "properties": [
+        {
+          "id": "1:862387326030390053",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2648413089901042935",
+          "name": "deviceId",
+          "type": 9
+        },
+        {
+          "id": "3:4021657117346482254",
+          "name": "startTime",
+          "type": 10
+        },
+        {
+          "id": "4:4059261527488277558",
+          "name": "durationSecs",
+          "type": 6
+        },
+        {
+          "id": "5:8798316521547455166",
+          "name": "gear",
+          "type": 6
+        },
+        {
+          "id": "6:2921317936671011541",
+          "name": "watts",
+          "type": 6
+        },
+        {
+          "id": "7:1714395182981438629",
+          "name": "mode",
+          "type": 9
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "2:6584660752010918141",
+  "lastEntityId": "3:7745722999259312107",
   "lastIndexId": "2:2741298653888021969",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",

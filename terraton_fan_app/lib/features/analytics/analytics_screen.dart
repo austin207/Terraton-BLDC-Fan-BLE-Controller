@@ -2,21 +2,24 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
-class AnalyticsScreen extends StatefulWidget {
+class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
 
   @override
-  State<AnalyticsScreen> createState() => _AnalyticsScreenState();
+  ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
 }
 
-class _AnalyticsScreenState extends State<AnalyticsScreen> {
+class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   String _range = 'Week';
-  double _tariff = 5.4; // ₹ per unit — editable
+  double _tariff = 5.4;
   late final TextEditingController _tariffCtrl;
 
   @override
@@ -31,92 +34,113 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     super.dispose();
   }
 
-  // ── Current-period consumption data ─────────────────────────────────────────
-  //
-  // Day   — 12:00 AM to current time (each bucket = portion of the day)
-  // Week  — completed days Mon → (today−1)
-  // Month — completed days 1st → (today−1)
+  static const double _traditionalWatts = 85.0;
 
-  static const _usageData = {
-    'Day': [
-      ('12AM', 0.4), ('4AM', 0.3), ('8AM', 0.6),
-      ('12PM', 0.8), ('4PM', 1.2), ('8PM', 1.4), ('Now', 1.0),
-    ],
-    'Week': [
-      ('Mon', 4.2), ('Tue', 3.8), ('Wed', 5.1),
-      ('Thu', 4.6), ('Fri', 6.0), ('Sat', 5.4), ('Sun', 4.9),
-    ],
-    'Month': [
-      ('W1', 28.0), ('W2', 32.0), ('W3', 30.0), ('W4', 34.0),
-    ],
-  };
+  // ── Time-window helpers ───────────────────────────────────────────────────
 
-  // ── Previous-period data (same window length) ────────────────────────────────
-  //
-  // Day   — yesterday 12:00 AM → same time as today
-  // Week  — same completed days of previous week
-  // Month — 1st → (today−1) of previous month
+  (DateTime, DateTime) _currentWindow(String range) {
+    final now  = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return switch (range) {
+      'Day'   => (today, now),
+      'Week'  => (now.subtract(const Duration(days: 7)), now),
+      'Month' => (now.subtract(const Duration(days: 30)), now),
+      _       => (today, now),
+    };
+  }
 
-  static const _prevUsageData = {
-    'Day': [
-      ('12AM', 0.5), ('4AM', 0.4), ('8AM', 0.7),
-      ('12PM', 0.9), ('4PM', 1.3), ('8PM', 1.6), ('Now', 1.2),
-    ],
-    'Week': [
-      ('Mon', 4.9), ('Tue', 4.4), ('Wed', 5.7),
-      ('Thu', 5.1), ('Fri', 6.6), ('Sat', 6.0), ('Sun', 5.4),
-    ],
-    'Month': [
-      ('W1', 31.0), ('W2', 35.5), ('W3', 33.0), ('W4', 37.5),
-    ],
-  };
+  (DateTime, DateTime) _prevWindow(String range) {
+    final now   = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return switch (range) {
+      'Day'   => (today.subtract(const Duration(days: 1)),
+                  now.subtract(const Duration(days: 1))),
+      'Week'  => (now.subtract(const Duration(days: 14)),
+                  now.subtract(const Duration(days: 7))),
+      'Month' => (now.subtract(const Duration(days: 60)),
+                  now.subtract(const Duration(days: 30))),
+      _       => (today, now),
+    };
+  }
 
-  // ── Per-fan day consumption (12:00 AM → now) ─────────────────────────────────
+  // ── Aggregation helpers ───────────────────────────────────────────────────
 
-  static const _fanKwh = [
-    ('Living Room Fan',    12.4),
-    ('Master Bedroom Fan',  9.1),
-    ('Study Room Fan',      6.3),
-    ('Kitchen Fan',         4.0),
-  ];
+  double _sumKwh(List<UsageLog> logs) =>
+      logs.fold(0.0, (s, l) => s + l.kwh);
 
-  // ── Smart Mode efficiency data ───────────────────────────────────────────────
-  //
-  // (gear wattage W, hours run) pairs — Smart mode selected different gears.
-  // Traditional baseline: a standard 85 W ceiling fan for the same total duration.
+  int _avgWatts(List<UsageLog> logs) {
+    final active = logs.where((l) => l.watts > 0 && l.gear > 0).toList();
+    if (active.isEmpty) return 0;
+    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
+    if (totalSecs == 0) return 0;
+    return (active.fold(0.0, (s, l) => s + l.watts * l.durationSecs) / totalSecs)
+        .round();
+  }
 
-  static const _smartGearData = [
-    (15.0, 2.0),  // Gear 1
-    (20.0, 2.0),  // Gear 2
-    (28.0, 2.0),  // Gear 3
-    (35.0, 1.0),  // Gear 4
-    (42.0, 0.5),  // Gear 5
-  ];
-  static const _traditionalWatts = 85.0;
+  int _efficiency(List<UsageLog> logs) {
+    final active = logs.where((l) => l.watts > 0 && l.gear > 0).toList();
+    if (active.isEmpty) return 0;
+    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
+    if (totalSecs == 0) return 0;
+    final terrWh = active.fold(0.0, (s, l) => s + l.watts * l.durationSecs / 3600.0);
+    final tradWh = _traditionalWatts * totalSecs / 3600.0;
+    return ((tradWh - terrWh) / tradWh * 100).round().clamp(0, 100);
+  }
 
-  // Pre-computed from const data — not recalculated on every build().
-  static final double _kMaxKwh = _fanKwh.fold(0.0, (m, f) => math.max(m, f.$2));
-  static final int _kEfficiency = () {
-    final totalH  = _smartGearData.fold(0.0, (s, g) => s + g.$2);
-    final smartWh = _smartGearData.fold(0.0, (s, g) => s + g.$1 * g.$2);
-    final tradWh  = _traditionalWatts * totalH;
-    return tradWh == 0 ? 0 : ((tradWh - smartWh) / tradWh * 100).round();
-  }();
+  String _efficiencyLabel(int pct) {
+    if (pct >= 80) return 'Excellent Efficiency';
+    if (pct >= 60) return 'Optimal Range';
+    if (pct >= 40) return 'Moderate Efficiency';
+    if (pct > 0)   return 'Low Efficiency';
+    return 'No Data Yet';
+  }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Chart bucket builders ─────────────────────────────────────────────────
 
-  double _total(String range) =>
-      _usageData[range]!.fold(0.0, (s, d) => s + d.$2);
+  List<(String, double)> _chartData(List<UsageLog> logs, String range) {
+    final now   = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-  double _prevTotal(String range) =>
-      _prevUsageData[range]!.fold(0.0, (s, d) => s + d.$2);
+    if (range == 'Day') {
+      // Six 4-hour buckets for today.
+      final labels = ['12AM', '4AM', '8AM', '12PM', '4PM', '8PM'];
+      return List.generate(6, (i) {
+        final from = today.add(Duration(hours: i * 4));
+        final to   = today.add(Duration(hours: (i + 1) * 4));
+        final kwh  = _sumKwh(logs.where((l) =>
+            !l.startTime.isBefore(from) && l.startTime.isBefore(to)).toList());
+        return (labels[i], kwh);
+      });
+    }
 
-  // Returns arrow glyph, percentage magnitude, and display colour.
-  // Green ↓  = lower consumption this period (good).
-  // Red   ↑  = higher consumption this period.
-  ({String arrow, double pct, Color color}) _comparison(String range) {
-    final curr = _total(range);
-    final prev = _prevTotal(range);
+    if (range == 'Week') {
+      // Last 7 days, each labelled with short day name.
+      return List.generate(7, (i) {
+        final day  = today.subtract(Duration(days: 6 - i));
+        final from = day;
+        final to   = day.add(const Duration(days: 1));
+        final kwh  = _sumKwh(logs.where((l) =>
+            !l.startTime.isBefore(from) && l.startTime.isBefore(to)).toList());
+        final label = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+            [day.weekday - 1];
+        return (label, kwh);
+      });
+    }
+
+    // Month — four 7-day weeks.
+    return List.generate(4, (i) {
+      final from = today.subtract(Duration(days: 28 - i * 7));
+      final to   = today.subtract(Duration(days: 21 - i * 7));
+      final kwh  = _sumKwh(logs.where((l) =>
+          !l.startTime.isBefore(from) && l.startTime.isBefore(to)).toList());
+      return ('W${i + 1}', kwh);
+    });
+  }
+
+  // ── Comparison badge ──────────────────────────────────────────────────────
+
+  ({String arrow, double pct, Color color}) _comparison(
+      double curr, double prev) {
     if (prev == 0) return (arrow: '—', pct: 0, color: kTextMut);
     final change = (curr - prev) / prev * 100;
     final lower  = change < 0;
@@ -141,19 +165,40 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _       => '',
   };
 
-  String _efficiencyLabel(int pct) {
-    if (pct >= 80) return 'Excellent Efficiency';
-    if (pct >= 60) return 'Optimal Range';
-    if (pct >= 40) return 'Moderate Efficiency';
-    return 'Low Efficiency';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final data  = _usageData[_range]!;
-    final total = _total(_range);
-    final cmp   = _comparison(_range);
-    final cost  = total * _tariff;
+    final repo     = ref.watch(usageLogRepositoryProvider);
+    final fansAsync = ref.watch(savedFansProvider);
+
+    final (curFrom, curTo) = _currentWindow(_range);
+    final (preFrom, preTo) = _prevWindow(_range);
+
+    final curLogs  = repo.getLogsInRange(curFrom, curTo);
+    final prevLogs = repo.getLogsInRange(preFrom, preTo);
+
+    final chartData  = _chartData(curLogs, _range);
+    final total      = _sumKwh(curLogs);
+    final prevTotal  = _sumKwh(prevLogs);
+    final cmp        = _comparison(total, prevTotal);
+    final cost       = total * _tariff;
+    final avgW       = _avgWatts(curLogs);
+    final eff        = _efficiency(curLogs);
+
+    // By-fan: group logs by deviceId, map deviceId → fan name.
+    final fanMap = <String, double>{};
+    for (final log in curLogs) {
+      fanMap[log.deviceId] = (fanMap[log.deviceId] ?? 0) + log.kwh;
+    }
+    final fanNames = fansAsync.valueOrNull
+        ?.asMap()
+        .map((_, f) => MapEntry(f.deviceId, f.nickname.isNotEmpty ? f.nickname : f.model)) ??
+        {};
+    final fanKwh = fanMap.entries
+        .map((e) => (fanNames[e.key] ?? e.key, e.value))
+        .toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+    final maxFanKwh =
+        fanKwh.isEmpty ? 1.0 : fanKwh.map((f) => f.$2).reduce(math.max);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -172,13 +217,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Tracking ${_fanKwh.length} fans across your home.',
+          fanKwh.isEmpty
+              ? 'Start using your fans to see usage data.'
+              : 'Tracking ${fanKwh.length} fan${fanKwh.length == 1 ? '' : 's'} across your home.',
           style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
         ),
 
         const SizedBox(height: 16),
 
-        // Range tabs
+        // ── Range tabs ────────────────────────────────────────────────────
         Row(
           children: ['Day', 'Week', 'Month'].map((r) {
             final on = r == _range;
@@ -196,14 +243,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       border: Border.all(color: on ? kYellow : kHairline),
                     ),
                     alignment: Alignment.center,
-                    child: Text(
-                      r,
-                      style: GoogleFonts.manrope(
-                        fontSize: 12, fontWeight: FontWeight.w700,
-                        color: on ? Colors.black : kTextMut,
-                        letterSpacing: 0.04,
-                      ),
-                    ),
+                    child: Text(r,
+                        style: GoogleFonts.manrope(
+                          fontSize: 12, fontWeight: FontWeight.w700,
+                          color: on ? Colors.black : kTextMut,
+                        )),
                   ),
                 ),
               ),
@@ -213,7 +257,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // ── Consumption card ─────────────────────────────────────────────────
+        // ── Consumption card ───────────────────────────────────────────────
         _DarkCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,7 +265,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: kWh total
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -233,7 +276,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Text(total.toStringAsFixed(1),
-                              style: kMonoStyle(size: 36, weight: FontWeight.w600, letterSpacing: -0.5)),
+                              style: kMonoStyle(size: 36, weight: FontWeight.w600,
+                                  letterSpacing: -0.5)),
                           const SizedBox(width: 6),
                           Text('kWh', style: kMonoStyle(size: 14, color: kTextMut)),
                         ],
@@ -241,23 +285,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ],
                   ),
                   const Spacer(),
-                  // Right: period comparison badge (green ↓ / red ↑)
-                  Text(
-                    '${cmp.arrow} ${cmp.pct.toStringAsFixed(0)}% ${_comparisonLabel(_range)}',
-                    style: kMonoStyle(
-                      size: 10, color: cmp.color,
-                      letterSpacing: 1.6, weight: FontWeight.w700,
+                  if (prevTotal > 0)
+                    Text(
+                      '${cmp.arrow} ${cmp.pct.toStringAsFixed(0)}% ${_comparisonLabel(_range)}',
+                      style: kMonoStyle(size: 10, color: cmp.color,
+                          letterSpacing: 1.6, weight: FontWeight.w700),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 18),
-              _LineChart(data: data),
+              _LineChart(data: chartData),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: data.map((d) => Text(d.$1,
-                    style: kMonoStyle(size: 9, color: kTextDim, letterSpacing: 0.6))).toList(),
+                children: chartData.map((d) => Text(d.$1,
+                    style: kMonoStyle(size: 9, color: kTextDim,
+                        letterSpacing: 0.6))).toList(),
               ),
             ],
           ),
@@ -265,103 +308,36 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // ── Energy Cost / Units Used / Tariff — single full-width card ─────────
+        // ── Energy Cost / Units Used / Tariff ─────────────────────────────
         _DarkCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Sub-cards row
               Row(
                 children: [
-                  // Energy Cost
                   Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: kCardElev,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: kHairlineStrong),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 22, height: 22,
-                                decoration: BoxDecoration(
-                                  color: kYellow.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                                child: const Icon(Icons.currency_rupee, size: 12, color: kYellow),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text('ENERGY COST',
-                                    style: kMonoStyle(size: 8, color: kTextMut,
-                                        letterSpacing: 1.4, weight: FontWeight.w700)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text('₹${cost.toStringAsFixed(1)}',
-                              style: kMonoStyle(size: 20, color: kYellow,
-                                  weight: FontWeight.w600, letterSpacing: -0.5)),
-                          const SizedBox(height: 2),
-                          Text(_periodLabel(_range),
-                              style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
-                        ],
-                      ),
+                    child: _MiniStatCard(
+                      icon: Icons.currency_rupee,
+                      label: 'ENERGY COST',
+                      value: '₹${cost.toStringAsFixed(1)}',
+                      valueColor: kYellow,
+                      sub: _periodLabel(_range),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // Units Used
                   Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: kCardElev,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: kHairlineStrong),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 22, height: 22,
-                                decoration: BoxDecoration(
-                                  color: kYellow.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                                child: const Icon(Icons.bolt_outlined, size: 12, color: kYellow),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text('UNITS USED',
-                                    style: kMonoStyle(size: 8, color: kTextMut,
-                                        letterSpacing: 1.4, weight: FontWeight.w700)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text('${total.toStringAsFixed(1)} U',
-                              style: kMonoStyle(size: 20, color: kText,
-                                  weight: FontWeight.w600, letterSpacing: -0.5)),
-                          const SizedBox(height: 2),
-                          Text(_periodLabel(_range),
-                              style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
-                        ],
-                      ),
+                    child: _MiniStatCard(
+                      icon: Icons.bolt_outlined,
+                      label: 'UNITS USED',
+                      value: '${total.toStringAsFixed(1)} U',
+                      valueColor: kText,
+                      sub: _periodLabel(_range),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 10),
-
-              // Tariff — full-width centered strip
+              // Tariff strip
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
@@ -382,9 +358,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       width: 44,
                       child: TextField(
                         controller: _tariffCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d*\.?\d*')),
                         ],
                         textAlign: TextAlign.center,
                         style: kMonoStyle(size: 14, weight: FontWeight.w700),
@@ -395,10 +373,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           isDense: true,
                         ),
                         onChanged: (v) {
-                          final parsed = double.tryParse(v);
-                          if (parsed != null && parsed >= 0) {
-                            setState(() => _tariff = parsed);
-                          }
+                          final p = double.tryParse(v);
+                          if (p != null && p >= 0) setState(() => _tariff = p);
                         },
                       ),
                     ),
@@ -413,7 +389,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // ── AVG WATT — full-width card ────────────────────────────────────────
+        // ── AVG WATT ──────────────────────────────────────────────────────
         _DarkCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -425,43 +401,51 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text('28', style: kMonoStyle(size: 36, weight: FontWeight.w600, letterSpacing: -0.5)),
+                  Text(avgW > 0 ? '$avgW' : '--',
+                      style: kMonoStyle(size: 36, weight: FontWeight.w600,
+                          letterSpacing: -0.5)),
                   const SizedBox(width: 6),
                   Text('W', style: kMonoStyle(size: 16, color: kTextMut)),
                 ],
               ),
               const SizedBox(height: 4),
-              Text('65% lower than a typical 85W fan',
-                  style: GoogleFonts.manrope(fontSize: 12, color: kTextMut)),
+              Text(
+                avgW > 0
+                    ? '${((_traditionalWatts - avgW) / _traditionalWatts * 100).round()}% lower than a typical ${_traditionalWatts.round()}W fan'
+                    : 'No usage data yet',
+                style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
+              ),
             ],
           ),
         ),
 
         const SizedBox(height: 12),
 
-        // ── Smart Mode efficiency ring ────────────────────────────────────────
-        //
-        // Efficiency = (traditional Wh − smart Wh) / traditional Wh × 100
-        // Ring glow brightens with efficiency; label and description are dynamic.
+        // ── Efficiency ring ───────────────────────────────────────────────
         _DarkCard(
           child: Row(
             children: [
-              _RingChart(pct: _kEfficiency),
+              _RingChart(pct: eff),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('EFFICIENCY',
-                        style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.0)),
+                        style: kMonoStyle(size: 10, color: kTextMut,
+                            letterSpacing: 2.0)),
                     const SizedBox(height: 6),
-                    Text(_efficiencyLabel(_kEfficiency),
+                    Text(_efficiencyLabel(eff),
                         style: GoogleFonts.manrope(
-                          fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
+                            fontSize: 16, fontWeight: FontWeight.w700,
+                            color: kText)),
                     const SizedBox(height: 4),
                     Text(
-                      'Your fans are running $_kEfficiency% more efficiently than a typical ceiling fan at the same airflow.',
-                      style: GoogleFonts.manrope(fontSize: 12, color: kTextMut, height: 1.4),
+                      eff > 0
+                          ? 'Your fans are running $eff% more efficiently than a typical ceiling fan at the same airflow.'
+                          : 'Run your fans to see efficiency data.',
+                      style: GoogleFonts.manrope(
+                          fontSize: 12, color: kTextMut, height: 1.4),
                     ),
                   ],
                 ),
@@ -472,27 +456,89 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 16),
 
-        // ── By Fan — day consumption (12:00 AM → now) ────────────────────────
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('BY FAN',
-                style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.2, weight: FontWeight.w700)),
-            GestureDetector(
-              onTap: () {},
-              child: Text('DETAILS',
-                  style: kMonoStyle(size: 10, color: kYellow, letterSpacing: 2.0, weight: FontWeight.w700)),
+        // ── By Fan ────────────────────────────────────────────────────────
+        if (fanKwh.isNotEmpty) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('BY FAN',
+                  style: kMonoStyle(size: 10, color: kTextMut,
+                      letterSpacing: 2.2, weight: FontWeight.w700)),
+              Text(_periodLabel(_range).toUpperCase(),
+                  style: kMonoStyle(size: 10, color: kYellow,
+                      letterSpacing: 2.0, weight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...fanKwh.map((f) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _FanBar(
+              name: f.$1,
+              kwh: f.$2,
+              barFraction: maxFanKwh > 0 ? f.$2 / maxFanKwh : 0,
             ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        ..._fanKwh.map((f) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _FanBar(name: f.$1, kwh: f.$2, barFraction: f.$2 / _kMaxKwh),
-        )),
+          )),
+        ],
       ],
     );
   }
+}
+
+// ── Mini stat card ────────────────────────────────────────────────────────────
+
+class _MiniStatCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color valueColor;
+  final String sub;
+
+  const _MiniStatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    required this.sub,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: kCardElev,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: kHairlineStrong),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 22, height: 22,
+              decoration: BoxDecoration(
+                color: kYellow.withAlpha(30),
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Icon(icon, size: 12, color: kYellow),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(label,
+                  style: kMonoStyle(size: 8, color: kTextMut,
+                      letterSpacing: 1.4, weight: FontWeight.w700)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(value,
+            style: kMonoStyle(size: 20, color: valueColor,
+                weight: FontWeight.w600, letterSpacing: -0.5)),
+        const SizedBox(height: 2),
+        Text(sub, style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
+      ],
+    ),
+  );
 }
 
 // ── Shared components ─────────────────────────────────────────────────────────
@@ -518,7 +564,8 @@ class _SmallIconLabel extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color iconColor;
-  const _SmallIconLabel({required this.icon, required this.label, required this.iconColor});
+  const _SmallIconLabel(
+      {required this.icon, required this.label, required this.iconColor});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -532,7 +579,10 @@ class _SmallIconLabel extends StatelessWidget {
         child: Icon(icon, size: 14, color: iconColor),
       ),
       const SizedBox(width: 8),
-      Text(label, style: kMonoStyle(size: 9, color: kTextMut, letterSpacing: 1.8, weight: FontWeight.w700)),
+      Text(label,
+          style: kMonoStyle(
+              size: 9, color: kTextMut,
+              letterSpacing: 1.8, weight: FontWeight.w700)),
     ],
   );
 }
@@ -565,14 +615,18 @@ class _LineChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
+    final allZero = data.every((d) => d.$2 == 0);
 
     final W = size.width;
     final H = size.height;
     const P = 6.0;
 
-    final maxVal = data.map((d) => d.$2).reduce(math.max) * 1.15;
-    final xs = List.generate(data.length, (i) => P + i * (W - P * 2) / (data.length - 1));
-    final ys = data.map((d) => H - P - (d.$2 / maxVal) * (H - P * 2)).toList();
+    final maxVal = allZero ? 1.0 : data.map((d) => d.$2).reduce(math.max) * 1.15;
+    final xs = List.generate(
+        data.length, (i) => P + i * (W - P * 2) / (data.length - 1));
+    final ys = data
+        .map((d) => H - P - (d.$2 / maxVal) * (H - P * 2))
+        .toList();
 
     // Grid lines
     final gridPaint = Paint()
@@ -582,14 +636,13 @@ class _LineChartPainter extends CustomPainter {
       canvas.drawLine(Offset(P, H * g), Offset(W - P, H * g), gridPaint);
     }
 
-    // Smooth path
     final path = Path()..moveTo(xs[0], ys[0]);
     for (int i = 1; i < xs.length; i++) {
       final cx = (xs[i - 1] + xs[i]) / 2;
       path.cubicTo(cx, ys[i - 1], cx, ys[i], xs[i], ys[i]);
     }
 
-    // Fill area under curve
+    // Fill
     final areaPath = Path.from(path)
       ..lineTo(xs.last, H)
       ..lineTo(xs.first, H)
@@ -600,14 +653,15 @@ class _LineChartPainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [kYellow.withAlpha(70), kYellow.withAlpha(0)],
+          colors: [kYellow.withAlpha(allZero ? 20 : 70), kYellow.withAlpha(0)],
         ).createShader(Rect.fromLTWH(0, 0, W, H)),
     );
 
     // Line
-    canvas.drawPath(path,
+    canvas.drawPath(
+      path,
       Paint()
-        ..color = kYellow
+        ..color = allZero ? kYellow.withAlpha(60) : kYellow
         ..strokeWidth = 2
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
@@ -617,16 +671,14 @@ class _LineChartPainter extends CustomPainter {
     // Dots
     for (int i = 0; i < xs.length; i++) {
       final isLast = i == xs.length - 1;
-      canvas.drawCircle(
-        Offset(xs[i], ys[i]),
-        isLast ? 4.5 : 2.5,
-        Paint()..color = isLast ? kYellow : Colors.black,
-      );
+      canvas.drawCircle(Offset(xs[i], ys[i]), isLast ? 4.5 : 2.5,
+          Paint()..color = isLast ? kYellow : Colors.black);
       if (!isLast) {
         canvas.drawCircle(
-          Offset(xs[i], ys[i]), 2.5,
+          Offset(xs[i], ys[i]),
+          2.5,
           Paint()
-            ..color = kYellow
+            ..color = allZero ? kYellow.withAlpha(60) : kYellow
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.5,
         );
@@ -663,44 +715,41 @@ class _RingPainter extends CustomPainter {
     const sw = 7.0;
     final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
 
-    // Track ring
     canvas.drawArc(rect, 0, 2 * math.pi, false,
       Paint()
         ..color = const Color(0x0FFFFFFF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = sw,
-    );
+        ..strokeWidth = sw);
 
     final sweep = 2 * math.pi * pct / 100;
-
-    // Glow — scales with efficiency (brighter at higher %)
     final glowAlpha = (pct * 1.5).round().clamp(20, 160);
+
     canvas.drawArc(rect, -math.pi / 2, sweep, false,
       Paint()
         ..color = kYellow.withAlpha(glowAlpha)
         ..style = PaintingStyle.stroke
         ..strokeWidth = sw + 10
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-    );
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10));
 
-    // Main filled arc
     canvas.drawArc(rect, -math.pi / 2, sweep, false,
       Paint()
         ..color = kYellow
         ..style = PaintingStyle.stroke
         ..strokeWidth = sw
-        ..strokeCap = StrokeCap.round,
-    );
+        ..strokeCap = StrokeCap.round);
 
-    // Percentage label
     final painter = TextPainter(
       text: TextSpan(children: [
-        TextSpan(text: '$pct', style: kMonoStyle(size: 18, weight: FontWeight.w600)),
-        TextSpan(text: '%',    style: kMonoStyle(size: 10, color: kTextMut)),
+        TextSpan(
+            text: pct > 0 ? '$pct' : '--',
+            style: kMonoStyle(size: 18, weight: FontWeight.w600)),
+        if (pct > 0)
+          TextSpan(text: '%', style: kMonoStyle(size: 10, color: kTextMut)),
       ]),
       textDirection: TextDirection.ltr,
     )..layout();
-    painter.paint(canvas, Offset(cx - painter.width / 2, cy - painter.height / 2));
+    painter.paint(canvas,
+        Offset(cx - painter.width / 2, cy - painter.height / 2));
   }
 
   @override
@@ -712,8 +761,9 @@ class _RingPainter extends CustomPainter {
 class _FanBar extends StatelessWidget {
   final String name;
   final double kwh;
-  final double barFraction; // 0.0–1.0 relative to highest-consuming fan
-  const _FanBar({required this.name, required this.kwh, required this.barFraction});
+  final double barFraction;
+  const _FanBar(
+      {required this.name, required this.kwh, required this.barFraction});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -727,7 +777,8 @@ class _FanBar extends StatelessWidget {
       children: [
         Container(
           width: 28, height: 28,
-          decoration: BoxDecoration(color: kCardHi, borderRadius: BorderRadius.circular(8)),
+          decoration:
+              BoxDecoration(color: kCardHi, borderRadius: BorderRadius.circular(8)),
           child: const TerratonFanIcon(size: 16),
         ),
         const SizedBox(width: 12),
@@ -738,9 +789,14 @@ class _FanBar extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(name,
-                      style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600, color: kText)),
-                  Text('${kwh.toStringAsFixed(1)} U', style: kMonoStyle(size: 11, weight: FontWeight.w600)),
+                  Flexible(
+                    child: Text(name,
+                        style: GoogleFonts.manrope(
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                            color: kText)),
+                  ),
+                  Text('${kwh.toStringAsFixed(2)} U',
+                      style: kMonoStyle(size: 11, weight: FontWeight.w600)),
                 ],
               ),
               const SizedBox(height: 8),

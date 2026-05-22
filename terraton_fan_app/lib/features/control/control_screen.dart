@@ -17,6 +17,7 @@ import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
+import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -393,6 +394,36 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
   double _brightnessValue = 0.7;
   bool   _isLightOn       = false;
 
+  // ── Usage-log segment tracker ──────────────────────────────────────────────
+  DateTime? _segmentStart;
+  int   _segmentGear = 0;
+  String? _segmentMode;
+
+  /// Flush the completed segment to ObjectBox, then start a new one.
+  /// Watts are read from the live fan state at flush time.
+  void _flushSegment({required int newGear, required String? newMode}) {
+    final start = _segmentStart;
+    if (start != null && _segmentGear > 0) {
+      final secs = DateTime.now().difference(start).inSeconds;
+      if (secs > 0) {
+        final watts = ref
+            .read(activeFanStateProvider(widget.fan.deviceId))
+            .lastWatts ?? 0;
+        ref.read(usageLogRepositoryProvider).addLog(UsageLog(
+          deviceId:    widget.fan.deviceId,
+          startTime:   start,
+          durationSecs: secs,
+          gear:        _segmentGear,
+          watts:       watts,
+          mode:        _segmentMode,
+        ));
+      }
+    }
+    _segmentStart = DateTime.now();
+    _segmentGear  = newGear;
+    _segmentMode  = newMode;
+  }
+
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
     0x04 => '4H',
@@ -424,14 +455,13 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
               final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
               if (fanState.isBoost) {
                 notifier.setBoostActive(false);
-                // Re-assert the active mode on hardware so the MCU continues
-                // in the correct mode (reverse / smart) at the selected speed.
                 if (fanState.activeMode == 'reverse') {
                   unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
                 } else if (fanState.activeMode == 'smart') {
                   unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
                 }
               }
+              _flushSegment(newGear: s, newMode: fanState.activeMode);
               notifier.updateSpeed(s);
               unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
             },
@@ -451,6 +481,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
           onMode: (m) {
             final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
             if (fanState.activeMode == m) {
+              _flushSegment(newGear: fanState.speed, newMode: null);
               notifier.setActiveMode(null);
               if (fanState.speed > 0) {
                 unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
@@ -462,6 +493,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
               notifier.updateSpeed(3);
               unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
             }
+            _flushSegment(newGear: fanState.speed, newMode: m);
             notifier.setActiveMode(m);
             final frame = switch (m) {
               'nature'  => BleFrameBuilder.setNature(),
@@ -475,6 +507,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
             if (fanState.activeMode == 'nature') return;
             final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
             if (fanState.isBoost) {
+              _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
               notifier.setBoostActive(false);
               final restoreFrame = switch (fanState.activeMode) {
                 'reverse' => BleFrameBuilder.setReverse(),
@@ -485,6 +518,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
                 unawaited(widget.send(restoreFrame, label: 'Mode: ${fanState.activeMode}'));
               }
             } else {
+              _flushSegment(newGear: fanState.speed, newMode: 'boost');
               notifier.setBoostActive(true);
               unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
             }

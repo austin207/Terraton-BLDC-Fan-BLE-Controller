@@ -16,6 +16,7 @@ import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
 import 'models/fan_device.dart';
 import 'models/fan_state.dart';
+import 'models/usage_log.dart';
 
 export 'package:objectbox/objectbox.dart'; // so that callers only have to import this file
 
@@ -144,6 +145,58 @@ final _entities = <obx_int.ModelEntity>[
     relations: <obx_int.ModelRelation>[],
     backlinks: <obx_int.ModelBacklink>[],
   ),
+  obx_int.ModelEntity(
+    id: const obx_int.IdUid(3, 7745722999259312107),
+    name: 'UsageLog',
+    lastPropertyId: const obx_int.IdUid(7, 1714395182981438629),
+    flags: 0,
+    properties: <obx_int.ModelProperty>[
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(1, 862387326030390053),
+        name: 'id',
+        type: 6,
+        flags: 1,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(2, 2648413089901042935),
+        name: 'deviceId',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(3, 4021657117346482254),
+        name: 'startTime',
+        type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 4059261527488277558),
+        name: 'durationSecs',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(5, 8798316521547455166),
+        name: 'gear',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(6, 2921317936671011541),
+        name: 'watts',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(7, 1714395182981438629),
+        name: 'mode',
+        type: 9,
+        flags: 0,
+      ),
+    ],
+    relations: <obx_int.ModelRelation>[],
+    backlinks: <obx_int.ModelBacklink>[],
+  ),
 ];
 
 /// Shortcut for [obx.Store.new] that passes [getObjectBoxModel] and for Flutter
@@ -184,7 +237,7 @@ Future<obx.Store> openStore({
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
     entities: _entities,
-    lastEntityId: const obx_int.IdUid(2, 6584660752010918141),
+    lastEntityId: const obx_int.IdUid(3, 7745722999259312107),
     lastIndexId: const obx_int.IdUid(2, 2741298653888021969),
     lastRelationId: const obx_int.IdUid(0, 0),
     lastSequenceId: const obx_int.IdUid(0, 0),
@@ -329,6 +382,79 @@ obx_int.ModelDefinition getObjectBoxModel() {
         return object;
       },
     ),
+    UsageLog: obx_int.EntityDefinition<UsageLog>(
+      model: _entities[2],
+      toOneRelations: (UsageLog object) => [],
+      toManyRelations: (UsageLog object) => {},
+      getId: (UsageLog object) => object.id,
+      setId: (UsageLog object, int id) {
+        object.id = id;
+      },
+      objectToFB: (UsageLog object, fb.Builder fbb) {
+        final deviceIdOffset = fbb.writeString(object.deviceId);
+        final modeOffset = object.mode == null
+            ? null
+            : fbb.writeString(object.mode!);
+        fbb.startTable(8);
+        fbb.addInt64(0, object.id);
+        fbb.addOffset(1, deviceIdOffset);
+        fbb.addInt64(2, object.startTime.millisecondsSinceEpoch);
+        fbb.addInt64(3, object.durationSecs);
+        fbb.addInt64(4, object.gear);
+        fbb.addInt64(5, object.watts);
+        fbb.addOffset(6, modeOffset);
+        fbb.finish(fbb.endTable());
+        return object.id;
+      },
+      objectFromFB: (obx.Store store, ByteData fbData) {
+        final buffer = fb.BufferContext(fbData);
+        final rootOffset = buffer.derefObject(0);
+        final idParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          4,
+          0,
+        );
+        final deviceIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 6, '');
+        final startTimeParam = DateTime.fromMillisecondsSinceEpoch(
+          const fb.Int64Reader().vTableGet(buffer, rootOffset, 8, 0),
+        );
+        final durationSecsParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          10,
+          0,
+        );
+        final gearParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          12,
+          0,
+        );
+        final wattsParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          14,
+          0,
+        );
+        final modeParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 16);
+        final object = UsageLog(
+          id: idParam,
+          deviceId: deviceIdParam,
+          startTime: startTimeParam,
+          durationSecs: durationSecsParam,
+          gear: gearParam,
+          watts: wattsParam,
+          mode: modeParam,
+        );
+
+        return object;
+      },
+    ),
   };
 
   return obx_int.ModelDefinition(model, bindings);
@@ -422,5 +548,43 @@ class FanState_ {
   /// See [FanState.lastRpm].
   static final lastRpm = obx.QueryIntegerProperty<FanState>(
     _entities[1].properties[8],
+  );
+}
+
+/// [UsageLog] entity fields to define ObjectBox queries.
+class UsageLog_ {
+  /// See [UsageLog.id].
+  static final id = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[0],
+  );
+
+  /// See [UsageLog.deviceId].
+  static final deviceId = obx.QueryStringProperty<UsageLog>(
+    _entities[2].properties[1],
+  );
+
+  /// See [UsageLog.startTime].
+  static final startTime = obx.QueryDateProperty<UsageLog>(
+    _entities[2].properties[2],
+  );
+
+  /// See [UsageLog.durationSecs].
+  static final durationSecs = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[3],
+  );
+
+  /// See [UsageLog.gear].
+  static final gear = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[4],
+  );
+
+  /// See [UsageLog.watts].
+  static final watts = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[5],
+  );
+
+  /// See [UsageLog.mode].
+  static final mode = obx.QueryStringProperty<UsageLog>(
+    _entities[2].properties[6],
   );
 }
