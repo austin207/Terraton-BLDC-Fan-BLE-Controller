@@ -153,15 +153,15 @@ class _UsageCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text('2.4',
+                    Text('—',  // Phase 2: real telemetry value
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 26, fontWeight: FontWeight.w600,
-                          color: kText, letterSpacing: -0.5,
+                          color: kTextMut, letterSpacing: -0.5,
                         )),
                     const SizedBox(width: 6),
-                    Text('kWh · ₹13.0',
+                    Text('kWh · ₹—',
                         style: GoogleFonts.jetBrainsMono(
-                          fontSize: 12, color: kTextMut, letterSpacing: 0.6,
+                          fontSize: 12, color: kTextDim, letterSpacing: 0.6,
                         )),
                   ],
                 ),
@@ -175,10 +175,10 @@ class _UsageCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0x38FFEC00)),
             ),
-            child: Text('↓ 18%',
+            child: Text('SOON',
                 style: GoogleFonts.jetBrainsMono(
                   fontSize: 10, fontWeight: FontWeight.w700,
-                  color: kYellow, letterSpacing: 1.2,
+                  color: kTextDim, letterSpacing: 1.2,
                 )),
           ),
         ],

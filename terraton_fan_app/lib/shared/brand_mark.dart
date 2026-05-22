@@ -3,7 +3,7 @@
 // Terraton brand assets.
 //
 // full=true  (headers):  PNG crop of terraton-full.png — power-T mark + wordmark
-// full=false (splash):   icon.png centred — the standalone power-T logo
+// full=false (splash):   terraton-mark.png — standalone power-T mark, no wordmark text
 //
 // The crop approach (full=true) is a direct port of the JSX BrandMark:
 //   canvas W=537 H=464, logo at x=123 y=204 w=299 h=69
@@ -26,13 +26,12 @@ class BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Splash / icon-only path — use the app icon PNG directly
+    // Splash / mark-only path — standalone power-T mark (no wordmark text)
     if (!full) {
       return Semantics(
         label: 'Terraton',
         child: Image.asset(
-          'assets/icon/icon.png',
-          width: height,
+          'assets/logos/terraton-mark.png',
           height: height,
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,

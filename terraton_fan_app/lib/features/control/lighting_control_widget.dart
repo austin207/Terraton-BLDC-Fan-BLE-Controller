@@ -8,19 +8,23 @@ import 'package:terraton_fan_app/shared/theme.dart';
 class LightingControlWidget extends StatelessWidget {
   final bool enabled;
   final bool isLightOn;
-  final double colorTempValue; // 0.0 = warm, 1.0 = cool
+  final String colorType; // 'warm' | 'neutral' | 'cool'
+  final double brightnessValue; // 0.0 = off/dim, 1.0 = full brightness
   final VoidCallback onLightOn;
   final VoidCallback onLightOff;
-  final void Function(double) onColorTemp;
+  final void Function(String) onColorTypeChanged;
+  final void Function(double) onBrightness;
 
   const LightingControlWidget({
     super.key,
     required this.enabled,
     required this.isLightOn,
-    required this.colorTempValue,
+    required this.colorType,
+    required this.brightnessValue,
     required this.onLightOn,
     required this.onLightOff,
-    required this.onColorTemp,
+    required this.onColorTypeChanged,
+    required this.onBrightness,
   });
 
   @override
@@ -64,31 +68,31 @@ class LightingControlWidget extends StatelessWidget {
 
           const SizedBox(height: 14),
 
-          // ── Colour temperature: WARM | NEUTRAL | COOL ──────────────────────
+          // ── Colour type: WARM | NEUTRAL | COOL (independent selection) ────────
           Opacity(
             opacity: enabled && isLightOn ? 1.0 : 0.4,
             child: Row(
               children: [
-                Expanded(child: _TempBtn(label: 'Warm', isActive: colorTempValue < 0.33 && isLightOn, color: const Color(0xFFE6B85C), onTap: enabled && isLightOn ? () => onColorTemp(0.0) : null)),
+                Expanded(child: _TempBtn(label: 'Warm',    isActive: colorType == 'warm'    && isLightOn, color: const Color(0xFFE6B85C), onTap: enabled && isLightOn ? () => onColorTypeChanged('warm')    : null)),
                 const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Neutral', isActive: colorTempValue >= 0.33 && colorTempValue < 0.67 && isLightOn, color: const Color(0xFFCFCFCF), onTap: enabled && isLightOn ? () => onColorTemp(0.5) : null)),
+                Expanded(child: _TempBtn(label: 'Neutral', isActive: colorType == 'neutral' && isLightOn, color: const Color(0xFFCFCFCF), onTap: enabled && isLightOn ? () => onColorTypeChanged('neutral') : null)),
                 const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Cool', isActive: colorTempValue >= 0.67 && isLightOn, color: const Color(0xFFDDEEFF), onTap: enabled && isLightOn ? () => onColorTemp(1.0) : null)),
+                Expanded(child: _TempBtn(label: 'Cool',    isActive: colorType == 'cool'    && isLightOn, color: const Color(0xFFDDEEFF), onTap: enabled && isLightOn ? () => onColorTypeChanged('cool')    : null)),
               ],
             ),
           ),
 
           const SizedBox(height: 14),
 
-          // ── Intensity slider ────────────────────────────────────────────────
+          // ── Brightness slider (independent of colour type) ──────────────────
           Opacity(
             opacity: enabled ? 1.0 : 0.5,
             child: _IntensitySlider(
-              value: isLightOn ? colorTempValue : 0.0,
+              value: isLightOn ? brightnessValue : 0.0,
               enabled: enabled && isLightOn,
               onChanged: (v) {
                 unawaited(HapticFeedback.selectionClick());
-                onColorTemp(v);
+                onBrightness(v);
               },
             ),
           ),
@@ -228,9 +232,9 @@ class _TempBtn extends StatelessWidget {
   }
 }
 
-// ── Intensity slider ──────────────────────────────────────────────────────────
+// ── Intensity slider (custom tick-line design) ────────────────────────────────
 
-class _IntensitySlider extends StatelessWidget {
+class _IntensitySlider extends StatefulWidget {
   final double value;
   final bool enabled;
   final void Function(double) onChanged;
@@ -242,58 +246,136 @@ class _IntensitySlider extends StatelessWidget {
   });
 
   @override
+  State<_IntensitySlider> createState() => _IntensitySliderState();
+}
+
+class _IntensitySliderState extends State<_IntensitySlider> {
+  static const _steps = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
+
+  double _nearest(double x) =>
+      _steps.reduce((a, b) => (x - a).abs() <= (x - b).abs() ? a : b);
+
+  void _pick(double localX, double width) {
+    if (!widget.enabled) return;
+    final snapped = _nearest((localX / width).clamp(0.0, 1.0));
+    if (snapped != widget.value) {
+      unawaited(HapticFeedback.selectionClick());
+      widget.onChanged(snapped);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
       decoration: BoxDecoration(
         color: kCardElev,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kHairline),
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.wb_sunny_outlined, size: 18, color: value > 0 && enabled ? kYellow : kTextMut),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    activeTrackColor: kYellow,
-                    inactiveTrackColor: const Color(0x14FFFFFF),
-                    thumbColor: kYellow,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
-                    overlayColor: kYellow.withAlpha(40),
-                  ),
-                  child: Slider(
-                    value: value,
-                    min: 0, max: 1,
-                    onChanged: enabled ? onChanged : null,
-                    semanticFormatterCallback: (_) =>
-                        'Light intensity ${(value * 100).round()}%',
-                  ),
+      child: LayoutBuilder(
+        builder: (_, box) {
+          final w = box.maxWidth;
+          return Semantics(
+            slider: true,
+            value: '${(widget.value * 100).round()}%',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => _pick(d.localPosition.dx, w),
+              onHorizontalDragUpdate: (d) => _pick(d.localPosition.dx, w),
+              child: CustomPaint(
+                size: Size(w, 50),
+                painter: _TickPainter(
+                  value: widget.value,
+                  enabled: widget.enabled,
                 ),
               ),
-              const SizedBox(width: 12),
-              Icon(Icons.wb_sunny_rounded, size: 22, color: value > 0.5 && enabled ? kYellow : kTextMut),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [0, 25, 50, 75, 100].map((p) => Text(
-              '$p',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 9, fontWeight: FontWeight.w600,
-                color: p / 100 <= value && enabled ? kText : kTextDim,
-                letterSpacing: 0.8,
-              ),
-            )).toList(),
-          ),
-        ],
+            ),
+          );
+        },
       ),
     );
   }
+}
+
+class _TickPainter extends CustomPainter {
+  final double value;
+  final bool enabled;
+
+  static const _steps  = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
+  static const _labels = ['0', '20', '40', '60', '80', '100'];
+
+  const _TickPainter({required this.value, required this.enabled});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const trackY   = 14.0;
+    const handleR  =  6.0;
+    const tickHalf =  5.0;
+    const labelTop = 26.0;
+
+    const kYellowC  = Color(0xFFFFEC00);
+    const kInactive = Color(0x28FFFFFF);
+    const kDimText  = Color(0xFF5C5C58);
+    const kLitText  = Color(0xFFF4F4F2);
+
+    final active   = enabled ? kYellowC : const Color(0x50FFEC00);
+    final inactive = kInactive;
+
+    // Full track
+    canvas.drawLine(
+      const Offset(0, trackY), Offset(size.width, trackY),
+      Paint()..color = inactive..strokeWidth = 1.5..strokeCap = StrokeCap.round,
+    );
+    // Active fill up to handle position
+    if (value > 0) {
+      canvas.drawLine(
+        const Offset(0, trackY), Offset(size.width * value, trackY),
+        Paint()..color = active..strokeWidth = 1.5..strokeCap = StrokeCap.round,
+      );
+    }
+
+    for (int i = 0; i < _steps.length; i++) {
+      final x        = size.width * _steps[i];
+      final isHandle = _steps[i] == value;
+      final isPassed = _steps[i] < value;
+
+      // Handle dot or tick mark
+      if (isHandle) {
+        canvas.drawCircle(
+          Offset(x, trackY), handleR,
+          Paint()..color = active..style = PaintingStyle.fill,
+        );
+      } else {
+        canvas.drawLine(
+          Offset(x, trackY - tickHalf), Offset(x, trackY + tickHalf),
+          Paint()
+            ..color = isPassed ? active : inactive
+            ..strokeWidth = 1.5
+            ..strokeCap = StrokeCap.round,
+        );
+      }
+
+      // Label below tick / handle
+      final tp = TextPainter(
+        text: TextSpan(
+          text: _labels[i],
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: (isHandle && enabled) ? kLitText : kDimText,
+            letterSpacing: 0.4,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final lx = (x - tp.width / 2).clamp(0.0, size.width - tp.width);
+      tp.paint(canvas, Offset(lx, labelTop));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TickPainter old) =>
+      old.value != value || old.enabled != enabled;
 }

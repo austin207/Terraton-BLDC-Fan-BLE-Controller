@@ -59,8 +59,11 @@ class CommandLoader {
 
   // ── Fixed frames ──────────────────────────────────────────────────────────
 
-  static List<int> statusPoll() =>
-      List<int>.from(((config['status_poll'] as YamlMap)['frame']) as YamlList);
+  static List<int> statusPoll() {
+    final node = _safeGet(['status_poll']);
+    if (node == null) return const [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00];
+    return List<int>.from((node['frame'] as YamlList));
+  }
 
   static List<int>? power(String action) {
     final cmd = _safeGet(['commands', 'power']);
@@ -77,7 +80,7 @@ class CommandLoader {
     if (cmd == null) return null;
     return buildFrame(
       cmd['command'] as int?,
-      _toIntList((cmd['steps'] as YamlMap)[step]),
+      _toIntList((cmd['steps'] as YamlMap)['$step']),
     );
   }
 

@@ -8,6 +8,7 @@ class ModeControlWidget extends StatelessWidget {
   final String? activeMode;
   final bool isBoost;
   final bool enabled;
+  final bool boostEnabled; // false when Nature is active
   final void Function(String mode) onMode;
   final VoidCallback onBoost;
 
@@ -18,10 +19,11 @@ class ModeControlWidget extends StatelessWidget {
     required this.enabled,
     required this.onMode,
     required this.onBoost,
+    this.boostEnabled = true,
   });
 
   static const _modes = [
-    ('nature',  'Nature',  Icons.air_rounded),
+    ('nature',  'Nature',  Icons.eco_rounded),
     ('smart',   'Smart',   Icons.auto_awesome_outlined),
     ('reverse', 'Reverse', Icons.sync_rounded),
   ];
@@ -32,7 +34,7 @@ class ModeControlWidget extends StatelessWidget {
       children: [
         // 3 mode buttons
         ..._modes.map(((String, String, IconData) entry) {
-          final isActive = activeMode == entry.$1 && !isBoost;
+          final isActive = activeMode == entry.$1;
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -56,10 +58,10 @@ class ModeControlWidget extends StatelessWidget {
             button: true,
             label: 'Boost mode',
             selected: isBoost,
-            enabled: enabled,
+            enabled: enabled && boostEnabled,
             child: GestureDetector(
               key: const ValueKey('boost_button'),
-              onTap: enabled
+              onTap: (enabled && boostEnabled)
                   ? () {
                       unawaited(HapticFeedback.lightImpact());
                       onBoost();
@@ -69,7 +71,7 @@ class ModeControlWidget extends StatelessWidget {
                 icon: Icons.bolt_rounded,
                 label: 'Boost',
                 isActive: isBoost,
-                enabled: enabled,
+                enabled: enabled && boostEnabled,
                 onTap: null, // handled by outer GestureDetector
               ),
             ),
@@ -103,11 +105,11 @@ class _ModeBtn extends StatelessWidget {
         duration: const Duration(milliseconds: 240),
         height: 80,
         decoration: BoxDecoration(
-          color: isActive ? kYellow : kCard,
+          color: isActive ? kYellow.withAlpha(28) : kCard,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: isActive ? kYellow : kHairline),
+          border: Border.all(color: isActive ? kYellow.withAlpha(100) : kHairline),
           boxShadow: isActive
-              ? [BoxShadow(color: kYellow.withAlpha(46), blurRadius: 18, spreadRadius: -4)]
+              ? [BoxShadow(color: kYellow.withAlpha(22), blurRadius: 14, spreadRadius: -4)]
               : null,
         ),
         child: Column(
@@ -115,7 +117,7 @@ class _ModeBtn extends StatelessWidget {
           children: [
             Icon(
               icon, size: 20,
-              color: isActive ? Colors.black : (enabled ? kText : kTextDim),
+              color: isActive ? kYellow : (enabled ? kText : kTextDim),
             ),
             const SizedBox(height: 8),
             Text(
@@ -124,7 +126,7 @@ class _ModeBtn extends StatelessWidget {
                 fontFamily: 'Manrope',
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isActive ? Colors.black : (enabled ? kText : kTextDim),
+                color: isActive ? kYellow : (enabled ? kText : kTextDim),
               ),
             ),
           ],

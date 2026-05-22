@@ -94,6 +94,20 @@ class ActiveFanStateNotifier extends StateNotifier<FanState> {
   void updateRpm(int rpm)     => update(state.copyWith(lastRpm:   () => rpm));
   void clearWatts()           => update(state.copyWith(lastWatts: () => null));
   void clearRpm()             => update(state.copyWith(lastRpm:   () => null));
+
+  /// Toggle boost only — does NOT touch activeMode.
+  /// Nature mode blocks boost activation.
+  void setBoostActive(bool on) {
+    if (on && state.activeMode == 'nature') return;
+    update(state.copyWith(isBoost: on));
+  }
+
+  /// Activate or clear a non-boost mode without disturbing isBoost,
+  /// EXCEPT nature which explicitly clears boost.
+  void setActiveMode(String? mode) => update(state.copyWith(
+    isBoost: mode == 'nature' ? false : state.isBoost,
+    activeMode: () => mode,
+  ));
 }
 
 // autoDispose releases the notifier when no widget is watching it,

@@ -31,7 +31,8 @@ class ControlScreen extends ConsumerStatefulWidget {
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
   StreamSubscription<List<int>>? _notifySub;
-  double _colorTempValue = 0.3;
+  String _colorType      = 'warm'; // 'warm' | 'neutral' | 'cool'
+  double _brightnessValue = 0.7;   // 0.0–1.0 intensity
   bool _isLightOn = false;
   late BleService _ble;
   DateTime? _lastWattsAt;
@@ -58,6 +59,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Future<void> _connect() async {
     if (_connecting) return;
     final mac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
+    // TODO(Phase 2): QR-scan path arrives here with no MAC. Surface a BLE-scan
+    // prompt instead of silently returning so the user isn't stuck.
     if (mac == null) return;
 
     _connecting = true;
@@ -308,9 +311,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             rpm: fanState.lastRpm,
                             enabled: controlsEnabled,
                             isBoost: fanState.isBoost,
+                            isNature: fanState.activeMode == 'nature',
+                            disabledSpeeds: fanState.activeMode == 'smart'
+                                ? const {1, 2}
+                                : const {},
                             onSpeedSelected: (s) {
-                              ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                                  .updateSpeed(s);
+                              // Smart mode: speeds 1 & 2 are blocked (dial guards too,
+                              // but this is a safety net for demo mode and direct calls)
+                              if (fanState.activeMode == 'smart' && s < 3) return;
+                              final notifier = ref.read(
+                                  activeFanStateProvider(widget.fan.deviceId).notifier);
+                              // Selecting a speed always deactivates boost
+                              if (fanState.isBoost) notifier.setBoostActive(false);
+                              notifier.updateSpeed(s);
                               unawaited(_send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
                             },
                           ),
@@ -325,13 +338,33 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                           activeMode: fanState.activeMode,
                           isBoost: fanState.isBoost,
                           enabled: controlsEnabled,
+                          boostEnabled: fanState.activeMode != 'nature',
                           onMode: (m) {
-                            final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-                            if (fanState.activeMode == m && !fanState.isBoost) {
-                              notifier.updateMode(null);
+                            final notifier = ref.read(
+                                activeFanStateProvider(widget.fan.deviceId).notifier);
+
+                            // Tapping the already-active mode deactivates it
+                            if (fanState.activeMode == m) {
+                              notifier.setActiveMode(null);
+                              // Re-send current speed so hardware exits the mode
+                              if (fanState.speed > 0) {
+                                unawaited(_send(
+                                    BleFrameBuilder.setSpeed(fanState.speed),
+                                    label: 'Speed ${fanState.speed}'));
+                              }
                               return;
                             }
-                            notifier.updateMode(m);
+
+                            // Smart: if current speed is 1 or 2 → force to 3
+                            if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
+                              notifier.updateSpeed(3);
+                              unawaited(_send(BleFrameBuilder.setSpeed(3),
+                                  label: 'Speed 3 (Smart)'));
+                            }
+
+                            // Nature: also clears boost (handled inside setActiveMode)
+                            notifier.setActiveMode(m);
+
                             final frame = switch (m) {
                               'nature'  => BleFrameBuilder.setNature(),
                               'reverse' => BleFrameBuilder.setReverse(),
@@ -341,11 +374,25 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             unawaited(_send(frame, label: 'Mode: $m'));
                           },
                           onBoost: () {
-                            final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+                            // Nature blocks boost entirely
+                            if (fanState.activeMode == 'nature') return;
+                            final notifier = ref.read(
+                                activeFanStateProvider(widget.fan.deviceId).notifier);
                             if (fanState.isBoost) {
-                              notifier.updateMode(null);
+                              // Deactivate boost; restore the active mode on hardware
+                              notifier.setBoostActive(false);
+                              final restoreFrame = switch (fanState.activeMode) {
+                                'reverse' => BleFrameBuilder.setReverse(),
+                                'smart'   => BleFrameBuilder.setSmart(),
+                                _         => null,
+                              };
+                              if (restoreFrame != null) {
+                                unawaited(_send(restoreFrame,
+                                    label: 'Mode: ${fanState.activeMode}'));
+                              }
                             } else {
-                              notifier.updateMode('boost');
+                              // Activate boost (keeps activeMode like reverse/smart intact)
+                              notifier.setBoostActive(true);
                               unawaited(_send(BleFrameBuilder.setBoost(), label: 'Boost'));
                             }
                           },
@@ -391,7 +438,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                         LightingControlWidget(
                           enabled: controlsEnabled,
                           isLightOn: _isLightOn,
-                          colorTempValue: _colorTempValue,
+                          colorType: _colorType,
+                          brightnessValue: _brightnessValue,
                           onLightOn: () {
                             setState(() => _isLightOn = true);
                             unawaited(_send(BleFrameBuilder.lightOn(),
@@ -402,8 +450,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                             unawaited(_send(BleFrameBuilder.lightOff(),
                                 pendingMsg: 'Lighting commands pending from Terraton'));
                           },
-                          onColorTemp: (v) {
-                            setState(() => _colorTempValue = v);
+                          onColorTypeChanged: (t) {
+                            setState(() => _colorType = t);
+                            final byte = switch (t) {
+                              'neutral' => 0x80,
+                              'cool'    => 0xFF,
+                              _         => 0x00,
+                            };
+                            unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
+                                pendingMsg: 'Lighting commands pending from Terraton'));
+                          },
+                          onBrightness: (v) {
+                            setState(() => _brightnessValue = v);
                             final byte = (v * 255).round().clamp(0, 255);
                             unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
                                 pendingMsg: 'Lighting commands pending from Terraton'));
@@ -470,23 +528,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       BleConnectionState.scanning     => ('CONNECTING…', kYellowSoft),
       BleConnectionState.disconnected => ('DISCONNECTED', kTextDim),
     };
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (state == BleConnectionState.connected)
-          Container(
-            width: 6, height: 6,
-            margin: const EdgeInsets.only(right: 5),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle, color: kYellow,
-              boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 6)],
-            ),
-          ),
-        Text(text,
-            style: GoogleFonts.manrope(fontSize: 10, color: color,
-                fontWeight: FontWeight.w700, letterSpacing: 1.5)),
-      ],
-    );
+    return Text(text,
+        style: GoogleFonts.manrope(fontSize: 10, color: color,
+            fontWeight: FontWeight.w700, letterSpacing: 1.5));
   }
 
   static String _timerLabel(int? code) => switch (code) {
@@ -549,7 +593,7 @@ class _BluetoothIndicatorState extends State<_BluetoothIndicator>
           Icons.bluetooth_rounded,
           size: 20,
           color: widget.isConnected
-              ? Color.lerp(const Color(0xFF409CFF), const Color(0xFF80BCFF), _blinkCtrl.value)!
+              ? Color.lerp(const Color(0xFF409CFF), const Color(0x1A409CFF), _blinkCtrl.value)!
               : widget.isConnecting
                   ? kYellowSoft
                   : kTextMut,

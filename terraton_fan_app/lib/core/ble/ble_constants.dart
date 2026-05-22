@@ -12,9 +12,14 @@ const String kMeshProxyDataInUUID  = "00002adb-0000-1000-8000-00805f9b34fb"; // 
 const String kMeshProxyDataOutUUID = "00002adc-0000-1000-8000-00805f9b34fb"; // Notify
 
 // ── Firmware-team GATT UUIDs (proprietary Amp'ed RF service) ────────────────
+// Fan unit 1
 const String kServiceUUID    = "26cc3fc0-6241-f5b4-5347-63a3097f6764";
 const String kWriteCharUUID  = "26cc3fc2-6241-f5b4-5347-63a3097f6764";
 const String kNotifyCharUUID = "26cc3fc1-6241-f5b4-5347-63a3097f6764";
+
+// Fan unit 2 — same service UUID (26cc3fc0), different characteristics
+const String kWriteCharUUID2  = "bf8796f1-64f7-70b5-1e41-09bb46d79101";
+const String kNotifyCharUUID2 = "bf8796f1-64f7-70b5-1e41-09bb46d79100";
 
 // ── Standard UART-over-BLE fallback UUIDs ───────────────────────────────────
 // Serial Bluetooth Terminal (the app confirmed to work with BLE60) searches

@@ -65,6 +65,8 @@ class BleServiceImpl implements BleService {
   static final _meshProxyOut    = Guid(kMeshProxyDataOutUUID);
   static final _writeGuid       = Guid(kWriteCharUUID);
   static final _notifyGuid      = Guid(kNotifyCharUUID);
+  static final _writeGuid2      = Guid(kWriteCharUUID2);
+  static final _notifyGuid2     = Guid(kNotifyCharUUID2);
   static final _cc254xWrite     = Guid(kCC254xCharUUID);
   static final _nusWrite        = Guid(kNusWriteCharUUID);
   static final _nusNotify       = Guid(kNusNotifyCharUUID);
@@ -161,14 +163,17 @@ class BleServiceImpl implements BleService {
           for (final c in svc.characteristics) {
             // Priority — first match wins (??= never overwrites):
             // 1. BLE Mesh Proxy Data In/Out  (confirmed working with BLE60 fan)
-            // 2. Firmware-team proprietary   (26cc3fc2 / 26cc3fc1)
-            // 3. HM-10 / CC254X              (0000ffe1 — common on Amp'ed RF)
-            // 4. Nordic UART Service
-            // 5. Microchip RN4870
+            // 2. Firmware-team proprietary   (26cc3fc2 / 26cc3fc1) — fan unit 1
+            // 3. Firmware-team proprietary   (bf8796f1-..00 / ..01) — fan unit 2
+            // 4. HM-10 / CC254X              (0000ffe1 — common on Amp'ed RF)
+            // 5. Nordic UART Service
+            // 6. Microchip RN4870
             if (c.characteristicUuid == _meshProxyIn)     _writeChar  ??= c;
             if (c.characteristicUuid == _meshProxyOut)    _notifyChar ??= c;
             if (c.characteristicUuid == _writeGuid)       _writeChar  ??= c;
             if (c.characteristicUuid == _notifyGuid)      _notifyChar ??= c;
+            if (c.characteristicUuid == _writeGuid2)      _writeChar  ??= c;
+            if (c.characteristicUuid == _notifyGuid2)     _notifyChar ??= c;
             if (c.characteristicUuid == _cc254xWrite)     { _writeChar ??= c; _notifyChar ??= c; }
             if (c.characteristicUuid == _nusWrite)        _writeChar  ??= c;
             if (c.characteristicUuid == _nusNotify)       _notifyChar ??= c;
