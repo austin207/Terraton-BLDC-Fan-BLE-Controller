@@ -164,53 +164,58 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             // Footer CTA
             Padding(
               padding: EdgeInsets.fromLTRB(
-                24, 20, 24,
-                MediaQuery.viewInsetsOf(context).bottom > 0 ? 16 : 28,
+                24, 16, 24,
+                MediaQuery.viewInsetsOf(context).bottom > 0 ? 12 : 0,
               ),
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      decoration: BoxDecoration(
-                        color: _valid ? kYellow : kCard,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: _valid
-                            ? const [BoxShadow(color: kYellowGlow, blurRadius: 28)]
-                            : null,
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: _valid ? () => unawaited(_continue()) : null,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('Continue',
-                                  style: GoogleFonts.manrope(
-                                    fontSize: 15, fontWeight: FontWeight.w700,
-                                    color: _valid ? Colors.black : kTextDim,
-                                    letterSpacing: 0.04,
-                                  )),
-                              const SizedBox(width: 8),
-                              Icon(Icons.chevron_right_rounded,
-                                  size: 20,
-                                  color: _valid ? Colors.black : kTextDim),
-                            ],
-                          ),
-                        ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  decoration: BoxDecoration(
+                    color: _valid ? kYellow : kCard,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: _valid
+                        ? const [BoxShadow(color: kYellowGlow, blurRadius: 28)]
+                        : null,
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: _valid ? () => unawaited(_continue()) : null,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Continue',
+                              style: GoogleFonts.manrope(
+                                fontSize: 15, fontWeight: FontWeight.w700,
+                                color: _valid ? Colors.black : kTextDim,
+                                letterSpacing: 0.04,
+                              )),
+                          const SizedBox(width: 8),
+                          Icon(Icons.chevron_right_rounded,
+                              size: 20,
+                              color: _valid ? Colors.black : kTextDim),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  Text('STEP 1 OF 1 · SETUP',
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10, color: kTextDim, letterSpacing: 1.8,
-                      )),
-                ],
+                ),
+              ),
+            ),
+
+            // Step indicator — pinned at the very bottom
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                24, 12, 24,
+                MediaQuery.viewInsetsOf(context).bottom > 0 ? 12 : 32,
+              ),
+              child: Center(
+                child: Text('STEP 1 OF 1 · SETUP',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10, color: kTextDim, letterSpacing: 1.8,
+                    )),
               ),
             ),
           ],

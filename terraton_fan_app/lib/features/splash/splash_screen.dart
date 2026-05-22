@@ -111,24 +111,26 @@ class _SplashScreenState extends State<SplashScreen>
             },
           ),
 
-          // Brand mark (icon only) with breathe + glow
-          AnimatedBuilder(
-            animation: _breatheCtrl,
-            builder: (_, child) => Transform.scale(
-              scale: 0.97 + _breatheCtrl.value * 0.03,
-              child: child,
+          // Brand mark — slightly above center
+          Align(
+            alignment: const Alignment(0, -0.22),
+            child: AnimatedBuilder(
+              animation: _breatheCtrl,
+              builder: (_, child) => Transform.scale(
+                scale: 0.97 + _breatheCtrl.value * 0.03,
+                child: child,
+              ),
+              child: const BrandMark(height: 148, full: false),
             ),
-            // Aura rings (above) provide the glow; mark is icon-only
-            child: const BrandMark(height: 148, full: false),
           ),
 
-          // Loading dots + version at bottom
+          // Loading dots + version — bottom section
           Positioned(
-            bottom: 64,
+            bottom: 48,
             child: Column(
               children: [
                 _BreatheDots(ctrl: _breatheCtrl),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 const Text(
                   'v1.0.0 · SMART BLDC',
                   style: TextStyle(

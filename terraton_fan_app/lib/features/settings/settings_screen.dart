@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -162,18 +163,9 @@ class SettingsScreen extends ConsumerWidget {
         Center(
           child: Column(
             children: [
-              Image.asset(
-                'assets/logos/terraton-mark.png',
-                height: 72,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-              ),
-              const SizedBox(height: 10),
-              Text('Terraton®',
-                  style: GoogleFonts.manrope(
-                    fontSize: 18, fontWeight: FontWeight.w600, color: kTextMut,
-                  )),
-              const SizedBox(height: 3),
+              // Full Terraton branding: power-T icon + wordmark
+              const BrandMark(height: 28),
+              const SizedBox(height: 8),
               Text('SMART BLDC FAN CONTROL',
                   style: GoogleFonts.jetBrainsMono(
                     fontSize: 9, letterSpacing: 1.6, color: kTextDim,

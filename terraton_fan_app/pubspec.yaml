@@ -64,3 +64,7 @@ flutter_launcher_icons:
   ios: false
   image_path: "assets/icon/icon.png"
   min_sdk_android: 21
+  # Adaptive icon: background matches the icon's own black so only one
+  # seamless layer is visible on the launcher (no double-border effect).
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/icon/icon.png"
