@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
@@ -45,7 +46,10 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
           await FlutterBluePlus.turnOn();
         }
       } on Object catch (_) {}
-      if (mounted) context.go(AppRoutes.home);
+      if (!mounted) return;
+      final firstLaunch = await AppSettings.isFirstLaunch();
+      if (!mounted) return;
+      context.go(firstLaunch ? AppRoutes.profileSetup : AppRoutes.home);
       return;
     }
 
@@ -205,7 +209,11 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
 
               const SizedBox(height: 16),
               TextButton(
-                onPressed: _loading ? null : () => context.go(AppRoutes.home),
+                onPressed: _loading ? null : () async {
+                  final firstLaunch = await AppSettings.isFirstLaunch();
+                  if (!context.mounted) return;
+                  context.go(firstLaunch ? AppRoutes.profileSetup : AppRoutes.home);
+                },
                 child: Text(
                   'Use Demo Mode Instead',
                   style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
