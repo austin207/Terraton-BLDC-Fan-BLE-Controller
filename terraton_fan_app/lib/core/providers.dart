@@ -86,12 +86,27 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
 
   void updateSpeed(int speed) => update(state.copyWith(speed: speed));
 
-  // Accepts the mode name string from BleResponseParser.parseModeString —
-  // byte-to-name mapping lives in BleResponseParser, not here.
-  void updateMode(String? modeName) => update(state.copyWith(
-    isBoost: modeName == 'boost',
-    activeMode: () => modeName == 'boost' ? null : modeName,
-  ));
+  // Accepts the mode name string from BleResponseParser.parseModeString.
+  // Boost and activeMode are independent: receiving a 'smart'/'reverse'
+  // notification preserves isBoost, and receiving 'boost' preserves activeMode.
+  // This allows BOOST + SMART/REVERSE to coexist in UI state even when the
+  // hardware can only execute one mode at a time.
+  void updateMode(String? modeName) {
+    switch (modeName) {
+      case 'boost':
+        // Hardware confirmed boost — set isBoost, preserve activeMode (smart/reverse).
+        update(state.copyWith(isBoost: true));
+      case 'nature':
+        // Nature is mutually exclusive with boost.
+        update(state.copyWith(isBoost: false, activeMode: () => 'nature'));
+      case null:
+        // Fan reported no active mode — clear both.
+        update(state.copyWith(isBoost: false, activeMode: () => null));
+      default:
+        // 'smart' or 'reverse' — preserve isBoost so boost UI stays active.
+        update(state.copyWith(activeMode: () => modeName));
+    }
+  }
 
   void updateTimer(int timerCode) => update(state.copyWith(
     activeTimerCode: () => timerCode == 0 ? null : timerCode,
