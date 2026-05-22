@@ -65,7 +65,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: BrandMark(height: 28),
+                child: BrandMark(height: 34),
               ),
             ),
 

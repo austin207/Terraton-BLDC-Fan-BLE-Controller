@@ -72,7 +72,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 12, 24, 4),
-            child: BrandMark(height: 28),
+            child: BrandMark(height: 34),
           ),
           Expanded(
             child: SafeArea(
