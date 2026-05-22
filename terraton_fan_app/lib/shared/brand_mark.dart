@@ -1,13 +1,14 @@
 // lib/shared/brand_mark.dart
 //
-// Terraton brand mark — drawn entirely on-GPU (no PNG crop).
+// Terraton brand assets.
 //
-// full=true  (headers):  TerratonFanIcon + "Terraton" wordmark side-by-side
-// full=false (splash):   TerratonFanIcon alone at the requested height
+// full=true  (headers):  PNG crop of terraton-full.png — power-T mark + wordmark
+// full=false (splash):   icon.png centred — the standalone power-T logo
+//
+// The crop approach (full=true) is a direct port of the JSX BrandMark:
+//   canvas W=537 H=464, logo at x=123 y=204 w=299 h=69
+//   scale image so crop height == desired display height, offset to (0,0).
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
-import 'package:terraton_fan_app/shared/theme.dart';
 
 class BrandMark extends StatelessWidget {
   final double height;
@@ -19,32 +20,57 @@ class BrandMark extends StatelessWidget {
     this.full = true,
   });
 
+  // Canvas constants matching LOGO_CROP in components.jsx
+  static const double _cW = 537, _cH = 464;
+  static const double _x = 123, _y = 204, _w = 299, _h = 69;
+
   @override
   Widget build(BuildContext context) {
-    final icon = TerratonFanIcon(size: height, color: kYellow);
+    // Splash / icon-only path — use the app icon PNG directly
+    if (!full) {
+      return Semantics(
+        label: 'Terraton',
+        child: Image.asset(
+          'assets/icon/icon.png',
+          width: height,
+          height: height,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+      );
+    }
 
-    if (!full) return Semantics(label: 'Terraton', child: icon);
+    // Full wordmark — crop terraton-full.png using the JSX math:
+    //   scale = height / h          (so crop-height fills display height)
+    //   dispW = w * scale           (display width from crop aspect ratio)
+    //   imgW  = cW * scale          (full image rendered at this width)
+    //   imgH  = cH * scale          (full image rendered at this height)
+    //   offX  = -(x * scale)        (shift image left so crop x=0 on screen)
+    //   offY  = -(y * scale)        (shift image up so crop y=0 on screen)
+    final scale = height / _h;
+    final dispW = (_w * scale).roundToDouble();
+    final imgW  = _cW * scale;
+    final imgH  = _cH * scale;
+    final offX  = -(_x * scale);
+    final offY  = -(_y * scale);
 
-    // Full wordmark: icon + "Terraton" text aligned on the baseline
     return Semantics(
       label: 'Terraton',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          icon,
-          const SizedBox(width: 7),
-          Text(
-            'Terraton',
-            style: GoogleFonts.manrope(
-              fontSize: height * 0.85,
-              fontWeight: FontWeight.w700,
-              color: kText,
-              letterSpacing: -0.3,
-              height: 1,
+      child: SizedBox(
+        width: dispW,
+        height: height,
+        child: ClipRect(
+          child: Transform.translate(
+            offset: Offset(offX, offY),
+            child: Image.asset(
+              'assets/logos/terraton-full.png',
+              width: imgW,
+              height: imgH,
+              fit: BoxFit.fill,
+              filterQuality: FilterQuality.high,
             ),
           ),
-        ],
+        ),
       ),
     );
   }

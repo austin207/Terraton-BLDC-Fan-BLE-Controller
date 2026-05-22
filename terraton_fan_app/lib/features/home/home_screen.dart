@@ -24,26 +24,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // SafeArea ensures content clears the status bar on edge-to-edge Android 15+
+    // and the system navbar at the bottom.
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       backgroundColor: kBg,
-      body: Stack(
-        children: [
-          IndexedStack(
-            index: _tab,
-            children: const [
-              AnalyticsScreen(),
-              _HomeTab(),
-              SettingsScreen(),
-            ],
-          ),
-          Positioned(
-            left: 16, right: 16, bottom: 16,
-            child: _BottomNav(
-              active: _tab,
-              onChanged: (t) => setState(() => _tab = t),
+      body: SafeArea(
+        bottom: false, // handle bottom manually via nav bar offset
+        child: Stack(
+          children: [
+            IndexedStack(
+              index: _tab,
+              children: const [
+                AnalyticsScreen(),
+                _HomeTab(),
+                SettingsScreen(),
+              ],
             ),
-          ),
-        ],
+            Positioned(
+              left: 16, right: 16,
+              bottom: bottomInset + 16,
+              child: _BottomNav(
+                active: _tab,
+                onChanged: (t) => setState(() => _tab = t),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
