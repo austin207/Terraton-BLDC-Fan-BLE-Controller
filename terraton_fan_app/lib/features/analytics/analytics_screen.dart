@@ -16,7 +16,7 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String _range = 'Week';
-  double _tariff = 5.4; // ₹ per unit — editable, matches analytics.jsx
+  double _tariff = 5.4; // ₹ per unit — editable
   late final TextEditingController _tariffCtrl;
 
   @override
@@ -30,6 +30,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _tariffCtrl.dispose();
     super.dispose();
   }
+
+  // ── Current-period consumption data ─────────────────────────────────────────
+  //
+  // Day   — 12:00 AM to current time (each bucket = portion of the day)
+  // Week  — completed days Mon → (today−1)
+  // Month — completed days 1st → (today−1)
 
   static const _usageData = {
     'Day': [
@@ -45,25 +51,111 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     ],
   };
 
-  static const _fanBreakdown = [
-    ('Living Room', 12.4, 0.84),
-    ('Master Bedroom', 9.1, 0.62),
-    ('Study', 6.3, 0.43),
-    ('Kitchen', 4.0, 0.27),
+  // ── Previous-period data (same window length) ────────────────────────────────
+  //
+  // Day   — yesterday 12:00 AM → same time as today
+  // Week  — same completed days of previous week
+  // Month — 1st → (today−1) of previous month
+
+  static const _prevUsageData = {
+    'Day': [
+      ('12AM', 0.5), ('4AM', 0.4), ('8AM', 0.7),
+      ('12PM', 0.9), ('4PM', 1.3), ('8PM', 1.6), ('Now', 1.2),
+    ],
+    'Week': [
+      ('Mon', 4.9), ('Tue', 4.4), ('Wed', 5.7),
+      ('Thu', 5.1), ('Fri', 6.6), ('Sat', 6.0), ('Sun', 5.4),
+    ],
+    'Month': [
+      ('W1', 31.0), ('W2', 35.5), ('W3', 33.0), ('W4', 37.5),
+    ],
+  };
+
+  // ── Per-fan day consumption (12:00 AM → now) ─────────────────────────────────
+
+  static const _fanKwh = [
+    ('Living Room Fan',    12.4),
+    ('Master Bedroom Fan',  9.1),
+    ('Study Room Fan',      6.3),
+    ('Kitchen Fan',         4.0),
   ];
+
+  // ── Smart Mode efficiency data ───────────────────────────────────────────────
+  //
+  // (gear wattage W, hours run) pairs — Smart mode selected different gears.
+  // Traditional baseline: a standard 85 W ceiling fan for the same total duration.
+
+  static const _smartGearData = [
+    (15.0, 2.0),  // Gear 1
+    (20.0, 2.0),  // Gear 2
+    (28.0, 2.0),  // Gear 3
+    (35.0, 1.0),  // Gear 4
+    (42.0, 0.5),  // Gear 5
+  ];
+  static const _traditionalWatts = 85.0;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  double _total(String range) =>
+      _usageData[range]!.fold(0.0, (s, d) => s + d.$2);
+
+  double _prevTotal(String range) =>
+      _prevUsageData[range]!.fold(0.0, (s, d) => s + d.$2);
+
+  // Returns arrow glyph, percentage magnitude, and display colour.
+  // Green ↓  = lower consumption this period (good).
+  // Red   ↑  = higher consumption this period.
+  ({String arrow, double pct, Color color}) _comparison(String range) {
+    final curr = _total(range);
+    final prev = _prevTotal(range);
+    if (prev == 0) return (arrow: '—', pct: 0, color: kTextMut);
+    final change = (curr - prev) / prev * 100;
+    final lower  = change < 0;
+    return (
+      arrow: lower ? '↓' : '↑',
+      pct:   change.abs(),
+      color: lower ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+    );
+  }
+
+  String _comparisonLabel(String range) => switch (range) {
+    'Day'   => 'vs yesterday',
+    'Week'  => 'vs last week',
+    'Month' => 'vs last month',
+    _       => '',
+  };
+
+  // Efficiency = (traditional Wh − smart Wh) / traditional Wh × 100
+  int get _efficiency {
+    final totalH = _smartGearData.fold(0.0, (s, g) => s + g.$2);
+    final smartWh = _smartGearData.fold(0.0, (s, g) => s + g.$1 * g.$2);
+    final tradWh  = _traditionalWatts * totalH;
+    if (tradWh == 0) return 0;
+    return ((tradWh - smartWh) / tradWh * 100).round();
+  }
+
+  String _efficiencyLabel(int pct) {
+    if (pct >= 80) return 'Excellent Efficiency';
+    if (pct >= 60) return 'Optimal Range';
+    if (pct >= 40) return 'Moderate Efficiency';
+    return 'Low Efficiency';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final data  = _usageData[_range]!;
-    final total = data.fold(0.0, (s, d) => s + d.$2);
-    final cost    = total * _tariff;
+    final data    = _usageData[_range]!;
+    final total   = _total(_range);
     final savings = total * 0.32 * _tariff;
+    final cmp     = _comparison(_range);
+    final eff     = _efficiency;
+
+    // Bar fractions scale relative to the highest-consuming fan.
+    final maxKwh = _fanKwh.map((f) => f.$2).reduce(math.max);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       children: [
         // Header
-        // Brand wordmark header — matches analytics.jsx BrandMark header
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
           child: BrandMark(height: 22),
@@ -77,7 +169,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Tracking ${_fanBreakdown.length} fans across your home.',
+          'Tracking ${_fanKwh.length} fans across your home.',
           style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
         ),
 
@@ -118,7 +210,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // Consumption card with chart
+        // ── Consumption card ─────────────────────────────────────────────────
         _DarkCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,6 +218,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Left: kWh total
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -145,15 +238,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ],
                   ),
                   const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('↓ 18% vs last ${_range.toLowerCase()}',
-                          style: kMonoStyle(size: 10, color: kYellow, letterSpacing: 1.6, weight: FontWeight.w700)),
-                      const SizedBox(height: 6),
-                      Text('₹${cost.toStringAsFixed(0)} est.',
-                          style: kMonoStyle(size: 13, color: kTextMut)),
-                    ],
+                  // Right: period comparison badge (green ↓ / red ↑)
+                  Text(
+                    '${cmp.arrow} ${cmp.pct.toStringAsFixed(0)}% ${_comparisonLabel(_range)}',
+                    style: kMonoStyle(
+                      size: 10, color: cmp.color,
+                      letterSpacing: 1.6, weight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -171,9 +262,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // Two-column stat cards
+        // ── Two-column stat cards ────────────────────────────────────────────
         Row(
           children: [
+            // SAVED card with editable tariff
             Expanded(
               flex: 6,
               child: _DarkCard(
@@ -188,7 +280,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     Text('vs standard ceiling fan',
                         style: GoogleFonts.manrope(fontSize: 11, color: kTextMut)),
                     const SizedBox(height: 12),
-                    // Tariff input — matches analytics.jsx tariff row exactly
+                    // Editable tariff
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
@@ -238,6 +330,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
             ),
             const SizedBox(width: 10),
+            // AVG WATT card
             Expanded(
               flex: 5,
               child: _DarkCard(
@@ -250,13 +343,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Text('32', style: kMonoStyle(size: 22, weight: FontWeight.w600, letterSpacing: -0.5)),
+                        Text('28', style: kMonoStyle(size: 22, weight: FontWeight.w600, letterSpacing: -0.5)),
                         const SizedBox(width: 4),
                         Text('W', style: kMonoStyle(size: 12, color: kTextMut)),
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text('56% lower than typical',
+                    Text('65% lower than 85W fan',
                         style: GoogleFonts.manrope(fontSize: 11, color: kTextMut)),
                   ],
                 ),
@@ -267,11 +360,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // Efficiency ring
+        // ── Smart Mode efficiency ring ────────────────────────────────────────
+        //
+        // Efficiency = (traditional Wh − smart Wh) / traditional Wh × 100
+        // Ring glow brightens with efficiency; label and description are dynamic.
         _DarkCard(
           child: Row(
             children: [
-              const _RingChart(pct: 68),
+              _RingChart(pct: eff),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
@@ -280,11 +376,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     Text('EFFICIENCY',
                         style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.0)),
                     const SizedBox(height: 6),
-                    Text('Optimal range',
-                        style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
+                    Text(_efficiencyLabel(eff),
+                        style: GoogleFonts.manrope(
+                          fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
                     const SizedBox(height: 4),
-                    Text('Running 32% more efficient than typical BLDC at the same airflow.',
-                        style: GoogleFonts.manrope(fontSize: 12, color: kTextMut, height: 1.4)),
+                    Text(
+                      'Your fans are running $eff% more efficiently than a typical ceiling fan at the same airflow.',
+                      style: GoogleFonts.manrope(fontSize: 12, color: kTextMut, height: 1.4),
+                    ),
                   ],
                 ),
               ),
@@ -294,23 +393,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 16),
 
-        // Per-fan breakdown header with DETAILS stub
+        // ── By Fan — day consumption (12:00 AM → now) ────────────────────────
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('BY FAN',
                 style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.2, weight: FontWeight.w700)),
             GestureDetector(
-              onTap: () {}, // stub — Phase 2
+              onTap: () {},
               child: Text('DETAILS',
                   style: kMonoStyle(size: 10, color: kYellow, letterSpacing: 2.0, weight: FontWeight.w700)),
             ),
           ],
         ),
         const SizedBox(height: 10),
-        ..._fanBreakdown.map((f) => Padding(
+        ..._fanKwh.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: _FanBar(name: f.$1, kwh: f.$2, pct: f.$3),
+          child: _FanBar(name: f.$1, kwh: f.$2, barFraction: f.$2 / maxKwh),
         )),
       ],
     );
@@ -359,14 +458,14 @@ class _SmallIconLabel extends StatelessWidget {
   );
 }
 
+// ── Line chart ────────────────────────────────────────────────────────────────
+
 class _LineChart extends StatelessWidget {
   final List<(String, double)> data;
   const _LineChart({required this.data});
 
   @override
   Widget build(BuildContext context) {
-    // LayoutBuilder ensures the painter receives the real available width.
-    // Without it, CustomPaint can report a near-zero width inside a Column.
     return LayoutBuilder(
       builder: (_, constraints) => SizedBox(
         width: constraints.maxWidth,
@@ -404,14 +503,14 @@ class _LineChartPainter extends CustomPainter {
       canvas.drawLine(Offset(P, H * g), Offset(W - P, H * g), gridPaint);
     }
 
-    // Build smooth path
+    // Smooth path
     final path = Path()..moveTo(xs[0], ys[0]);
     for (int i = 1; i < xs.length; i++) {
       final cx = (xs[i - 1] + xs[i]) / 2;
       path.cubicTo(cx, ys[i - 1], cx, ys[i], xs[i], ys[i]);
     }
 
-    // Fill area
+    // Fill area under curve
     final areaPath = Path.from(path)
       ..lineTo(xs.last, H)
       ..lineTo(xs.first, H)
@@ -427,8 +526,7 @@ class _LineChartPainter extends CustomPainter {
     );
 
     // Line
-    canvas.drawPath(
-      path,
+    canvas.drawPath(path,
       Paint()
         ..color = kYellow
         ..strokeWidth = 2
@@ -447,8 +545,7 @@ class _LineChartPainter extends CustomPainter {
       );
       if (!isLast) {
         canvas.drawCircle(
-          Offset(xs[i], ys[i]),
-          2.5,
+          Offset(xs[i], ys[i]), 2.5,
           Paint()
             ..color = kYellow
             ..style = PaintingStyle.stroke
@@ -462,18 +559,17 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(_LineChartPainter old) => old.data != data;
 }
 
+// ── Efficiency ring ───────────────────────────────────────────────────────────
+
 class _RingChart extends StatelessWidget {
   final int pct;
   const _RingChart({required this.pct});
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 92,
-      height: 92,
-      child: CustomPaint(painter: _RingPainter(pct: pct)),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+    width: 92, height: 92,
+    child: CustomPaint(painter: _RingPainter(pct: pct)),
+  );
 }
 
 class _RingPainter extends CustomPainter {
@@ -484,12 +580,12 @@ class _RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
     final cy = size.height / 2;
-    const r = 38.0;
+    const r  = 38.0;
     const sw = 7.0;
     final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
 
-    canvas.drawArc(
-      rect, 0, 2 * math.pi, false,
+    // Track ring
+    canvas.drawArc(rect, 0, 2 * math.pi, false,
       Paint()
         ..color = const Color(0x0FFFFFFF)
         ..style = PaintingStyle.stroke
@@ -497,8 +593,19 @@ class _RingPainter extends CustomPainter {
     );
 
     final sweep = 2 * math.pi * pct / 100;
-    canvas.drawArc(
-      rect, -math.pi / 2, sweep, false,
+
+    // Glow — scales with efficiency (brighter at higher %)
+    final glowAlpha = (pct * 1.5).round().clamp(20, 160);
+    canvas.drawArc(rect, -math.pi / 2, sweep, false,
+      Paint()
+        ..color = kYellow.withAlpha(glowAlpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = sw + 10
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+
+    // Main filled arc
+    canvas.drawArc(rect, -math.pi / 2, sweep, false,
       Paint()
         ..color = kYellow
         ..style = PaintingStyle.stroke
@@ -506,36 +613,28 @@ class _RingPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    final pctPainter = TextPainter(
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: '$pct',
-            style: kMonoStyle(size: 18, weight: FontWeight.w600),
-          ),
-          TextSpan(
-            text: '%',
-            style: kMonoStyle(size: 10, color: kTextMut),
-          ),
-        ],
-      ),
+    // Percentage label
+    final painter = TextPainter(
+      text: TextSpan(children: [
+        TextSpan(text: '$pct', style: kMonoStyle(size: 18, weight: FontWeight.w600)),
+        TextSpan(text: '%',    style: kMonoStyle(size: 10, color: kTextMut)),
+      ]),
       textDirection: TextDirection.ltr,
     )..layout();
-    pctPainter.paint(
-      canvas,
-      Offset(cx - pctPainter.width / 2, cy - pctPainter.height / 2),
-    );
+    painter.paint(canvas, Offset(cx - painter.width / 2, cy - painter.height / 2));
   }
 
   @override
   bool shouldRepaint(_RingPainter old) => old.pct != pct;
 }
 
+// ── Fan bar ───────────────────────────────────────────────────────────────────
+
 class _FanBar extends StatelessWidget {
   final String name;
   final double kwh;
-  final double pct;
-  const _FanBar({required this.name, required this.kwh, required this.pct});
+  final double barFraction; // 0.0–1.0 relative to highest-consuming fan
+  const _FanBar({required this.name, required this.kwh, required this.barFraction});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -560,7 +659,8 @@ class _FanBar extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(name, style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600, color: kText)),
+                  Text(name,
+                      style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600, color: kText)),
                   Text('$kwh kWh', style: kMonoStyle(size: 11, weight: FontWeight.w600)),
                 ],
               ),
@@ -568,7 +668,7 @@ class _FanBar extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
-                  value: pct,
+                  value: barFraction,
                   minHeight: 4,
                   backgroundColor: const Color(0x0FFFFFFF),
                   valueColor: const AlwaysStoppedAnimation<Color>(kYellow),
