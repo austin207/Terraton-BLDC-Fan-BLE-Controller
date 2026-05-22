@@ -422,7 +422,14 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
             onSpeedSelected: (s) {
               if (fanState.activeMode == 'smart' && s < 3) return;
               final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-              if (fanState.isBoost) notifier.setBoostActive(false);
+              if (fanState.isBoost) {
+                notifier.setBoostActive(false);
+                // When boost+reverse are simultaneously active, re-assert reverse
+                // on hardware so the selected speed continues in reverse mode.
+                if (fanState.activeMode == 'reverse') {
+                  unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
+                }
+              }
               notifier.updateSpeed(s);
               unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
             },
