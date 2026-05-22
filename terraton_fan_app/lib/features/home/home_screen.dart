@@ -77,7 +77,7 @@ class _HomeTab extends ConsumerWidget {
         // Tiny brand mark row
         const SizedBox(height: 8),
         // Brand wordmark header — matches home.jsx BrandMark height=22
-        const BrandMark(height: 34),
+        const BrandMark(height: 40),
 
         // Greeting
         const SizedBox(height: 20),

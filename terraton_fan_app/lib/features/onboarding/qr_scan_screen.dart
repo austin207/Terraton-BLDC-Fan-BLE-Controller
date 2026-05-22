@@ -186,7 +186,7 @@ class _QrScanScreenState extends State<QrScanScreen>
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: BrandMark(height: 30),
+                child: BrandMark(height: 36),
               ),
             ),
 

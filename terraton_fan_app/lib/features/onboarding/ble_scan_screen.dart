@@ -125,7 +125,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: BrandMark(height: 34),
+            child: BrandMark(height: 40),
           ),
           Expanded(child: Builder(builder: (_) {
         if (_permissionGranted == null) return const SizedBox.shrink();

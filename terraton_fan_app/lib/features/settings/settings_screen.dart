@@ -164,7 +164,7 @@ class SettingsScreen extends ConsumerWidget {
           child: Column(
             children: [
               // Full Terraton branding: power-T icon + wordmark
-              const BrandMark(height: 34),
+              const BrandMark(height: 40, alignment: Alignment.center),
               const SizedBox(height: 8),
               Text('SMART BLDC FAN CONTROL',
                   style: GoogleFonts.jetBrainsMono(

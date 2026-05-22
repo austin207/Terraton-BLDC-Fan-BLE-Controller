@@ -5,7 +5,6 @@
 //   ~32% of the image height, surrounded by transparent whitespace.
 //   We render the image tall enough so the logo content equals `height`, then
 //   crop the transparent padding with ClipRect + Align(heightFactor).
-//   Alignment.centerLeft pins the wordmark to the left edge of its parent.
 //
 // full=false (splash screen): terraton-mark.png — standalone power-T icon.
 import 'package:flutter/material.dart';
@@ -13,11 +12,16 @@ import 'package:flutter/material.dart';
 class BrandMark extends StatelessWidget {
   final double height;
   final bool full;
+  /// Controls where the wordmark sits horizontally within its parent.
+  /// Use Alignment.centerLeft for headers (default),
+  /// Alignment.center for footer/settings contexts.
+  final Alignment alignment;
 
   const BrandMark({
     super.key,
-    this.height = 34,
+    this.height = 40,
     this.full = true,
+    this.alignment = Alignment.centerLeft,
   });
 
   // Fraction of the PNG canvas occupied by the logo content (vertically).
@@ -38,14 +42,12 @@ class BrandMark extends StatelessWidget {
       );
     }
 
-    // Render image tall enough so logo content == `height` dp,
-    // crop whitespace, and pin to left edge of parent.
     final double renderH = height / _cropFactor;
     return Semantics(
       label: 'Terraton',
       child: ClipRect(
         child: Align(
-          alignment: Alignment.centerLeft,
+          alignment: alignment,
           heightFactor: _cropFactor,
           child: Image.asset(
             'assets/logos/terraton-full.png',
