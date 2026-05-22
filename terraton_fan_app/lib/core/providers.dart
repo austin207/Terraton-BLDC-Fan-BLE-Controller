@@ -7,6 +7,7 @@ import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
+import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 
@@ -14,19 +15,15 @@ final packageInfoProvider = FutureProvider<PackageInfo>(
     (_) => PackageInfo.fromPlatform());
 
 // ── User name ─────────────────────────────────────────────────────────────────
-// Persisted to app_settings.json via AppSettings. Loaded lazily on first watch.
+// Persisted to app_settings.json via AppSettings. Loaded lazily by build().
 
-class UserNameNotifier extends StateNotifier<AsyncValue<String>> {
-  UserNameNotifier() : super(const AsyncLoading()) {
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
+class UserNameNotifier extends AsyncNotifier<String> {
+  @override
+  Future<String> build() async {
     try {
-      final name = await AppSettings.loadUserName();
-      state = AsyncData(name);
+      return await AppSettings.loadUserName();
     } on Object {
-      state = const AsyncData('');
+      return '';
     }
   }
 
@@ -37,8 +34,9 @@ class UserNameNotifier extends StateNotifier<AsyncValue<String>> {
 }
 
 final userNameProvider =
-    StateNotifierProvider<UserNameNotifier, AsyncValue<String>>(
-        (_) => UserNameNotifier());
+    AsyncNotifierProvider<UserNameNotifier, String>(UserNameNotifier.new);
+
+// ── BLE ───────────────────────────────────────────────────────────────────────
 
 final bluetoothAdapterStateProvider = StreamProvider<BluetoothAdapterState>(
     (_) => FlutterBluePlus.adapterState);
@@ -52,27 +50,36 @@ final bleServiceProvider = Provider<BleService>((ref) {
 final bleConnectionStateProvider = StreamProvider<BleConnectionState>((ref) =>
     ref.watch(bleServiceProvider).connectionStateStream);
 
-final fanRepositoryProvider = Provider<FanRepository>((ref) => FanRepositoryImpl());
+// ── Fan repository ────────────────────────────────────────────────────────────
+// Injects the already-initialised ObjectBox store so tests can swap it out.
+
+final fanRepositoryProvider = Provider<FanRepository>(
+    (_) => FanRepositoryImpl(store));
 
 // ObjectBox queries are synchronous by design and run in microseconds.
 // FutureProvider keeps the query off the build-call stack.
 final savedFansProvider = FutureProvider<List<FanDevice>>((ref) async =>
     ref.watch(fanRepositoryProvider).getAllFans());
 
-// ── Active fan state (mirrors ObjectBox + live BLE updates) ─────────────────
+// ── Active fan state (mirrors ObjectBox + live BLE updates) ──────────────────
 // Uses .family so each fan's notifier is independent and not torn down
 // when navigation or provider watches change.
 
-class ActiveFanStateNotifier extends StateNotifier<FanState> {
-  final FanRepository _repo;
+class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String> {
+  late FanRepository _repo;
 
-  ActiveFanStateNotifier(FanRepository repo, String deviceId)
-      : _repo = repo,
-        super(repo.getState(deviceId));
+  @override
+  FanState build(String deviceId) {
+    _repo = ref.watch(fanRepositoryProvider);
+    return _repo.getState(deviceId);
+  }
 
   void update(FanState s) {
     state = s;
-    unawaited(_repo.saveState(s));
+    // Fire-and-forget persist; assert catches failures in debug builds.
+    unawaited(_repo.saveState(s).onError((e, st) {
+      assert(false, 'ObjectBox saveState failed: $e\n$st');
+    }));
   }
 
   void updatePower(bool powered) => update(state.copyWith(isPowered: powered));
@@ -113,8 +120,5 @@ class ActiveFanStateNotifier extends StateNotifier<FanState> {
 // autoDispose releases the notifier when no widget is watching it,
 // preventing unbounded accumulation across multi-fan sessions.
 final activeFanStateProvider =
-    StateNotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>(
-        (ref, deviceId) {
-  final repo = ref.watch(fanRepositoryProvider);
-  return ActiveFanStateNotifier(repo, deviceId);
-});
+    NotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>(
+        ActiveFanStateNotifier.new);

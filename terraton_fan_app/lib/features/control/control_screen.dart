@@ -20,6 +20,15 @@ import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
+/// Callback type for sending a BLE frame from the controls panel.
+typedef _SendFn = Future<void> Function(
+  List<int>? frame, {
+  String? pendingMsg,
+  String label,
+});
+
+// ── Control screen ────────────────────────────────────────────────────────────
+
 class ControlScreen extends ConsumerStatefulWidget {
   final FanDevice fan;
   const ControlScreen({super.key, required this.fan});
@@ -31,12 +40,13 @@ class ControlScreen extends ConsumerStatefulWidget {
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
   StreamSubscription<List<int>>? _notifySub;
-  String _colorType      = 'warm'; // 'warm' | 'neutral' | 'cool'
-  double _brightnessValue = 0.7;   // 0.0–1.0 intensity
-  bool _isLightOn = false;
   late BleService _ble;
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
+
+  // Tracks the resolved MAC without mutating widget.fan (which is immutable).
+  // Populated from widget.fan.macAddress on init; updated after first discovery.
+  String? _resolvedMac;
 
   bool _connecting = false;
   bool _showDisconnectAlert = false;
@@ -51,6 +61,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
+    _resolvedMac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
     if (!_isDemo) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
     }
@@ -58,7 +69,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   Future<void> _connect() async {
     if (_connecting) return;
-    final mac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
+    final mac = _resolvedMac;
     // TODO(Phase 2): QR-scan path arrives here with no MAC. Surface a BLE-scan
     // prompt instead of silently returning so the user isn't stuck.
     if (mac == null) return;
@@ -71,7 +82,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       if (widget.fan.macAddress.isEmpty && !_isDemo) {
         final repo = ref.read(fanRepositoryProvider);
         await repo.updateMac(widget.fan.deviceId, returnedMac);
-        widget.fan.macAddress = returnedMac;
+        _resolvedMac = returnedMac; // local state — widget.fan is not mutated
         if (!mounted) return;
         ref.invalidate(savedFansProvider);
       }
@@ -80,8 +91,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       _lastRpmAt   = null;
       _startTelemetry();
       _subscribeNotify();
-    } on Error {
-      rethrow;
     } on Object catch (_) {
       // Expected connection Exception — connectionStateStream emits disconnected,
       // surfacing the ConnectionLostCard with a Retry button.
@@ -205,6 +214,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (!mounted) return;
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<BluetoothAdapterState>>(
@@ -236,25 +247,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText, size: 20),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go(AppRoutes.home);
-            }
-          },
+          onPressed: () => context.canPop() ? context.pop() : context.go(AppRoutes.home),
         ),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(widget.fan.nickname,
                 style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
-            _connStatusLabel(connState),
+            _ConnStatusLabel(state: connState, isDemo: _isDemo),
           ],
         ),
         centerTitle: true,
         actions: [
-          // Bluetooth icon top-right
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: _BluetoothIndicator(
@@ -271,13 +275,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             padding: EdgeInsets.fromLTRB(20, 16, 20, isDisconnected ? 200 : 28),
             child: Column(
               children: [
-
-                // ── Power button — 3-state: green (on) / red (off) / grey (disconnected)
                 _PowerButton(
                   isPowered: fanState.isPowered,
-                  isConnected: enabled, // true when connected or demo
+                  isConnected: enabled,
                   onTap: () {
-                    // Disconnected & trying to turn on → show alert instead
                     if (!enabled && !_isDemo) {
                       setState(() => _showDisconnectAlert = true);
                       return;
@@ -291,189 +292,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     ));
                   },
                 ),
-
                 const SizedBox(height: 20),
-
-                // ── Controls — dimmed when fan is off ──────────────────────
                 IgnorePointer(
                   ignoring: !controlsEnabled,
                   child: AnimatedOpacity(
                     opacity: controlsEnabled ? 1.0 : 0.45,
                     duration: const Duration(milliseconds: 300),
-                    child: Column(
-                      children: [
-
-                        // Speed dial
-                        RepaintBoundary(
-                          child: CircularSpeedDial(
-                            currentSpeed: fanState.speed,
-                            watts: fanState.lastWatts,
-                            rpm: fanState.lastRpm,
-                            enabled: controlsEnabled,
-                            isBoost: fanState.isBoost,
-                            isNature: fanState.activeMode == 'nature',
-                            disabledSpeeds: fanState.activeMode == 'smart'
-                                ? const {1, 2}
-                                : const {},
-                            onSpeedSelected: (s) {
-                              // Smart mode: speeds 1 & 2 are blocked (dial guards too,
-                              // but this is a safety net for demo mode and direct calls)
-                              if (fanState.activeMode == 'smart' && s < 3) return;
-                              final notifier = ref.read(
-                                  activeFanStateProvider(widget.fan.deviceId).notifier);
-                              // Selecting a speed always deactivates boost
-                              if (fanState.isBoost) notifier.setBoostActive(false);
-                              notifier.updateSpeed(s);
-                              unawaited(_send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Operating modes (4-col grid including Boost)
-                        const _SectionHeader('OPERATING MODES'),
-                        const SizedBox(height: 10),
-                        ModeControlWidget(
-                          activeMode: fanState.activeMode,
-                          isBoost: fanState.isBoost,
-                          enabled: controlsEnabled,
-                          boostEnabled: fanState.activeMode != 'nature',
-                          onMode: (m) {
-                            final notifier = ref.read(
-                                activeFanStateProvider(widget.fan.deviceId).notifier);
-
-                            // Tapping the already-active mode deactivates it
-                            if (fanState.activeMode == m) {
-                              notifier.setActiveMode(null);
-                              // Re-send current speed so hardware exits the mode
-                              if (fanState.speed > 0) {
-                                unawaited(_send(
-                                    BleFrameBuilder.setSpeed(fanState.speed),
-                                    label: 'Speed ${fanState.speed}'));
-                              }
-                              return;
-                            }
-
-                            // Smart: if current speed is 1 or 2 → force to 3
-                            if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
-                              notifier.updateSpeed(3);
-                              unawaited(_send(BleFrameBuilder.setSpeed(3),
-                                  label: 'Speed 3 (Smart)'));
-                            }
-
-                            // Nature: also clears boost (handled inside setActiveMode)
-                            notifier.setActiveMode(m);
-
-                            final frame = switch (m) {
-                              'nature'  => BleFrameBuilder.setNature(),
-                              'reverse' => BleFrameBuilder.setReverse(),
-                              'smart'   => BleFrameBuilder.setSmart(),
-                              _         => null,
-                            };
-                            unawaited(_send(frame, label: 'Mode: $m'));
-                          },
-                          onBoost: () {
-                            // Nature blocks boost entirely
-                            if (fanState.activeMode == 'nature') return;
-                            final notifier = ref.read(
-                                activeFanStateProvider(widget.fan.deviceId).notifier);
-                            if (fanState.isBoost) {
-                              // Deactivate boost; restore the active mode on hardware
-                              notifier.setBoostActive(false);
-                              final restoreFrame = switch (fanState.activeMode) {
-                                'reverse' => BleFrameBuilder.setReverse(),
-                                'smart'   => BleFrameBuilder.setSmart(),
-                                _         => null,
-                              };
-                              if (restoreFrame != null) {
-                                unawaited(_send(restoreFrame,
-                                    label: 'Mode: ${fanState.activeMode}'));
-                              }
-                            } else {
-                              // Activate boost (keeps activeMode like reverse/smart intact)
-                              notifier.setBoostActive(true);
-                              unawaited(_send(BleFrameBuilder.setBoost(), label: 'Boost'));
-                            }
-                          },
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Sleep timer
-                        _SectionHeader('SLEEP TIMER',
-                            trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
-                                ? Text(
-                                    '${_timerLabel(fanState.activeTimerCode)} REMAINING',
-                                    style: GoogleFonts.jetBrainsMono(
-                                        fontSize: 10, color: kYellow, fontWeight: FontWeight.w700, letterSpacing: 1.6),
-                                  )
-                                : null),
-                        const SizedBox(height: 10),
-                        TimerControlWidget(
-                          activeTimerCode: fanState.activeTimerCode,
-                          enabled: controlsEnabled,
-                          onTimer: (a) {
-                            final code = switch (a) {
-                              '2h' => 0x02,
-                              '4h' => 0x04,
-                              '8h' => 0x08,
-                              _    => 0x00,
-                            };
-                            ref.read(activeFanStateProvider(widget.fan.deviceId).notifier)
-                                .updateTimer(code);
-                            final frame = switch (a) {
-                              '2h'  => BleFrameBuilder.timer2h(),
-                              '4h'  => BleFrameBuilder.timer4h(),
-                              '8h'  => BleFrameBuilder.timer8h(),
-                              _     => BleFrameBuilder.timerOff(),
-                            };
-                            unawaited(_send(frame, label: 'Timer: $a'));
-                          },
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Lighting
-                        LightingControlWidget(
-                          enabled: controlsEnabled,
-                          isLightOn: _isLightOn,
-                          colorType: _colorType,
-                          brightnessValue: _brightnessValue,
-                          onLightOn: () {
-                            setState(() => _isLightOn = true);
-                            unawaited(_send(BleFrameBuilder.lightOn(),
-                                pendingMsg: 'Lighting commands pending from Terraton'));
-                          },
-                          onLightOff: () {
-                            setState(() => _isLightOn = false);
-                            unawaited(_send(BleFrameBuilder.lightOff(),
-                                pendingMsg: 'Lighting commands pending from Terraton'));
-                          },
-                          onColorTypeChanged: (t) {
-                            setState(() => _colorType = t);
-                            final byte = switch (t) {
-                              'neutral' => 0x80,
-                              'cool'    => 0xFF,
-                              _         => 0x00,
-                            };
-                            unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
-                                pendingMsg: 'Lighting commands pending from Terraton'));
-                          },
-                          onBrightness: (v) {
-                            setState(() => _brightnessValue = v);
-                            final byte = (v * 255).round().clamp(0, 255);
-                            unawaited(_send(BleFrameBuilder.lightColorTemp(byte),
-                                pendingMsg: 'Lighting commands pending from Terraton'));
-                          },
-                        ),
-
-                      ],
+                    child: _FanControlsPanel(
+                      fan: widget.fan,
+                      controlsEnabled: controlsEnabled,
+                      send: _send,
                     ),
                   ),
                 ),
-
-                // ── Debug card ─────────────────────────────────────────────
                 const SizedBox(height: 16),
                 ValueListenableBuilder<_DebugSnapshot>(
                   valueListenable: _debug,
@@ -486,12 +317,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     writeError: snap.writeError,
                   ),
                 ),
-
               ],
             ),
           ),
-
-          // Connection lost card (bottom-anchored, persistent while disconnected)
           if (isDisconnected)
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -500,8 +328,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 connectStatus: _isDemo ? null : _ble.connectStatus,
               ),
             ),
-
-          // Disconnect alert (centered modal — shown when user taps power while disconnected)
           if (_showDisconnectAlert)
             _DisconnectAlertOverlay(
               fanName: widget.fan.nickname,
@@ -515,9 +341,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       ),
     );
   }
+}
 
-  Widget _connStatusLabel(BleConnectionState state) {
-    if (_isDemo) {
+// ── Connection status label ───────────────────────────────────────────────────
+
+class _ConnStatusLabel extends StatelessWidget {
+  final BleConnectionState state;
+  final bool isDemo;
+  const _ConnStatusLabel({required this.state, required this.isDemo});
+
+  @override
+  Widget build(BuildContext context) {
+    if (isDemo) {
       return Text('● DEMO MODE',
           style: GoogleFonts.manrope(fontSize: 10, color: Colors.amber.shade400,
               fontWeight: FontWeight.w700, letterSpacing: 1.5));
@@ -532,6 +367,31 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         style: GoogleFonts.manrope(fontSize: 10, color: color,
             fontWeight: FontWeight.w700, letterSpacing: 1.5));
   }
+}
+
+// ── Fan controls panel ────────────────────────────────────────────────────────
+// Owns the lighting UI state and all mode/speed/timer/lighting callbacks.
+// Extracted from ControlScreen.build() to keep that method under 100 lines.
+
+class _FanControlsPanel extends ConsumerStatefulWidget {
+  final FanDevice fan;
+  final bool controlsEnabled;
+  final _SendFn send;
+
+  const _FanControlsPanel({
+    required this.fan,
+    required this.controlsEnabled,
+    required this.send,
+  });
+
+  @override
+  ConsumerState<_FanControlsPanel> createState() => _FanControlsPanelState();
+}
+
+class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
+  String _colorType       = 'warm';
+  double _brightnessValue = 0.7;
+  bool   _isLightOn       = false;
 
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
@@ -539,6 +399,164 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     0x08 => '8H',
     _    => '',
   };
+
+  @override
+  Widget build(BuildContext context) {
+    final fan      = widget.fan;
+    final enabled  = widget.controlsEnabled;
+    final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
+
+    return Column(
+      children: [
+
+        // ── Speed dial ──────────────────────────────────────────────────────
+        RepaintBoundary(
+          child: CircularSpeedDial(
+            currentSpeed: fanState.speed,
+            watts: fanState.lastWatts,
+            rpm: fanState.lastRpm,
+            enabled: enabled,
+            isBoost: fanState.isBoost,
+            isNature: fanState.activeMode == 'nature',
+            disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
+            onSpeedSelected: (s) {
+              if (fanState.activeMode == 'smart' && s < 3) return;
+              final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+              if (fanState.isBoost) notifier.setBoostActive(false);
+              notifier.updateSpeed(s);
+              unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
+            },
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── Operating modes ─────────────────────────────────────────────────
+        const _SectionHeader('OPERATING MODES'),
+        const SizedBox(height: 10),
+        ModeControlWidget(
+          activeMode: fanState.activeMode,
+          isBoost: fanState.isBoost,
+          enabled: enabled,
+          boostEnabled: fanState.activeMode != 'nature',
+          onMode: (m) {
+            final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+            if (fanState.activeMode == m) {
+              notifier.setActiveMode(null);
+              if (fanState.speed > 0) {
+                unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
+                    label: 'Speed ${fanState.speed}'));
+              }
+              return;
+            }
+            if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
+              notifier.updateSpeed(3);
+              unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
+            }
+            notifier.setActiveMode(m);
+            final frame = switch (m) {
+              'nature'  => BleFrameBuilder.setNature(),
+              'reverse' => BleFrameBuilder.setReverse(),
+              'smart'   => BleFrameBuilder.setSmart(),
+              _         => null,
+            };
+            unawaited(widget.send(frame, label: 'Mode: $m'));
+          },
+          onBoost: () {
+            if (fanState.activeMode == 'nature') return;
+            final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+            if (fanState.isBoost) {
+              notifier.setBoostActive(false);
+              final restoreFrame = switch (fanState.activeMode) {
+                'reverse' => BleFrameBuilder.setReverse(),
+                'smart'   => BleFrameBuilder.setSmart(),
+                _         => null,
+              };
+              if (restoreFrame != null) {
+                unawaited(widget.send(restoreFrame, label: 'Mode: ${fanState.activeMode}'));
+              }
+            } else {
+              notifier.setBoostActive(true);
+              unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
+            }
+          },
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── Sleep timer ─────────────────────────────────────────────────────
+        _SectionHeader(
+          'SLEEP TIMER',
+          trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
+              ? Text(
+                  '${_timerLabel(fanState.activeTimerCode)} REMAINING',
+                  style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10, color: kYellow,
+                      fontWeight: FontWeight.w700, letterSpacing: 1.6),
+                )
+              : null,
+        ),
+        const SizedBox(height: 10),
+        TimerControlWidget(
+          activeTimerCode: fanState.activeTimerCode,
+          enabled: enabled,
+          onTimer: (a) {
+            final code = switch (a) {
+              '2h' => 0x02,
+              '4h' => 0x04,
+              '8h' => 0x08,
+              _    => 0x00,
+            };
+            ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
+            final frame = switch (a) {
+              '2h' => BleFrameBuilder.timer2h(),
+              '4h' => BleFrameBuilder.timer4h(),
+              '8h' => BleFrameBuilder.timer8h(),
+              _    => BleFrameBuilder.timerOff(),
+            };
+            unawaited(widget.send(frame, label: 'Timer: $a'));
+          },
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── Mood lighting ───────────────────────────────────────────────────
+        LightingControlWidget(
+          enabled: enabled,
+          isLightOn: _isLightOn,
+          colorType: _colorType,
+          brightnessValue: _brightnessValue,
+          onLightOn: () {
+            setState(() => _isLightOn = true);
+            unawaited(widget.send(BleFrameBuilder.lightOn(),
+                pendingMsg: 'Lighting commands pending from Terraton'));
+          },
+          onLightOff: () {
+            setState(() => _isLightOn = false);
+            unawaited(widget.send(BleFrameBuilder.lightOff(),
+                pendingMsg: 'Lighting commands pending from Terraton'));
+          },
+          onColorTypeChanged: (t) {
+            setState(() => _colorType = t);
+            final byte = switch (t) {
+              'neutral' => 0x80,
+              'cool'    => 0xFF,
+              _         => 0x00,
+            };
+            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                pendingMsg: 'Lighting commands pending from Terraton'));
+          },
+          onBrightness: (v) {
+            setState(() => _brightnessValue = v);
+            final byte = (v * 255).round().clamp(0, 255);
+            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                pendingMsg: 'Lighting commands pending from Terraton'));
+          },
+        ),
+
+      ],
+    );
+  }
 }
 
 // ── Bluetooth indicator ───────────────────────────────────────────────────────
@@ -627,14 +645,14 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Power button — 3 visual states matching fan-control.jsx palette ─────────
-//   green  : connected + powered on
-//   red    : connected + powered off
-//   grey   : disconnected (no BLE link)
+// ── Power button ──────────────────────────────────────────────────────────────
+//   green  : connected + powered on   (kPowerOn)
+//   red    : connected + powered off  (kPowerOff)
+//   grey   : disconnected
 
 class _PowerButton extends StatelessWidget {
   final bool isPowered;
-  final bool isConnected; // true when BLE connected or demo
+  final bool isConnected;
   final VoidCallback onTap;
 
   const _PowerButton({
@@ -645,7 +663,6 @@ class _PowerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Colours from fan-control.jsx palette
     final Color rim, iconColor, bgColor;
     final List<BoxShadow> shadows;
 
@@ -655,16 +672,16 @@ class _PowerButton extends StatelessWidget {
       bgColor   = kCard;
       shadows   = const [BoxShadow(color: Color(0x0FFFFFFF), blurRadius: 8)];
     } else if (isPowered) {
-      rim       = const Color(0xFF3FD37A);
-      iconColor = const Color(0xFF3FD37A);
+      rim       = kPowerOn;
+      iconColor = kPowerOn;
       bgColor   = const Color(0x1A3FD37A);
       shadows   = const [
         BoxShadow(color: Color(0x8C3FD37A), blurRadius: 14),
         BoxShadow(color: Color(0x4D3FD37A), blurRadius: 28),
       ];
     } else {
-      rim       = const Color(0xFFE5484D);
-      iconColor = const Color(0xFFE5484D);
+      rim       = kPowerOff;
+      iconColor = kPowerOff;
       bgColor   = const Color(0x14E5484D);
       shadows   = const [
         BoxShadow(color: Color(0x4DE5484D), blurRadius: 10),
@@ -683,19 +700,14 @@ class _PowerButton extends StatelessWidget {
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 260),
-          width: 56,
-          height: 56,
+          width: 56, height: 56,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: bgColor,
             border: Border.all(color: rim, width: 1.5),
             boxShadow: shadows,
           ),
-          child: Icon(
-            Icons.power_settings_new_rounded,
-            size: 26,
-            color: iconColor,
-          ),
+          child: Icon(Icons.power_settings_new_rounded, size: 26, color: iconColor),
         ),
       ),
     );
@@ -703,8 +715,6 @@ class _PowerButton extends StatelessWidget {
 }
 
 // ── Disconnect alert overlay ──────────────────────────────────────────────────
-// Shown as a centered modal (matching DisconnectAlert in fan-control.jsx) when
-// the user taps the power button while the fan is not connected.
 
 class _DisconnectAlertOverlay extends StatelessWidget {
   final String fanName;
@@ -722,10 +732,10 @@ class _DisconnectAlertOverlay extends StatelessWidget {
     return GestureDetector(
       onTap: onClose,
       child: Container(
-        color: Colors.black.withAlpha(178), // rgba(0,0,0,0.7)
+        color: Colors.black.withAlpha(178),
         child: Center(
           child: GestureDetector(
-            onTap: () {}, // stop propagation
+            onTap: () {},
             child: Container(
               margin: const EdgeInsets.all(24),
               padding: const EdgeInsets.all(28),
@@ -738,7 +748,6 @@ class _DisconnectAlertOverlay extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // BT icon chip
                   Container(
                     width: 64, height: 64,
                     decoration: BoxDecoration(
@@ -763,9 +772,7 @@ class _DisconnectAlertOverlay extends StatelessWidget {
                         const TextSpan(text: 'Please re-establish the Bluetooth connection to '),
                         TextSpan(
                           text: fanName,
-                          style: GoogleFonts.manrope(
-                            fontWeight: FontWeight.w700, color: kText,
-                          ),
+                          style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: kText),
                         ),
                         const TextSpan(text: ' before powering it on.'),
                       ],
@@ -773,8 +780,7 @@ class _DisconnectAlertOverlay extends StatelessWidget {
                   ),
                   const SizedBox(height: 22),
                   SizedBox(
-                    width: double.infinity,
-                    height: 50,
+                    width: double.infinity, height: 50,
                     child: ElevatedButton(
                       onPressed: onRetry,
                       style: ElevatedButton.styleFrom(
@@ -789,8 +795,7 @@ class _DisconnectAlertOverlay extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
-                    width: double.infinity,
-                    height: 46,
+                    width: double.infinity, height: 46,
                     child: TextButton(
                       onPressed: onClose,
                       child: Text('Not now',
@@ -864,7 +869,7 @@ class _DebugCard extends StatelessWidget {
 
   static String _frameLabel(List<int> bytes) {
     if (bytes.length < 4) return '';
-    final cmd = bytes[3];
+    final cmd  = bytes[3];
     final data = bytes.length > 5 ? bytes[5] : null;
     return switch (cmd) {
       0x02 => data == 0x01 ? 'Power ON' : 'Power OFF',

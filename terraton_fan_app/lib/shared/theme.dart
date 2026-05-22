@@ -27,6 +27,10 @@ const kYellowGlow = Color(0x59FFEC00); // rgba(255,236,0,0.35)
 const kGreen = Color(0xFF7AE582);
 const kRed   = Color(0xFFFF6B6B);
 
+// ── Power button states ───────────────────────────────────────────────────────
+const kPowerOn  = Color(0xFF3FD37A); // connected + powered on
+const kPowerOff = Color(0xFFE5484D); // connected + powered off
+
 // ── Legacy aliases (kept so unchanged imports compile) ────────────────────────
 const kPrimary    = kYellow;
 const kBackground = kBg;

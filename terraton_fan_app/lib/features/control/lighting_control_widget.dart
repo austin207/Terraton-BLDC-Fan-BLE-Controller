@@ -205,27 +205,33 @@ class _TempBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 260),
-        height: 56,
-        decoration: BoxDecoration(
-          color: isActive ? color : const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isActive ? color.withAlpha(200) : const Color(0xFF2A2A2A),
+    return Semantics(
+      button: true,
+      label: '$label colour temperature',
+      selected: isActive,
+      enabled: onTap != null,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          height: 56,
+          decoration: BoxDecoration(
+            color: isActive ? color : const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive ? color.withAlpha(200) : const Color(0xFF2A2A2A),
+            ),
+            boxShadow: isActive
+                ? [BoxShadow(color: color.withAlpha(136), blurRadius: 20, spreadRadius: -4)]
+                : null,
           ),
-          boxShadow: isActive
-              ? [BoxShadow(color: color.withAlpha(136), blurRadius: 20, spreadRadius: -4)]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13, fontWeight: FontWeight.w700,
-            color: isActive ? const Color(0xFF1A1A1A) : const Color(0xFF6F6F6F),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w700,
+              color: isActive ? const Color(0xFF1A1A1A) : const Color(0xFF6F6F6F),
+            ),
           ),
         ),
       ),

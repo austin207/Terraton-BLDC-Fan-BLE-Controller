@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/objectbox.g.dart';
-import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 
 abstract class FanRepository {
   List<FanDevice> getAllFans();
@@ -20,8 +19,11 @@ abstract class FanRepository {
 }
 
 class FanRepositoryImpl implements FanRepository {
-  Box<FanDevice> get _fanBox => store.box<FanDevice>();
-  Box<FanState>  get _stateBox => store.box<FanState>();
+  final Store _store;
+  FanRepositoryImpl(this._store);
+
+  Box<FanDevice> get _fanBox => _store.box<FanDevice>();
+  Box<FanState>  get _stateBox => _store.box<FanState>();
 
   static R _useQuery<T, R>(Query<T> q, R Function(Query<T>) fn) {
     try { return fn(q); } finally { q.close(); }

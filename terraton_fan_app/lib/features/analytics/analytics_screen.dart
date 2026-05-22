@@ -94,6 +94,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   ];
   static const _traditionalWatts = 85.0;
 
+  // Pre-computed from const data — not recalculated on every build().
+  static final double _kMaxKwh = _fanKwh.fold(0.0, (m, f) => math.max(m, f.$2));
+  static final int _kEfficiency = () {
+    final totalH  = _smartGearData.fold(0.0, (s, g) => s + g.$2);
+    final smartWh = _smartGearData.fold(0.0, (s, g) => s + g.$1 * g.$2);
+    final tradWh  = _traditionalWatts * totalH;
+    return tradWh == 0 ? 0 : ((tradWh - smartWh) / tradWh * 100).round();
+  }();
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   double _total(String range) =>
@@ -125,15 +134,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _       => '',
   };
 
-  // Efficiency = (traditional Wh − smart Wh) / traditional Wh × 100
-  int get _efficiency {
-    final totalH = _smartGearData.fold(0.0, (s, g) => s + g.$2);
-    final smartWh = _smartGearData.fold(0.0, (s, g) => s + g.$1 * g.$2);
-    final tradWh  = _traditionalWatts * totalH;
-    if (tradWh == 0) return 0;
-    return ((tradWh - smartWh) / tradWh * 100).round();
-  }
-
   String _efficiencyLabel(int pct) {
     if (pct >= 80) return 'Excellent Efficiency';
     if (pct >= 60) return 'Optimal Range';
@@ -147,10 +147,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final total   = _total(_range);
     final savings = total * 0.32 * _tariff;
     final cmp     = _comparison(_range);
-    final eff     = _efficiency;
-
-    // Bar fractions scale relative to the highest-consuming fan.
-    final maxKwh = _fanKwh.map((f) => f.$2).reduce(math.max);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -367,7 +363,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _DarkCard(
           child: Row(
             children: [
-              _RingChart(pct: eff),
+              _RingChart(pct: _kEfficiency),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
@@ -376,12 +372,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     Text('EFFICIENCY',
                         style: kMonoStyle(size: 10, color: kTextMut, letterSpacing: 2.0)),
                     const SizedBox(height: 6),
-                    Text(_efficiencyLabel(eff),
+                    Text(_efficiencyLabel(_kEfficiency),
                         style: GoogleFonts.manrope(
                           fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
                     const SizedBox(height: 4),
                     Text(
-                      'Your fans are running $eff% more efficiently than a typical ceiling fan at the same airflow.',
+                      'Your fans are running $_kEfficiency% more efficiently than a typical ceiling fan at the same airflow.',
                       style: GoogleFonts.manrope(fontSize: 12, color: kTextMut, height: 1.4),
                     ),
                   ],
@@ -409,7 +405,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         const SizedBox(height: 10),
         ..._fanKwh.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: _FanBar(name: f.$1, kwh: f.$2, barFraction: f.$2 / maxKwh),
+          child: _FanBar(name: f.$1, kwh: f.$2, barFraction: f.$2 / _kMaxKwh),
         )),
       ],
     );
