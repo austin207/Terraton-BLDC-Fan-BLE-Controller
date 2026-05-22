@@ -155,7 +155,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: BrandMark(height: 22),
+            child: BrandMark(height: 28),
           ),
           Expanded(
             child: ListView(

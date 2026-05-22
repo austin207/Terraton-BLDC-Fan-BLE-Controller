@@ -10,7 +10,7 @@ class BrandMark extends StatelessWidget {
 
   const BrandMark({
     super.key,
-    this.height = 22,
+    this.height = 28,
     this.full = true,
   });
 

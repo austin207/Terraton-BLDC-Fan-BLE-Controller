@@ -68,7 +68,7 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(32, 12, 32, 4),
-              child: BrandMark(height: 22),
+              child: BrandMark(height: 28),
             ),
             Expanded(
               child: Padding(

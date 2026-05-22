@@ -161,7 +161,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         // Header
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
-          child: BrandMark(height: 22),
+          child: BrandMark(height: 28),
         ),
         Text(
           'Energy & savings',
