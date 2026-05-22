@@ -22,10 +22,11 @@ class ModeControlWidget extends StatelessWidget {
     this.boostEnabled = true,
   });
 
+  // Nature uses a custom PNG asset; Smart and Reverse use Material icons.
   static const _modes = [
-    ('nature',  'Nature',  Icons.eco_rounded),
-    ('smart',   'Smart',   Icons.auto_awesome_outlined),
-    ('reverse', 'Reverse', Icons.sync_rounded),
+    _ModeEntry('nature',  'Nature',  null, 'assets/icons/nature_plant.png'),
+    _ModeEntry('smart',   'Smart',   Icons.auto_awesome_outlined, null),
+    _ModeEntry('reverse', 'Reverse', Icons.sync_rounded, null),
   ];
 
   @override
@@ -33,19 +34,20 @@ class ModeControlWidget extends StatelessWidget {
     return Row(
       children: [
         // 3 mode buttons
-        ..._modes.map(((String, String, IconData) entry) {
-          final isActive = activeMode == entry.$1;
+        ..._modes.map((entry) {
+          final isActive = activeMode == entry.mode;
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
               child: _ModeBtn(
-                icon: entry.$3,
-                label: entry.$2,
+                icon: entry.icon,
+                assetPath: entry.assetPath,
+                label: entry.label,
                 isActive: isActive,
                 enabled: enabled,
                 onTap: () {
                   unawaited(HapticFeedback.lightImpact());
-                  onMode(entry.$1);
+                  onMode(entry.mode);
                 },
               ),
             ),
@@ -68,7 +70,8 @@ class ModeControlWidget extends StatelessWidget {
                     }
                   : null,
               child: _ModeBtn(
-                icon: Icons.bolt_rounded,
+                // Boost uses the rocket PNG asset
+                assetPath: 'assets/icons/boost_rocket.png',
                 label: 'Boost',
                 isActive: isBoost,
                 enabled: enabled && boostEnabled,
@@ -82,15 +85,29 @@ class ModeControlWidget extends StatelessWidget {
   }
 }
 
-class _ModeBtn extends StatelessWidget {
-  final IconData icon;
+// ── Mode entry descriptor ─────────────────────────────────────────────────────
+
+class _ModeEntry {
+  final String mode;
   final String label;
-  final bool isActive;
-  final bool enabled;
+  final IconData? icon;
+  final String? assetPath;
+  const _ModeEntry(this.mode, this.label, this.icon, this.assetPath);
+}
+
+// ── Mode button ───────────────────────────────────────────────────────────────
+
+class _ModeBtn extends StatelessWidget {
+  final IconData?  icon;       // Material icon (Smart / Reverse)
+  final String?    assetPath;  // PNG asset (Nature / Boost)
+  final String     label;
+  final bool       isActive;
+  final bool       enabled;
   final VoidCallback? onTap;
 
   const _ModeBtn({
-    required this.icon,
+    this.icon,
+    this.assetPath,
     required this.label,
     required this.isActive,
     required this.enabled,
@@ -99,6 +116,22 @@ class _ModeBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final iconColor = isActive ? kYellow : (enabled ? kText : kTextDim);
+
+    // Render PNG asset with color filter so it adopts the active/idle palette.
+    Widget iconWidget;
+    if (assetPath != null) {
+      iconWidget = Image.asset(
+        assetPath!,
+        width: 20, height: 20,
+        color: iconColor,
+        // srcIn: treat all non-transparent pixels as the target color.
+        colorBlendMode: BlendMode.srcIn,
+      );
+    } else {
+      iconWidget = Icon(icon, size: 20, color: iconColor);
+    }
+
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: AnimatedContainer(
@@ -115,10 +148,7 @@ class _ModeBtn extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon, size: 20,
-              color: isActive ? kYellow : (enabled ? kText : kTextDim),
-            ),
+            iconWidget,
             const SizedBox(height: 8),
             Text(
               label,

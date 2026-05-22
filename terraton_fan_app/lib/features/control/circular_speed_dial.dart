@@ -397,8 +397,12 @@ class _CenterReadout extends StatelessWidget {
                 color: kTextMut, letterSpacing: 2.2,
               )),
           const SizedBox(height: 8),
-          const Icon(Icons.eco_rounded, size: 60, color: _kNatureGreen,
-              shadows: [Shadow(color: Color(0x8022C55E), blurRadius: 20)]),
+          Image.asset(
+            'assets/icons/nature_plant.png',
+            width: 60, height: 60,
+            color: _kNatureGreen,
+            colorBlendMode: BlendMode.srcIn,
+          ),
         ] else if (boost) ...[
           Text('BOOST',
               style: GoogleFonts.jetBrainsMono(
@@ -406,8 +410,12 @@ class _CenterReadout extends StatelessWidget {
                 color: kTextMut, letterSpacing: 2.8,
               )),
           const SizedBox(height: 8),
-          Icon(Icons.bolt_rounded, size: 60, color: kYellow,
-              shadows: [Shadow(color: kYellow.withAlpha(128), blurRadius: 20)]),
+          Image.asset(
+            'assets/icons/boost_rocket.png',
+            width: 60, height: 60,
+            color: kYellow,
+            colorBlendMode: BlendMode.srcIn,
+          ),
         ] else ...[
           Text('GEAR',
               style: GoogleFonts.jetBrainsMono(
