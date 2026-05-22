@@ -65,8 +65,10 @@ _DotState _dotStateOf({
 }) {
   if (isNature) return _DotState.off;
   if (!enabled) return _DotState.off;
-  if (disabledSpeeds.contains(index + 1)) return _DotState.off;
+  // Boost overrides disabled-speed dimming so the full ring glows in BOOST+SMART/REVERSE.
+  // Hit-target tappability still respects disabledSpeeds (handled separately).
   if (boost) return _DotState.selected;
+  if (disabledSpeeds.contains(index + 1)) return _DotState.off;
   if (speed <= 0) return _DotState.off;
   if (index == speed - 1) return _DotState.selected;
   return _DotState.off;
