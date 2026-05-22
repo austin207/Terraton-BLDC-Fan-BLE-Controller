@@ -134,6 +134,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _       => '',
   };
 
+  String _periodLabel(String range) => switch (range) {
+    'Day'   => 'today',
+    'Week'  => 'this week',
+    'Month' => 'this month',
+    _       => '',
+  };
+
   String _efficiencyLabel(int pct) {
     if (pct >= 80) return 'Excellent Efficiency';
     if (pct >= 60) return 'Optimal Range';
@@ -143,12 +150,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final data     = _usageData[_range]!;
-    final total    = _total(_range);
-    final cmp      = _comparison(_range);
-    // Day totals: 12:00 AM → now — always based on Day range regardless of tab
-    final dayTotal = _total('Day');
-    final dayCost  = dayTotal * _tariff;
+    final data  = _usageData[_range]!;
+    final total = _total(_range);
+    final cmp   = _comparison(_range);
+    final cost  = total * _tariff;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -260,155 +265,174 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         const SizedBox(height: 12),
 
-        // ── Two-column stat cards (stretch so both are the same height) ────────
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        // ── Energy Cost / Units Used / Tariff — single full-width card ─────────
+        _DarkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Consumption card: dual mini-cards + tariff ─────────────────
-              Expanded(
-                flex: 6,
-                child: _DarkCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Mini-cards row: Energy Cost | Units Used (day, 12AM→now)
-                      Row(
-                        children: [
-                          // Left: Energy Cost
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(11),
-                              decoration: BoxDecoration(
-                                color: kCardElev,
-                                borderRadius: BorderRadius.circular(11),
-                                border: Border.all(color: kHairlineStrong),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('ENERGY COST',
-                                      style: kMonoStyle(size: 8, color: kTextMut,
-                                          letterSpacing: 1.6, weight: FontWeight.w700)),
-                                  const SizedBox(height: 6),
-                                  Text('₹${dayCost.toStringAsFixed(1)}',
-                                      style: kMonoStyle(size: 18, color: kYellow,
-                                          weight: FontWeight.w600, letterSpacing: -0.5)),
-                                  const SizedBox(height: 2),
-                                  Text('today',
-                                      style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Right: Units Used
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(11),
-                              decoration: BoxDecoration(
-                                color: kCardElev,
-                                borderRadius: BorderRadius.circular(11),
-                                border: Border.all(color: kHairlineStrong),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('UNITS USED',
-                                      style: kMonoStyle(size: 8, color: kTextMut,
-                                          letterSpacing: 1.6, weight: FontWeight.w700)),
-                                  const SizedBox(height: 6),
-                                  Text('${dayTotal.toStringAsFixed(1)} U',
-                                      style: kMonoStyle(size: 18, color: kText,
-                                          weight: FontWeight.w600, letterSpacing: -0.5)),
-                                  const SizedBox(height: 2),
-                                  Text('today',
-                                      style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+              // Sub-cards row
+              Row(
+                children: [
+                  // Energy Cost
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: kCardElev,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: kHairlineStrong),
                       ),
-
-                      const Spacer(),
-                      const SizedBox(height: 10),
-
-                      // Tariff (existing, unchanged)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0x0DFFEC00),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0x2EFFEC00)),
-                        ),
-                        child: Row(
-                          children: [
-                            Text('TARIFF',
-                                style: kMonoStyle(size: 9, color: kTextMut, letterSpacing: 1.8,
-                                    weight: FontWeight.w700)),
-                            const Spacer(),
-                            Text('₹', style: kMonoStyle(size: 12, color: kTextMut)),
-                            const SizedBox(width: 2),
-                            SizedBox(
-                              width: 44,
-                              child: TextField(
-                                controller: _tariffCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-                                ],
-                                textAlign: TextAlign.right,
-                                style: kMonoStyle(size: 13, weight: FontWeight.w700),
-                                cursorColor: kYellow,
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                  isDense: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 22, height: 22,
+                                decoration: BoxDecoration(
+                                  color: kYellow.withAlpha(30),
+                                  borderRadius: BorderRadius.circular(7),
                                 ),
-                                onChanged: (v) {
-                                  final parsed = double.tryParse(v);
-                                  if (parsed != null && parsed >= 0) {
-                                    setState(() => _tariff = parsed);
-                                  }
-                                },
+                                child: const Icon(Icons.currency_rupee, size: 12, color: kYellow),
                               ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text('/UNIT', style: kMonoStyle(size: 10, color: kTextMut)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              // ── AVG WATT card (stretches to match consumption card height) ──
-              Expanded(
-                flex: 5,
-                child: _DarkCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _SmallIconLabel(icon: Icons.bolt_outlined, label: 'AVG WATT', iconColor: kYellow),
-                      const SizedBox(height: 10),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text('28', style: kMonoStyle(size: 22, weight: FontWeight.w600, letterSpacing: -0.5)),
-                          const SizedBox(width: 4),
-                          Text('W', style: kMonoStyle(size: 12, color: kTextMut)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text('ENERGY COST',
+                                    style: kMonoStyle(size: 8, color: kTextMut,
+                                        letterSpacing: 1.4, weight: FontWeight.w700)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text('₹${cost.toStringAsFixed(1)}',
+                              style: kMonoStyle(size: 20, color: kYellow,
+                                  weight: FontWeight.w600, letterSpacing: -0.5)),
+                          const SizedBox(height: 2),
+                          Text(_periodLabel(_range),
+                              style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text('65% lower than 85W fan',
-                          style: GoogleFonts.manrope(fontSize: 11, color: kTextMut)),
-                    ],
+                    ),
                   ),
+                  const SizedBox(width: 10),
+                  // Units Used
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: kCardElev,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: kHairlineStrong),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 22, height: 22,
+                                decoration: BoxDecoration(
+                                  color: kYellow.withAlpha(30),
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: const Icon(Icons.bolt_outlined, size: 12, color: kYellow),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text('UNITS USED',
+                                    style: kMonoStyle(size: 8, color: kTextMut,
+                                        letterSpacing: 1.4, weight: FontWeight.w700)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text('${total.toStringAsFixed(1)} U',
+                              style: kMonoStyle(size: 20, color: kText,
+                                  weight: FontWeight.w600, letterSpacing: -0.5)),
+                          const SizedBox(height: 2),
+                          Text(_periodLabel(_range),
+                              style: GoogleFonts.manrope(fontSize: 10, color: kTextDim)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              // Tariff — full-width centered strip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0x0DFFEC00),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x2EFFEC00)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('TARIFF',
+                        style: kMonoStyle(size: 9, color: kTextMut,
+                            letterSpacing: 1.8, weight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    Text('₹', style: kMonoStyle(size: 12, color: kTextMut)),
+                    const SizedBox(width: 2),
+                    SizedBox(
+                      width: 44,
+                      child: TextField(
+                        controller: _tariffCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                        ],
+                        textAlign: TextAlign.center,
+                        style: kMonoStyle(size: 14, weight: FontWeight.w700),
+                        cursorColor: kYellow,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          isDense: true,
+                        ),
+                        onChanged: (v) {
+                          final parsed = double.tryParse(v);
+                          if (parsed != null && parsed >= 0) {
+                            setState(() => _tariff = parsed);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('/UNIT', style: kMonoStyle(size: 10, color: kTextMut)),
+                  ],
                 ),
               ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── AVG WATT — full-width card ────────────────────────────────────────
+        _DarkCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SmallIconLabel(
+                  icon: Icons.bolt_outlined, label: 'AVG WATT', iconColor: kYellow),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('28', style: kMonoStyle(size: 36, weight: FontWeight.w600, letterSpacing: -0.5)),
+                  const SizedBox(width: 6),
+                  Text('W', style: kMonoStyle(size: 16, color: kTextMut)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('65% lower than a typical 85W fan',
+                  style: GoogleFonts.manrope(fontSize: 12, color: kTextMut)),
             ],
           ),
         ),
