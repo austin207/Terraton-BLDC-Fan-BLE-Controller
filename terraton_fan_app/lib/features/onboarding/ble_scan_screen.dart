@@ -11,6 +11,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
@@ -335,7 +336,7 @@ class _FanResultRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: kCardHi, borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.air_rounded, color: kYellow, size: 24),
+                child: const TerratonFanIcon(size: 24),
               ),
               const SizedBox(width: 14),
               Expanded(

@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/router.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class FansListScreen extends ConsumerWidget {
@@ -87,7 +88,7 @@ class _FanList extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.air_rounded, size: 64, color: kTextDim),
+            const TerratonFanIcon(size: 64, color: kTextDim),
             const SizedBox(height: 16),
             Text('No fans paired yet.',
                 style: GoogleFonts.manrope(fontSize: 16, color: kTextMut, fontWeight: FontWeight.w600)),
@@ -238,7 +239,7 @@ class _FanRowState extends ConsumerState<_FanRow> {
                 color: kCardHi,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.air_rounded, color: kYellow, size: 26),
+              child: const TerratonFanIcon(size: 26),
             ),
             const SizedBox(width: 14),
             // Info

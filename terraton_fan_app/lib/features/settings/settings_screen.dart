@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -162,7 +163,7 @@ class SettingsScreen extends ConsumerWidget {
         Center(
           child: Column(
             children: [
-              const Icon(Icons.air_rounded, size: 48, color: kYellow),
+              const TerratonFanIcon(size: 48),
               const SizedBox(height: 12),
               Text('Terraton®',
                   style: GoogleFonts.manrope(

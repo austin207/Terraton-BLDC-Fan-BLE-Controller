@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -364,9 +365,17 @@ class _LineChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 100,
-      child: CustomPaint(painter: _LineChartPainter(data: data)),
+    // LayoutBuilder ensures the painter receives the real available width.
+    // Without it, CustomPaint can report a near-zero width inside a Column.
+    return LayoutBuilder(
+      builder: (_, constraints) => SizedBox(
+        width: constraints.maxWidth,
+        height: 100,
+        child: CustomPaint(
+          size: Size(constraints.maxWidth, 100),
+          painter: _LineChartPainter(data: data),
+        ),
+      ),
     );
   }
 }
@@ -541,7 +550,7 @@ class _FanBar extends StatelessWidget {
         Container(
           width: 28, height: 28,
           decoration: BoxDecoration(color: kCardHi, borderRadius: BorderRadius.circular(8)),
-          child: const Icon(Icons.air_rounded, size: 16, color: kYellow),
+          child: const TerratonFanIcon(size: 16),
         ),
         const SizedBox(width: 12),
         Expanded(

@@ -7,7 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class NameFanScreen extends ConsumerStatefulWidget {
@@ -87,7 +87,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
                           border: Border.all(color: kYellow.withAlpha(60), width: 1.5),
                           boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 30)],
                         ),
-                        child: const FanIcon(size: 68),
+                        child: const TerratonFanIcon(size: 68),
                       ),
                       Positioned(
                         bottom: -8, left: 0, right: 0,

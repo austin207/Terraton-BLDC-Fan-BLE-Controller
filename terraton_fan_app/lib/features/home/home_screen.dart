@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -90,9 +91,9 @@ class _HomeTab extends ConsumerWidget {
 
         const SizedBox(height: 24),
 
-        // Fans tile
+        // Fans tile — fan icon spins when fans are paired
         _DeviceTile(
-          icon: Icons.air_rounded,
+          iconWidget: TerratonFanIcon(size: 28, spinning: fanCount > 0),
           title: 'Fans',
           subtitle: '$fanCount paired',
           onTap: () => unawaited(context.push(AppRoutes.fans)),
@@ -182,13 +183,13 @@ class _UsageCard extends StatelessWidget {
 // ── Device category tile ──────────────────────────────────────────────────────
 
 class _DeviceTile extends StatefulWidget {
-  final IconData icon;
+  final Widget iconWidget;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _DeviceTile({
-    required this.icon,
+    required this.iconWidget,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -239,7 +240,7 @@ class _DeviceTileState extends State<_DeviceTile> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: kYellow.withAlpha(76)),
               ),
-              child: Icon(widget.icon, size: 28, color: kYellow),
+              child: Center(child: widget.iconWidget),
             ),
             const SizedBox(width: 18),
             Expanded(
@@ -293,6 +294,7 @@ class _BottomNav extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(6),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch, // pills fill full height
         children: List.generate(_items.length, (i) {
           final on = i == active;
           final (icon, label) = _items[i];
@@ -315,8 +317,9 @@ class _BottomNav extends StatelessWidget {
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Icon(icon, size: 20, color: on ? Colors.black : kTextMut),
+                      Icon(icon, size: 22, color: on ? Colors.black : kTextMut),
                       if (on) ...[
                         const SizedBox(width: 8),
                         Text(label,

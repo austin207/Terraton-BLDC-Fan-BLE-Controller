@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/fan_icon.dart';
+import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class BlePermissionScreen extends StatefulWidget {
@@ -76,7 +76,7 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                   border: Border.all(color: kYellow.withAlpha(50)),
                   boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 40)],
                 ),
-                child: const FanIcon(size: 70, semanticLabel: 'Terraton fan'),
+                child: const TerratonFanIcon(size: 70),
               ),
               const SizedBox(height: 32),
 
