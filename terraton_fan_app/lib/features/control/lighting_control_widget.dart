@@ -141,9 +141,10 @@ class _LightToggle extends StatelessWidget {
                 top: 3, bottom: 3, width: segW,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: kYellow,
+                    color: kYellow.withAlpha(38),
                     borderRadius: BorderRadius.circular(50),
-                    boxShadow: [const BoxShadow(color: kYellowGlow, blurRadius: 8)],
+                    border: Border.all(color: kYellow.withAlpha(100)),
+                    boxShadow: [BoxShadow(color: kYellow.withAlpha(22), blurRadius: 6)],
                   ),
                 ),
               ),
@@ -169,7 +170,7 @@ class _LightToggle extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: isActive ? Colors.black : kTextMut,
+                              color: isActive ? kYellow : kTextMut,
                             ),
                             child: Text(label),
                           ),

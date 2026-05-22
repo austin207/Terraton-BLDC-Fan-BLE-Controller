@@ -75,11 +75,11 @@ class _TimerControlWidgetState extends State<TimerControlWidget> {
                   duration: const Duration(milliseconds: 220),
                   height: 50,
                   decoration: BoxDecoration(
-                    color: isActive ? kYellow : kCard,
+                    color: isActive ? kYellow.withAlpha(28) : kCard,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: isActive ? kYellow : kHairline),
+                    border: Border.all(color: isActive ? kYellow.withAlpha(100) : kHairline),
                     boxShadow: isActive
-                        ? [BoxShadow(color: kYellow.withAlpha(46), blurRadius: 18, spreadRadius: -4)]
+                        ? [BoxShadow(color: kYellow.withAlpha(22), blurRadius: 14, spreadRadius: -4)]
                         : null,
                   ),
                   alignment: Alignment.center,
@@ -89,7 +89,7 @@ class _TimerControlWidgetState extends State<TimerControlWidget> {
                       fontFamily: 'JetBrainsMono',
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: isActive ? Colors.black : (widget.enabled ? kText : kTextDim),
+                      color: isActive ? kYellow : (widget.enabled ? kText : kTextDim),
                       letterSpacing: 0.06,
                     ),
                   ),
