@@ -2,7 +2,7 @@
 
 Android app that controls a Terraton BLDC ceiling fan over Bluetooth Low Energy 5.2 via an Amp'ed RF BLE60 module. Fully offline — no backend, no cloud, no internet required.
 
-```
+```text
 Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan MCU  ──►  BLDC Motor
 ```
 
@@ -11,7 +11,7 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 ## Features
 
 | Category | Details |
-|---|---|
+| --- | --- |
 | **Onboarding** | BLE scan or QR code pairing; profile setup on first launch |
 | **Fan control** | Power, 6 speed steps, Boost / Nature / Reverse / Smart modes, 2 / 4 / 8 h sleep timer |
 | **Nature mode** | Locks speed dial and disables other modes while active; restores pre-nature speed on switch to Smart/Reverse |
@@ -31,7 +31,7 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 
 ### Data flow
 
-```
+```text
 assets/commands.yaml
         │
         ▼
@@ -69,7 +69,7 @@ assets/commands.yaml
 
 ### Nature mode state machine
 
-```
+```text
 Idle ──────────────── tap Nature ──────────► Nature active
                       saves _preNatureSpeed    speed dial locked
                                                all modes inactive
@@ -92,7 +92,7 @@ The BLE mode frame is always sent before the speed frame when exiting Nature —
 ### Connection
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Scan filter (advertisement) | `00001827-0000-1000-8000-00805f9b34fb` — BLE Mesh Proxy |
 | Write characteristic | `00002adb-0000-1000-8000-00805f9b34fb` — Mesh Proxy Data In |
 | Notify characteristic | `00002adc-0000-1000-8000-00805f9b34fb` — Mesh Proxy Data Out |
@@ -101,7 +101,7 @@ Service discovery also searches the Amp'ed RF proprietary service, CC254X / HM-1
 
 ### Frame format
 
-```
+```text
 [ 0x55  0xAA  packetId  command  dataLen  ...data  checksum ]
 ```
 
@@ -109,7 +109,7 @@ Service discovery also searches the Amp'ed RF proprietary service, CC254X / HM-1
 - **Response:** `packetId = 0x07`
 - **Checksum:** sum of **every byte before the checksum**, including the `0x55 0xAA` header:
 
-```
+```text
 checksum = (0x55 + 0xAA + packetId + command + dataLen + Σ data) & 0xFF
 ```
 
@@ -119,7 +119,7 @@ The Amp'ed RF BLE60 is a BLE-to-UART transparent bridge. It buffers all incoming
 
 On every new BLE connection the BLE60 also sends its own initialisation bytes over UART **before** any app data:
 
-```
+```text
 FF FF FF FF FF FF FF FF FF
 AT-AB -CommandMode-\r\n
 AT-AB BDAddress <mac>\r\n
@@ -134,7 +134,7 @@ AT-AB -BypassMode-\r\n          ← transparent mode starts here
 Manually verified against hardware — these are the exact byte sequences the MCU accepts:
 
 | Operation | Frame (hex) |
-|---|---|
+| --- | --- |
 | Power ON | `55 AA 06 02 01 01 09` |
 | Power OFF | `55 AA 06 02 01 00 08` |
 | Speed 1 | `55 AA 06 04 01 01 0B` |
@@ -160,7 +160,7 @@ Manually verified against hardware — these are the exact byte sequences the MC
 
 ## Project Structure
 
-```
+```text
 terraton_fan_app/
 ├── assets/
 │   ├── commands.yaml              # Single source of truth for all BLE command bytes
@@ -259,6 +259,7 @@ Two AVDs are configured: **S24 Ultra** and **Medium Phone API 36.0**.
 ```
 
 > **Emulator already on but no app?**
+>
 > ```powershell
 > cd terraton_fan_app; flutter run -d emulator-5554
 > ```
@@ -319,7 +320,7 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 ## Hard Constraints
 
 | Constraint | Rule |
-|---|---|
+| --- | --- |
 | UUID constants | Live **only** in `ble_constants.dart` — never duplicated |
 | Command bytes | Live **only** in `assets/commands.yaml` — never hardcoded in Dart |
 | BLE writes | Always go through `BleFrameBuilder` → `CommandLoader` → `BleServiceImpl.writeFrame()` |
@@ -337,19 +338,16 @@ These are verified findings from a full codebase audit. All previously identifie
 ### Open (not yet fixed)
 
 | Severity | File | Description |
-|---|---|---|
+| --- | --- | --- |
 | MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet background, `Color(0xFF1E293B)` text) clash with the app's dark theme. The card was ported from an earlier light-theme design and not yet migrated to dark-theme constants. |
 | MEDIUM | `fans_list_screen.dart:275` | Fan status badge hardcoded to "Disconnected". It does not reflect live BLE connection state — the `bleConnectionStateProvider` is not wired into the list screen. |
 | MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | `.then((name) async { await repo.rename... })` pattern: the async work inside `.then()` is fire-and-forget. Rename/delete failures are silently dropped in production (debug mode catches them via the ObjectBox `assert(false)` in `ActiveFanStateNotifier.update`). |
-| LOW | `control_screen.dart:59`, `fan_card.dart:71` | Magic string `'__demo__'` for demo-mode detection is repeated across five call-sites. Should be extracted to a single `const kDemoDeviceId = '__demo__'` in `app_routes.dart` or `fan_device.dart`. |
 | LOW | `splash_screen.dart:131` | Version string `v1.0.0 · SMART BLDC` is hardcoded. Should be read from `package_info_plus` (`packageInfoProvider`) to stay in sync with `pubspec.yaml`. |
-| LOW | `analytics_screen.dart:690` | `_LineChartPainter.shouldRepaint` uses `old.data != data` (identity comparison on a `List`). The chart repaints on every build even if data is unchanged. Use `listEquals(old.data, data)` from `package:flutter/foundation.dart`. |
-| LOW | `control_screen.dart:76` | QR-only devices (no MAC address on first pairing) silently fail to connect — `_connect()` returns early with no user feedback. TODO comment present; needs a BLE-scan prompt as the fallback. |
 
 ### Fixed in `ui-revamp` (2026-05-23)
 
 | Fix | Commit |
-|---|---|
+| --- | --- |
 | Nature mode: locks speed dial, saves/restores pre-nature speed, correct BLE frame order | `fadcaeb` |
 | `BrandMark`: pixel-precise PNG crop using measured content bounds (537×464 canvas, content x=123–421, y=203–272) | `fadcaeb` |
 | Settings rename modal: all `InputBorder` variants suppressed; clear button is plain `Icon`, not a styled container | `fadcaeb` |
@@ -358,13 +356,17 @@ These are verified findings from a full codebase audit. All previously identifie
 | Double `context.mounted` guard in `_import` removed | `9b87be6` |
 | `_DialPainter.shouldRepaint`: `disabledSpeeds.length` replaced with `setEquals()` | `d6beb6a` |
 | `UserNameNotifier.build()` exception scope narrowed from `Object` to `Exception` | `d6beb6a` |
+| Service QR: one-shot expiry `Timer` stored and cancelled in `dispose()`; QR data cached as field (not rebuilt every second tick) | `1df872b` |
+| `_LineChartPainter.shouldRepaint`: identity comparison replaced with `listEquals()` | `3806dc6` |
+| `kDemoDeviceId` extracted to `app_routes.dart`; magic string `'__demo__'` removed from all call-sites | `3806dc6` |
+| `_connect()`: QR-only device with no MAC now shows "Bluetooth Not Linked" dialog with "Scan for Fan" action | `40e5f0b` |
 
 ---
 
 ## Test Coverage
 
 | File | What it covers |
-|---|---|
+| --- | --- |
 | `test/unit/command_loader_test.dart` | YAML config parsing; `buildFrame()` checksum correctness; `statusPoll()` fixed frame; null handling for pending commands |
 | `test/unit/ble_frame_builder_test.dart` | All `BleFrameBuilder` facades map to correct command bytes |
 | `test/unit/ble_response_parser_test.dart` | Response frame validation (header, packet ID, checksum); `parsePowerState`, `parseSpeed`, `parseModeString`, `parseTimer`, `parseRpm`, `parsePowerWatts` |
@@ -380,7 +382,7 @@ These are verified findings from a full codebase audit. All previously identifie
 ## Dependencies
 
 | Package | Version | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `flutter_blue_plus` | ^2.2.1 | BLE scan, connect, GATT write/notify |
 | `mobile_scanner` | ^6.0.4 | QR code scanning |
 | `objectbox` / `objectbox_flutter_libs` | ^4.0.3 | Local database |
@@ -399,7 +401,7 @@ These are verified findings from a full codebase audit. All previously identifie
 ## Roadmap
 
 | Phase | Feature | Status |
-|---|---|---|
+| --- | --- | --- |
 | 1 | BLE connectivity | ✅ Complete |
 | 1 | Full fan control — power, speed, modes, timers | ✅ Complete |
 | 1 | Live telemetry — watts and RPM | ✅ Complete |
