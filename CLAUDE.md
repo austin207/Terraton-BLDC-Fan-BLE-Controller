@@ -212,9 +212,9 @@ Only polls when `fanState.isPowered == true`. Stale values (no response in 5 s) 
 
 ### Demo mode
 
-Demo fan has `deviceId == '__demo__'`; `_isDemo` getter in `ControlScreen` bypasses all BLE calls. `_applyDemoFrame` parses BLE frames locally and updates state via notifier — same result as real hardware.
+Demo fan has `deviceId == kDemoDeviceId` (`'__demo__'`); `_isDemo` getter in `ControlScreen` bypasses all BLE calls. `_applyDemoFrame` parses BLE frames locally and updates state via notifier — same result as real hardware.
 
-Note: `'__demo__'` is a magic string repeated across `fan_card.dart` and `control_screen.dart`. Should become a `const kDemoDeviceId` (open item).
+`kDemoDeviceId` is defined in `lib/shared/app_routes.dart` and imported by `control_screen.dart`, `fan_card.dart`, and `qr_scan_screen.dart`.
 
 ### Analytics (`lib/features/analytics/analytics_screen.dart`)
 
@@ -242,9 +242,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 | MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet, `0xFF1E293B` text) clash with dark theme |
 | MEDIUM | `fans_list_screen.dart:275` | Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider` |
 | MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | Async work in `.then()` callback; rename/delete errors silently dropped in release |
-| LOW | Multiple files | Magic string `'__demo__'` repeated 5×; should be `const kDemoDeviceId` |
 | LOW | `splash_screen.dart:131` | Version string hardcoded; should read from `packageInfoProvider` |
-| LOW | `analytics_screen.dart:690` | `_LineChartPainter.shouldRepaint` uses list identity comparison; use `listEquals` |
 | LOW | `control_screen.dart:76` | QR-only device (no MAC) silently fails to connect with no user feedback |
 
 ---

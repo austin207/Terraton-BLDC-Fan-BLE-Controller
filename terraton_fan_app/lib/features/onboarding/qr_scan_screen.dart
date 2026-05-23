@@ -104,7 +104,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
         _showInvalidSnack();
         return;
       }
-      if (deviceId.isEmpty || deviceId == '__demo__' ||
+      if (deviceId.isEmpty || deviceId == kDemoDeviceId ||
           deviceId.length > 64 || model.length > 64 || fwVersion.length > 32) {
         _showInvalidSnack();
         return;

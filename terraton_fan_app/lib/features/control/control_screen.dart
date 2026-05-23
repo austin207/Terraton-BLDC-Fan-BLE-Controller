@@ -59,7 +59,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   // each BLE notification — not the entire ControlScreen.
   final _debug = ValueNotifier(const _DebugSnapshot());
 
-  bool get _isDemo => widget.fan.deviceId == '__demo__';
+  bool get _isDemo => widget.fan.deviceId == kDemoDeviceId;
 
   @override
   void initState() {

@@ -68,7 +68,7 @@ class FanCard extends ConsumerWidget {
                     ],
                     const SizedBox(height: 6),
                     // ── Status pill badge ─────────────────────────────
-                    _StatusBadge(isDemo: fan.deviceId == '__demo__'),
+                    _StatusBadge(isDemo: fan.deviceId == kDemoDeviceId),
                   ],
                 ),
               ),

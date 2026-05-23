@@ -1,5 +1,6 @@
 // lib/features/analytics/analytics_screen.dart
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -687,7 +688,7 @@ class _LineChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LineChartPainter old) => old.data != data;
+  bool shouldRepaint(_LineChartPainter old) => !listEquals(old.data, data);
 }
 
 // ── Efficiency ring ───────────────────────────────────────────────────────────

@@ -1,4 +1,6 @@
 // lib/shared/app_routes.dart
+const kDemoDeviceId = '__demo__';
+
 abstract final class AppRoutes {
   static const splash             = '/splash';
   static const profileSetup       = '/profile-setup';
