@@ -243,7 +243,6 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 | MEDIUM | `fans_list_screen.dart:275` | Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider` |
 | MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | Async work in `.then()` callback; rename/delete errors silently dropped in release |
 | LOW | `splash_screen.dart:131` | Version string hardcoded; should read from `packageInfoProvider` |
-| LOW | `control_screen.dart:76` | QR-only device (no MAC) silently fails to connect with no user feedback |
 
 ---
 

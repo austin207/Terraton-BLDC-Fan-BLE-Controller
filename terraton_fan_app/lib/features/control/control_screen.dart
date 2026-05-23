@@ -111,12 +111,39 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     context.go(AppRoutes.home);
   }
 
+  void _promptBlePairing() {
+    unawaited(showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bluetooth Not Linked'),
+        content: const Text(
+          'This fan was added via QR code and has not been paired via Bluetooth yet. '
+          'Scan for the fan to connect.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Later'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              unawaited(context.push(AppRoutes.scanBle));
+            },
+            child: const Text('Scan for Fan'),
+          ),
+        ],
+      ),
+    ));
+  }
+
   Future<void> _connect() async {
     if (_connecting) return;
     final mac = _resolvedMac;
-    // TODO(Phase 2): QR-scan path arrives here with no MAC. Surface a BLE-scan
-    // prompt instead of silently returning so the user isn't stuck.
-    if (mac == null) return;
+    if (mac == null) {
+      if (mounted) _promptBlePairing();
+      return;
+    }
 
     _connecting = true;
     try {
