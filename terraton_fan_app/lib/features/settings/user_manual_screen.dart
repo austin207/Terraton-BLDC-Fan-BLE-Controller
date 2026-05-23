@@ -1,7 +1,9 @@
 // lib/features/settings/user_manual_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -123,14 +125,14 @@ const _sections = [
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class UserManualScreen extends StatefulWidget {
+class UserManualScreen extends ConsumerStatefulWidget {
   const UserManualScreen({super.key});
 
   @override
-  State<UserManualScreen> createState() => _UserManualScreenState();
+  ConsumerState<UserManualScreen> createState() => _UserManualScreenState();
 }
 
-class _UserManualScreenState extends State<UserManualScreen> {
+class _UserManualScreenState extends ConsumerState<UserManualScreen> {
   String? _openId;
 
   void _toggle(String id) => setState(() => _openId = _openId == id ? null : id);
@@ -172,7 +174,8 @@ class _UserManualScreenState extends State<UserManualScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Center(
-                    child: Text('END OF MANUAL · v1.0.0',
+                    child: Text(
+                        'END OF MANUAL · v${ref.watch(packageInfoProvider).valueOrNull?.version ?? '—'}',
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 10, color: kTextDim, letterSpacing: 2.0,
                         )),

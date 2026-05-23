@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class ModeControlWidget extends StatelessWidget {
@@ -149,8 +150,7 @@ class _ModeBtn extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               label,
-              style: TextStyle(
-                fontFamily: 'Manrope',
+              style: GoogleFonts.manrope(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: isActive ? kYellow : (enabled ? kText : kTextDim),

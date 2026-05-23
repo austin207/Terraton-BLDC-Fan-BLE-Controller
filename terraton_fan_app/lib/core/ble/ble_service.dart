@@ -119,10 +119,16 @@ class BleServiceImpl implements BleService {
       }
     });
 
-    await FlutterBluePlus.startScan(
-      withServices: [_advServiceGuid, _serviceGuid],
-      timeout: Duration(seconds: timeoutSeconds),
-    );
+    try {
+      await FlutterBluePlus.startScan(
+        withServices: [_advServiceGuid, _serviceGuid],
+        timeout: Duration(seconds: timeoutSeconds),
+      );
+    } on Object catch (_) {
+      // startScan() threw before emitting isScanning:false — reset manually
+      // so callers don't see a permanently-stale scanning state.
+      _setState(app.BleConnectionState.disconnected);
+    }
   }
 
   @override

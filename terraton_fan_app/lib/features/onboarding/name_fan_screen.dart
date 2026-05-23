@@ -46,7 +46,13 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final fan = widget.fan..nickname = _ctrl.text.trim();
+    final fan = FanDevice()
+      ..deviceId   = widget.fan.deviceId
+      ..macAddress = widget.fan.macAddress
+      ..model      = widget.fan.model
+      ..fwVersion  = widget.fan.fwVersion
+      ..addedAt    = widget.fan.addedAt
+      ..nickname   = _ctrl.text.trim();
     await ref.read(fanRepositoryProvider).saveFan(fan);
     if (!mounted) return;
     ref.invalidate(savedFansProvider);

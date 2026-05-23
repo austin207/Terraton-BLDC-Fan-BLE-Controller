@@ -22,8 +22,10 @@ abstract final class AppSettings {
   }
 
   static Future<void> _write(Map<String, dynamic> data) async {
-    final f = await _file();
-    await f.writeAsString(jsonEncode(data));
+    final f   = await _file();
+    final tmp = File('${f.path}.tmp');
+    await tmp.writeAsString(jsonEncode(data));
+    await tmp.rename(f.path);
   }
 
   // ── User name ────────────────────────────────────────────────────────────────

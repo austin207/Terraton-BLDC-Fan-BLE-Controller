@@ -20,28 +20,34 @@ class UsageLogRepositoryImpl implements UsageLogRepository {
   void addLog(UsageLog log) => _box.put(log);
 
   @override
-  List<UsageLog> getLogsInRange(DateTime from, DateTime to) =>
-      _box
-          .query(
-            UsageLog_.startTime
-                .greaterOrEqual(from.millisecondsSinceEpoch)
-                .and(UsageLog_.startTime.lessOrEqual(to.millisecondsSinceEpoch)),
-          )
-          .build()
-          .find();
+  List<UsageLog> getLogsInRange(DateTime from, DateTime to) {
+    final q = _box.query(
+      UsageLog_.startTime
+          .greaterOrEqual(from.millisecondsSinceEpoch)
+          .and(UsageLog_.startTime.lessOrEqual(to.millisecondsSinceEpoch)),
+    ).build();
+    try {
+      return q.find();
+    } finally {
+      q.close();
+    }
+  }
 
   @override
-  List<UsageLog> getLogsForDevice(String deviceId, DateTime from, DateTime to) =>
-      _box
-          .query(
-            UsageLog_.deviceId.equals(deviceId).and(
-              UsageLog_.startTime
-                  .greaterOrEqual(from.millisecondsSinceEpoch)
-                  .and(UsageLog_.startTime.lessOrEqual(to.millisecondsSinceEpoch)),
-            ),
-          )
-          .build()
-          .find();
+  List<UsageLog> getLogsForDevice(String deviceId, DateTime from, DateTime to) {
+    final q = _box.query(
+      UsageLog_.deviceId.equals(deviceId).and(
+        UsageLog_.startTime
+            .greaterOrEqual(from.millisecondsSinceEpoch)
+            .and(UsageLog_.startTime.lessOrEqual(to.millisecondsSinceEpoch)),
+      ),
+    ).build();
+    try {
+      return q.find();
+    } finally {
+      q.close();
+    }
+  }
 
   @override
   List<String> allDeviceIds() {
@@ -54,10 +60,15 @@ class UsageLogRepositoryImpl implements UsageLogRepository {
 
   @override
   void pruneBefore(DateTime cutoff) {
-    final old = _box
+    final q = _box
         .query(UsageLog_.startTime.lessThan(cutoff.millisecondsSinceEpoch))
-        .build()
-        .find();
-    _box.removeMany(old.map((l) => l.id).toList());
+        .build();
+    final List<int> ids;
+    try {
+      ids = q.find().map((l) => l.id).toList();
+    } finally {
+      q.close();
+    }
+    _box.removeMany(ids);
   }
 }

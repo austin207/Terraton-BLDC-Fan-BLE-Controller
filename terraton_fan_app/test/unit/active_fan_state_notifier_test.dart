@@ -182,4 +182,96 @@ void main() {
       expect(c.read(activeFanStateProvider(deviceId)).lastRpm, isNull);
     });
   });
+
+  group('ActiveFanStateNotifier — setBoostActive', () {
+    test('setBoostActive(true) sets isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      c.read(activeFanStateProvider(deviceId).notifier).setBoostActive(true);
+      expect(c.read(activeFanStateProvider(deviceId)).isBoost, true);
+    });
+
+    test('setBoostActive(false) clears isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setBoostActive(true);
+      n.setBoostActive(false);
+      expect(c.read(activeFanStateProvider(deviceId)).isBoost, false);
+    });
+
+    test('setBoostActive(true) blocked when activeMode is nature', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('nature'); // prime with nature
+      n.setBoostActive(true); // nature blocks boost
+      expect(c.read(activeFanStateProvider(deviceId)).isBoost, false);
+    });
+
+    test('setBoostActive(true) allowed when activeMode is smart', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('smart');
+      n.setBoostActive(true);
+      expect(c.read(activeFanStateProvider(deviceId)).isBoost, true);
+    });
+
+    test('setBoostActive(true) does not change activeMode', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('smart');
+      n.setBoostActive(true);
+      expect(c.read(activeFanStateProvider(deviceId)).activeMode, 'smart');
+    });
+  });
+
+  group('ActiveFanStateNotifier — setActiveMode', () {
+    test('setActiveMode(nature) sets activeMode and clears isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setBoostActive(true); // prime boost
+      n.setActiveMode('nature');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, 'nature');
+      expect(s.isBoost, false);
+    });
+
+    test('setActiveMode(smart) sets activeMode and preserves isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setBoostActive(true);
+      n.setActiveMode('smart');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, 'smart');
+      expect(s.isBoost, true);
+    });
+
+    test('setActiveMode(reverse) sets activeMode and preserves isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setBoostActive(true);
+      n.setActiveMode('reverse');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, 'reverse');
+      expect(s.isBoost, true);
+    });
+
+    test('setActiveMode(null) clears activeMode and preserves isBoost', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setBoostActive(true);
+      n.setActiveMode('smart');
+      n.setActiveMode(null);
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, isNull);
+      expect(s.isBoost, true);
+    });
+  });
 }

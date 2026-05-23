@@ -26,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     // SafeArea ensures content clears the status bar on edge-to-edge Android 15+
     // and the system navbar at the bottom.
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
     return Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
@@ -287,6 +287,8 @@ class _BottomNav extends StatelessWidget {
     (Icons.settings_rounded, 'Settings'),
   ];
 
+  static const _innerPadding = 6.0;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -299,49 +301,88 @@ class _BottomNav extends StatelessWidget {
           BoxShadow(color: Colors.black.withAlpha(128), blurRadius: 40, offset: const Offset(0, 16)),
         ],
       ),
-      padding: const EdgeInsets.all(6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch, // pills fill full height
-        children: List.generate(_items.length, (i) {
-          final on = i == active;
-          final (icon, label) = _items[i];
-          return Expanded(
-            child: Semantics(
-              button: true,
-              label: label,
-              selected: on,
-              child: GestureDetector(
-                onTap: () => onChanged(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 280),
-                  curve: Curves.easeInOut,
+      padding: const EdgeInsets.all(_innerPadding),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final itemW = constraints.maxWidth / _items.length;
+          return Stack(
+            children: [
+              // Sliding yellow pill — single element animated across the bar.
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                left: active * itemW,
+                top: 0,
+                bottom: 0,
+                width: itemW,
+                child: Container(
                   decoration: BoxDecoration(
-                    color: on ? kYellow : Colors.transparent,
+                    color: kYellow,
                     borderRadius: BorderRadius.circular(22),
-                    boxShadow: on
-                        ? [BoxShadow(color: kYellow.withAlpha(89), blurRadius: 28, spreadRadius: -4)]
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(icon, size: 22, color: on ? Colors.black : kTextMut),
-                      if (on) ...[
-                        const SizedBox(width: 8),
-                        Text(label,
-                            style: GoogleFonts.manrope(
-                              fontSize: 13, fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            )),
-                      ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: kYellow.withAlpha(89),
+                        blurRadius: 28,
+                        spreadRadius: -4,
+                      ),
                     ],
                   ),
                 ),
               ),
-            ),
+              // Tab buttons — drawn above the pill.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: List.generate(_items.length, (i) {
+                  final on = i == active;
+                  final (icon, label) = _items[i];
+                  return Expanded(
+                    child: Semantics(
+                      button: true,
+                      label: label,
+                      selected: on,
+                      child: GestureDetector(
+                        onTap: () => onChanged(i),
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: Icon(
+                                icon,
+                                key: ValueKey('nav_icon_${i}_$on'),
+                                size: 22,
+                                color: on ? Colors.black : kTextMut,
+                              ),
+                            ),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              child: on
+                                  ? Row(children: [
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        label,
+                                        style: GoogleFonts.manrope(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ])
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
           );
-        }),
+        },
       ),
     );
   }

@@ -23,10 +23,28 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   double _tariff = 5.4;
   late final TextEditingController _tariffCtrl;
 
+  // Cached query results — reloaded on initState and range change only,
+  // not on every build(). Avoids synchronous ObjectBox queries in build()
+  // which runs on every IndexedStack parent rebuild (bottom nav taps).
+  List<UsageLog> _curLogs  = const [];
+  List<UsageLog> _prevLogs = const [];
+
   @override
   void initState() {
     super.initState();
     _tariffCtrl = TextEditingController(text: _tariff.toStringAsFixed(1));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadData());
+  }
+
+  void _reloadData() {
+    if (!mounted) return;
+    final repo = ref.read(usageLogRepositoryProvider);
+    final (curFrom, curTo) = _currentWindow(_range);
+    final (preFrom, preTo) = _prevWindow(_range);
+    setState(() {
+      _curLogs  = repo.getLogsInRange(curFrom, curTo);
+      _prevLogs = repo.getLogsInRange(preFrom, preTo);
+    });
   }
 
   @override
@@ -168,26 +186,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repo     = ref.watch(usageLogRepositoryProvider);
     final fansAsync = ref.watch(savedFansProvider);
 
-    final (curFrom, curTo) = _currentWindow(_range);
-    final (preFrom, preTo) = _prevWindow(_range);
-
-    final curLogs  = repo.getLogsInRange(curFrom, curTo);
-    final prevLogs = repo.getLogsInRange(preFrom, preTo);
-
-    final chartData  = _chartData(curLogs, _range);
-    final total      = _sumKwh(curLogs);
-    final prevTotal  = _sumKwh(prevLogs);
+    final chartData  = _chartData(_curLogs, _range);
+    final total      = _sumKwh(_curLogs);
+    final prevTotal  = _sumKwh(_prevLogs);
     final cmp        = _comparison(total, prevTotal);
     final cost       = total * _tariff;
-    final avgW       = _avgWatts(curLogs);
-    final eff        = _efficiency(curLogs);
+    final avgW       = _avgWatts(_curLogs);
+    final eff        = _efficiency(_curLogs);
 
     // By-fan: group logs by deviceId, map deviceId → fan name.
     final fanMap = <String, double>{};
-    for (final log in curLogs) {
+    for (final log in _curLogs) {
       fanMap[log.deviceId] = (fanMap[log.deviceId] ?? 0) + log.kwh;
     }
     final fanNames = fansAsync.valueOrNull
@@ -234,7 +245,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3),
                 child: GestureDetector(
-                  onTap: () => setState(() => _range = r),
+                  onTap: () { setState(() => _range = r); _reloadData(); },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     height: 36,
@@ -375,7 +386,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         ),
                         onChanged: (v) {
                           final p = double.tryParse(v);
-                          if (p != null && p >= 0) setState(() => _tariff = p);
+                          if (p != null && p >= 0 && p <= 999) setState(() => _tariff = p);
                         },
                       ),
                     ),
@@ -613,6 +624,12 @@ class _LineChartPainter extends CustomPainter {
   final List<(String, double)> data;
   const _LineChartPainter({required this.data});
 
+  // Static paints for values that never change across instances.
+  static final _gridPaint = Paint()
+    ..color = const Color(0x0AFFFFFF)
+    ..strokeWidth = 1;
+  static final _dotInnerPaint = Paint()..color = Colors.black;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
@@ -629,12 +646,8 @@ class _LineChartPainter extends CustomPainter {
         .map((d) => H - P - (d.$2 / maxVal) * (H - P * 2))
         .toList();
 
-    // Grid lines
-    final gridPaint = Paint()
-      ..color = const Color(0x0AFFFFFF)
-      ..strokeWidth = 1;
     for (final g in [0.25, 0.5, 0.75]) {
-      canvas.drawLine(Offset(P, H * g), Offset(W - P, H * g), gridPaint);
+      canvas.drawLine(Offset(P, H * g), Offset(W - P, H * g), _gridPaint);
     }
 
     final path = Path()..moveTo(xs[0], ys[0]);
@@ -643,7 +656,7 @@ class _LineChartPainter extends CustomPainter {
       path.cubicTo(cx, ys[i - 1], cx, ys[i], xs[i], ys[i]);
     }
 
-    // Fill
+    // Fill — shader depends on allZero so computed per-paint.
     final areaPath = Path.from(path)
       ..lineTo(xs.last, H)
       ..lineTo(xs.first, H)
@@ -669,20 +682,19 @@ class _LineChartPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // Dots
+    // Dots — last dot is filled yellow; others are stroke only.
+    final dotColor = allZero ? kYellow.withAlpha(60) : kYellow;
+    final dotStrokePaint = Paint()
+      ..color = dotColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
     for (int i = 0; i < xs.length; i++) {
       final isLast = i == xs.length - 1;
-      canvas.drawCircle(Offset(xs[i], ys[i]), isLast ? 4.5 : 2.5,
-          Paint()..color = isLast ? kYellow : Colors.black);
-      if (!isLast) {
-        canvas.drawCircle(
-          Offset(xs[i], ys[i]),
-          2.5,
-          Paint()
-            ..color = allZero ? kYellow.withAlpha(60) : kYellow
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
+      if (isLast) {
+        canvas.drawCircle(Offset(xs[i], ys[i]), 4.5, Paint()..color = kYellow);
+      } else {
+        canvas.drawCircle(Offset(xs[i], ys[i]), 2.5, _dotInnerPaint);
+        canvas.drawCircle(Offset(xs[i], ys[i]), 2.5, dotStrokePaint);
       }
     }
   }
@@ -706,51 +718,58 @@ class _RingChart extends StatelessWidget {
 
 class _RingPainter extends CustomPainter {
   final int pct;
-  const _RingPainter({required this.pct});
+
+  // Pre-laid-out TextPainter so layout() is not called on every paint().
+  final TextPainter _textPainter;
+
+  _RingPainter({required this.pct})
+      : _textPainter = TextPainter(
+          text: TextSpan(children: [
+            TextSpan(
+                text: pct > 0 ? '$pct' : '--',
+                style: kMonoStyle(size: 18, weight: FontWeight.w600)),
+            if (pct > 0)
+              TextSpan(text: '%', style: kMonoStyle(size: 10, color: kTextMut)),
+          ]),
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+  static const _r  = 38.0;
+  static const _sw = 7.0;
+
+  static final _trackPaint = Paint()
+    ..color = const Color(0x0FFFFFFF)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = _sw;
+
+  static final _arcPaint = Paint()
+    ..color = kYellow
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = _sw
+    ..strokeCap = StrokeCap.round;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    const r  = 38.0;
-    const sw = 7.0;
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+    final cx   = size.width / 2;
+    final cy   = size.height / 2;
+    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: _r);
 
-    canvas.drawArc(rect, 0, 2 * math.pi, false,
-      Paint()
-        ..color = const Color(0x0FFFFFFF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = sw);
+    canvas.drawArc(rect, 0, 2 * math.pi, false, _trackPaint);
 
-    final sweep = 2 * math.pi * pct / 100;
+    final sweep     = 2 * math.pi * pct / 100;
     final glowAlpha = (pct * 1.5).round().clamp(20, 160);
 
     canvas.drawArc(rect, -math.pi / 2, sweep, false,
       Paint()
         ..color = kYellow.withAlpha(glowAlpha)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = sw + 10
+        ..strokeWidth = _sw + 10
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10));
 
-    canvas.drawArc(rect, -math.pi / 2, sweep, false,
-      Paint()
-        ..color = kYellow
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = sw
-        ..strokeCap = StrokeCap.round);
+    canvas.drawArc(rect, -math.pi / 2, sweep, false, _arcPaint);
 
-    final painter = TextPainter(
-      text: TextSpan(children: [
-        TextSpan(
-            text: pct > 0 ? '$pct' : '--',
-            style: kMonoStyle(size: 18, weight: FontWeight.w600)),
-        if (pct > 0)
-          TextSpan(text: '%', style: kMonoStyle(size: 10, color: kTextMut)),
-      ]),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas,
-        Offset(cx - painter.width / 2, cy - painter.height / 2));
+    _textPainter.paint(canvas,
+        Offset(cx - _textPainter.width / 2, cy - _textPainter.height / 2));
   }
 
   @override

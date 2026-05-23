@@ -1,8 +1,9 @@
 // test/widget/user_manual_screen_test.dart
 //
-// UserManualScreen is a purely static accordion — no providers or BLE needed.
-// Uses a GoRouter so context.pop() in the AppBar back button does not throw.
+// UserManualScreen reads packageInfoProvider for the version footer.
+// Uses GoRouter so context.pop() in the AppBar back button does not throw.
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:terraton_fan_app/features/settings/user_manual_screen.dart';
@@ -22,7 +23,7 @@ Widget _buildScreen() {
       ),
     ],
   );
-  return MaterialApp.router(routerConfig: router);
+  return ProviderScope(child: MaterialApp.router(routerConfig: router));
 }
 
 void main() {

@@ -235,6 +235,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   @override
   void dispose() {
+    _connecting = false;
     _telemetryTimer?.cancel();
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
@@ -541,14 +542,18 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
         final watts = ref
             .read(activeFanStateProvider(widget.fan.deviceId))
             .lastWatts ?? 0;
-        ref.read(usageLogRepositoryProvider).addLog(UsageLog(
-          deviceId:    widget.fan.deviceId,
-          startTime:   start,
-          durationSecs: secs,
-          gear:        _segmentGear,
-          watts:       watts,
-          mode:        _segmentMode,
-        ));
+        try {
+          ref.read(usageLogRepositoryProvider).addLog(UsageLog(
+            deviceId:    widget.fan.deviceId,
+            startTime:   start,
+            durationSecs: secs,
+            gear:        _segmentGear,
+            watts:       watts,
+            mode:        _segmentMode,
+          ));
+        } on Object catch (_) {
+          // Store teardown or disk-full; segment is lost but app must not crash.
+        }
       }
     }
     _segmentStart = DateTime.now();

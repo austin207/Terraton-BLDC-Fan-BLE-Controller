@@ -10,10 +10,7 @@ import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
-
-const _kDark       = Color(0xFF000000);
-const _kCardDark   = Color(0xFF141414);
-const _kBracket    = Color(0xFFFFEC00); // yellow accent
+import 'package:terraton_fan_app/shared/theme.dart';
 
 class QrScanScreen extends ConsumerStatefulWidget {
   const QrScanScreen({super.key});
@@ -139,6 +136,9 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 
     if (mac.isEmpty) { _showInvalidSnack(); return; }
 
+    // expSecs <= 0 means missing or explicitly zero — reject as invalid.
+    if (expSecs <= 0) { _showInvalidSnack(); return; }
+
     final expiresAt = DateTime.fromMillisecondsSinceEpoch(expSecs * 1000);
     if (DateTime.now().isAfter(expiresAt)) {
       if (!mounted) return;
@@ -191,7 +191,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     const frameSize = 260.0;
 
     return Scaffold(
-      backgroundColor: _kDark,
+      backgroundColor: kBg,
       body: SafeArea(
         child: Column(
           children: [
@@ -209,7 +209,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: _kCardDark,
+                          color: kCard,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -276,7 +276,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                           gradient: LinearGradient(
                             colors: [
                               Colors.transparent,
-                              _kBracket,
+                              kYellow,
                               Colors.transparent,
                             ],
                           ),
@@ -316,15 +316,15 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: _torchOn ? _kBracket.withAlpha(40) : _kCardDark,
+                  color: _torchOn ? kYellow.withAlpha(40) : kCard,
                   shape: BoxShape.circle,
                   border: _torchOn
-                      ? Border.all(color: _kBracket.withAlpha(160), width: 1.5)
+                      ? Border.all(color: kYellow.withAlpha(160), width: 1.5)
                       : null,
                 ),
                 child: Icon(
                   _torchOn ? Icons.flashlight_on_rounded : Icons.bolt_rounded,
-                  color: _torchOn ? _kBracket : Colors.white70,
+                  color: _torchOn ? kYellow : Colors.white70,
                   size: 24,
                 ),
               ),
@@ -344,7 +344,7 @@ class _CornerBracketPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _kBracket
+      ..color = kYellow
       ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

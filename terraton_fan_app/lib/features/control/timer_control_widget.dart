@@ -2,10 +2,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
-class TimerControlWidget extends StatefulWidget {
-  final int? activeTimerCode; // 0x02, 0x04, 0x08, null, or 0x00 — all mean OFF
+class TimerControlWidget extends StatelessWidget {
+  final int? activeTimerCode; // 0x02=2H, 0x04=4H, 0x08=8H; null/0x00 = OFF
   final bool enabled;
   final void Function(String action) onTimer;
 
@@ -26,51 +27,30 @@ class TimerControlWidget extends StatefulWidget {
   };
 
   @override
-  State<TimerControlWidget> createState() => _TimerControlWidgetState();
-}
-
-class _TimerControlWidgetState extends State<TimerControlWidget> {
-  late String _displayLabel;
-
-  @override
-  void initState() {
-    super.initState();
-    _displayLabel = TimerControlWidget._codeToLabel(widget.activeTimerCode);
-  }
-
-  @override
-  void didUpdateWidget(TimerControlWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.activeTimerCode != widget.activeTimerCode) {
-      setState(() => _displayLabel = TimerControlWidget._codeToLabel(widget.activeTimerCode));
-    }
-  }
-
-  void _onTap(String label) {
-    if (!widget.enabled || label == _displayLabel) return;
-    setState(() => _displayLabel = label);
-    unawaited(HapticFeedback.lightImpact());
-    widget.onTimer(label.toLowerCase());
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // Derive display state from the provider-driven prop so the label is always
+    // in sync with the canonical fan state — no local shadow that can diverge.
+    final displayLabel = _codeToLabel(activeTimerCode);
+
     return Row(
-      children: TimerControlWidget._labels.asMap().entries.map((e) {
+      children: _labels.asMap().entries.map((e) {
         final label    = e.value;
-        final isActive = label == _displayLabel;
+        final isActive = label == displayLabel;
         return Expanded(
           child: Padding(
             padding: EdgeInsets.only(
-              right: e.key < TimerControlWidget._labels.length - 1 ? 8 : 0,
+              right: e.key < _labels.length - 1 ? 8 : 0,
             ),
             child: Semantics(
               button: true,
               label: label == 'OFF' ? 'Timer off' : '$label timer',
               selected: isActive,
-              enabled: widget.enabled,
+              enabled: enabled,
               child: GestureDetector(
-                onTap: () => _onTap(label),
+                onTap: !enabled || isActive ? null : () {
+                  unawaited(HapticFeedback.lightImpact());
+                  onTimer(label.toLowerCase());
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
                   height: 50,
@@ -85,11 +65,10 @@ class _TimerControlWidgetState extends State<TimerControlWidget> {
                   alignment: Alignment.center,
                   child: Text(
                     label,
-                    style: TextStyle(
-                      fontFamily: 'JetBrainsMono',
+                    style: GoogleFonts.jetBrainsMono(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: isActive ? kYellow : (widget.enabled ? kText : kTextDim),
+                      color: isActive ? kYellow : (enabled ? kText : kTextDim),
                       letterSpacing: 0.06,
                     ),
                   ),
