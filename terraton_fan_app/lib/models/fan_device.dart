@@ -30,4 +30,12 @@ class FanDevice {
 
   @Property(type: PropertyType.date)
   DateTime? lastConnectedAt;
+
+  // ── Service access ────────────────────────────────────────────────────────
+  // true when this entry was created by scanning a Service QR from a customer.
+  // The entry self-deletes when serviceExpiresAt is reached.
+  bool isServiceAccess = false;
+
+  @Property(type: PropertyType.date)
+  DateTime? serviceExpiresAt;
 }

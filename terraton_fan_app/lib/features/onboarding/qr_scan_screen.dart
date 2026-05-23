@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
@@ -13,14 +15,14 @@ const _kDark       = Color(0xFF000000);
 const _kCardDark   = Color(0xFF141414);
 const _kBracket    = Color(0xFFFFEC00); // yellow accent
 
-class QrScanScreen extends StatefulWidget {
+class QrScanScreen extends ConsumerStatefulWidget {
   const QrScanScreen({super.key});
 
   @override
-  State<QrScanScreen> createState() => _QrScanScreenState();
+  ConsumerState<QrScanScreen> createState() => _QrScanScreenState();
 }
 
-class _QrScanScreenState extends State<QrScanScreen>
+class _QrScanScreenState extends ConsumerState<QrScanScreen>
     with SingleTickerProviderStateMixin {
   final MobileScannerController _ctrl = MobileScannerController();
   bool _handled     = false;
@@ -85,10 +87,18 @@ class _QrScanScreenState extends State<QrScanScreen>
     if (raw == null) return;
 
     try {
-      final json       = jsonDecode(raw) as Map<String, dynamic>;
-      final deviceId   = json['device_id']  as String?;
-      final model      = json['model']      as String?;
-      final fwVersion  = json['fw_version'] as String?;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+
+      // ── Service access token ──────────────────────────────────────────────
+      if (json['type'] == 'service_access') {
+        unawaited(_handleServiceAccess(json));
+        return;
+      }
+
+      // ── Normal fan pairing QR ─────────────────────────────────────────────
+      final deviceId  = json['device_id']  as String?;
+      final model     = json['model']      as String?;
+      final fwVersion = json['fw_version'] as String?;
 
       if (deviceId == null || model == null || fwVersion == null) {
         _showInvalidSnack();
@@ -109,8 +119,7 @@ class _QrScanScreenState extends State<QrScanScreen>
         ..addedAt   = DateTime.now();
 
       if (mounted) {
-        // Reset _handled when NameFanScreen is popped so the user can re-scan
-        // if they navigate back (e.g. scanned the wrong QR code).
+        // Reset _handled when NameFanScreen is popped so the user can re-scan.
         unawaited(
           context.push(AppRoutes.nameFan, extra: fan).then((_) {
             if (mounted) setState(() => _handled = false);
@@ -120,6 +129,45 @@ class _QrScanScreenState extends State<QrScanScreen>
     } on FormatException {
       _showInvalidSnack();
     }
+  }
+
+  Future<void> _handleServiceAccess(Map<String, dynamic> json) async {
+    final mac      = json['fan_mac']      as String? ?? '';
+    final nickname = json['fan_nickname'] as String? ?? 'Service Fan';
+    final model    = json['model']        as String? ?? '';
+    final expSecs  = json['expires_at']   as int?    ?? 0;
+
+    if (mac.isEmpty) { _showInvalidSnack(); return; }
+
+    final expiresAt = DateTime.fromMillisecondsSinceEpoch(expSecs * 1000);
+    if (DateTime.now().isAfter(expiresAt)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This service QR has expired. Ask the customer to generate a new one.')),
+      );
+      return;
+    }
+
+    _handled = true;
+    final fan = FanDevice()
+      ..deviceId        = 'svc_${mac}_${DateTime.now().millisecondsSinceEpoch}'
+      ..macAddress      = mac
+      ..nickname        = nickname
+      ..model           = model
+      ..isServiceAccess = true
+      ..serviceExpiresAt = expiresAt
+      ..addedAt         = DateTime.now();
+
+    await ref.read(fanRepositoryProvider).saveFan(fan);
+    ref.invalidate(savedFansProvider);
+
+    if (!mounted) return;
+    // Skip naming screen — nickname comes from the QR.
+    unawaited(context.push(AppRoutes.control, extra: fan).then((_) {
+      // Delete the temporary entry when the tech navigates back
+      // (expiry timer in ControlScreen handles mid-session deletion).
+      if (mounted) setState(() => _handled = false);
+    }));
   }
 
   void _showInvalidSnack() {

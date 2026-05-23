@@ -40,10 +40,12 @@ class ControlScreen extends ConsumerStatefulWidget {
 
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
+  Timer? _expiryTimer;
   StreamSubscription<List<int>>? _notifySub;
   late BleService _ble;
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
+  Duration  _serviceRemaining = Duration.zero;
 
   // Tracks the resolved MAC without mutating widget.fan (which is immutable).
   // Populated from widget.fan.macAddress on init; updated after first discovery.
@@ -66,6 +68,46 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (!_isDemo) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
     }
+    if (widget.fan.isServiceAccess) _scheduleServiceExpiry();
+  }
+
+  void _scheduleServiceExpiry() {
+    final expiry = widget.fan.serviceExpiresAt;
+    if (expiry == null) return;
+    final remaining = expiry.difference(DateTime.now());
+    if (remaining.isNegative) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleServiceExpiry());
+      return;
+    }
+    setState(() => _serviceRemaining = remaining);
+    // Update the banner every 30 s; fire exact expiry via a one-shot Timer.
+    _expiryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      final rem = expiry.difference(DateTime.now());
+      if (rem.isNegative) {
+        _expiryTimer?.cancel();
+        unawaited(_handleServiceExpiry());
+      } else {
+        setState(() => _serviceRemaining = rem);
+      }
+    });
+    // One-shot to fire precisely at expiry even between 30 s ticks.
+    Timer(remaining, () {
+      if (mounted) unawaited(_handleServiceExpiry());
+    });
+  }
+
+  Future<void> _handleServiceExpiry() async {
+    _expiryTimer?.cancel();
+    if (!mounted) return;
+    if (!_isDemo) unawaited(_ble.disconnect());
+    await ref.read(fanRepositoryProvider).deleteFan(widget.fan.deviceId);
+    ref.invalidate(savedFansProvider);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Service access has expired. Fan disconnected.')),
+    );
+    context.go(AppRoutes.home);
   }
 
   Future<void> _connect() async {
@@ -166,6 +208,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   @override
   void dispose() {
     _telemetryTimer?.cancel();
+    _expiryTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     if (!_isDemo) unawaited(_ble.disconnect());
     _debug.dispose();
@@ -276,6 +319,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             padding: EdgeInsets.fromLTRB(20, 16, 20, isDisconnected ? 200 : 28),
             child: Column(
               children: [
+                if (widget.fan.isServiceAccess)
+                  _ServiceAccessBanner(remaining: _serviceRemaining),
                 _PowerButton(
                   isPowered: fanState.isPowered,
                   isConnected: enabled,
@@ -306,18 +351,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                ValueListenableBuilder<_DebugSnapshot>(
-                  valueListenable: _debug,
-                  builder: (_, snap, __) => _DebugCard(
-                    sentFrame: snap.sentFrame,
-                    sentLabel: snap.sentLabel,
-                    receivedFrame: snap.receivedFrame,
-                    writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
-                    connectStatus:   _isDemo ? 'demo' : _ble.connectStatus,
-                    writeError: snap.writeError,
+                // Debug card: visible to service technicians only (isServiceAccess).
+                // Regular customers do not see raw BLE frame data.
+                if (widget.fan.isServiceAccess) ...[
+                  const SizedBox(height: 16),
+                  ValueListenableBuilder<_DebugSnapshot>(
+                    valueListenable: _debug,
+                    builder: (_, snap, __) => _DebugCard(
+                      sentFrame: snap.sentFrame,
+                      sentLabel: snap.sentLabel,
+                      receivedFrame: snap.receivedFrame,
+                      writeCharStatus: _isDemo ? 'demo' : _ble.writeCharStatus,
+                      connectStatus:   _isDemo ? 'demo' : _ble.connectStatus,
+                      writeError: snap.writeError,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -338,6 +387,46 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 unawaited(_connect());
               },
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Service access banner ─────────────────────────────────────────────────────
+
+class _ServiceAccessBanner extends StatelessWidget {
+  final Duration remaining;
+  const _ServiceAccessBanner({required this.remaining});
+
+  @override
+  Widget build(BuildContext context) {
+    final h = remaining.inHours;
+    final m = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final timeStr = '${h.toString().padLeft(2, '0')}:$m:$s';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFFEC00),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x47FFEC00)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.build_circle_outlined, color: kYellow, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'SERVICE ACCESS · $timeStr remaining',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, fontWeight: FontWeight.w600, color: kYellow,
+              ),
+            ),
+          ),
         ],
       ),
     );

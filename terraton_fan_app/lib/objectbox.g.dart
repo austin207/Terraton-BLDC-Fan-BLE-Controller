@@ -24,7 +24,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(1, 7689092753891102258),
     name: 'FanDevice',
-    lastPropertyId: const obx_int.IdUid(8, 8724215114432112353),
+    lastPropertyId: const obx_int.IdUid(10, 5638614726256919996),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -73,6 +73,18 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(8, 8724215114432112353),
         name: 'lastConnectedAt',
+        type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(9, 3742940356637995512),
+        name: 'isServiceAccess',
+        type: 1,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 5638614726256919996),
+        name: 'serviceExpiresAt',
         type: 10,
         flags: 0,
       ),
@@ -265,7 +277,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final modelOffset = fbb.writeString(object.model);
         final nicknameOffset = fbb.writeString(object.nickname);
         final fwVersionOffset = fbb.writeString(object.fwVersion);
-        fbb.startTable(9);
+        fbb.startTable(11);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addOffset(2, macAddressOffset);
@@ -274,6 +286,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(5, fwVersionOffset);
         fbb.addInt64(6, object.addedAt.millisecondsSinceEpoch);
         fbb.addInt64(7, object.lastConnectedAt?.millisecondsSinceEpoch);
+        fbb.addBool(8, object.isServiceAccess);
+        fbb.addInt64(9, object.serviceExpiresAt?.millisecondsSinceEpoch);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -284,6 +298,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
           buffer,
           rootOffset,
           18,
+        );
+        final serviceExpiresAtValue = const fb.Int64Reader().vTableGetNullable(
+          buffer,
+          rootOffset,
+          22,
         );
         final object = FanDevice()
           ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0)
@@ -307,7 +326,16 @@ obx_int.ModelDefinition getObjectBoxModel() {
           )
           ..lastConnectedAt = lastConnectedAtValue == null
               ? null
-              : DateTime.fromMillisecondsSinceEpoch(lastConnectedAtValue);
+              : DateTime.fromMillisecondsSinceEpoch(lastConnectedAtValue)
+          ..isServiceAccess = const fb.BoolReader().vTableGet(
+            buffer,
+            rootOffset,
+            20,
+            false,
+          )
+          ..serviceExpiresAt = serviceExpiresAtValue == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(serviceExpiresAtValue);
 
         return object;
       },
@@ -500,6 +528,16 @@ class FanDevice_ {
   /// See [FanDevice.lastConnectedAt].
   static final lastConnectedAt = obx.QueryDateProperty<FanDevice>(
     _entities[0].properties[7],
+  );
+
+  /// See [FanDevice.isServiceAccess].
+  static final isServiceAccess = obx.QueryBooleanProperty<FanDevice>(
+    _entities[0].properties[8],
+  );
+
+  /// See [FanDevice.serviceExpiresAt].
+  static final serviceExpiresAt = obx.QueryDateProperty<FanDevice>(
+    _entities[0].properties[9],
   );
 }
 

@@ -104,7 +104,8 @@ class FanRepositoryImpl implements FanRepository {
 
   @override
   String exportToJson() {
-    final fans = getAllFans();
+    // Service access entries are temporary; never included in the customer's backup.
+    final fans = getAllFans().where((f) => !f.isServiceAccess).toList();
     final map = {
       'version': 1,
       'exported_at': DateTime.now().toUtc().toIso8601String(),

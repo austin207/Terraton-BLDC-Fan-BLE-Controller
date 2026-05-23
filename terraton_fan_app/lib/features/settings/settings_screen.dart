@@ -1,5 +1,6 @@
 // lib/features/settings/settings_screen.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
@@ -9,7 +10,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -152,7 +155,12 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.qr_code_rounded,
             label: 'Service QR',
             chevron: true,
-            onTap: () => _showServiceQr(context),
+            onTap: () {
+              final fans = (ref.read(savedFansProvider).valueOrNull ?? [])
+                  .where((f) => !f.isServiceAccess)
+                  .toList();
+              _showServiceQr(context, fans);
+            },
           ),
         ]),
 
@@ -191,11 +199,11 @@ class SettingsScreen extends ConsumerWidget {
     ));
   }
 
-  void _showServiceQr(BuildContext context) {
+  void _showServiceQr(BuildContext context, List<FanDevice> fans) {
     unawaited(showDialog<void>(
       context: context,
       barrierColor: Colors.black.withAlpha(168),
-      builder: (_) => const _ServiceQrModal(),
+      builder: (_) => _ServiceQrModal(fans: fans),
     ));
   }
 
@@ -463,32 +471,32 @@ class _RenameModalState extends State<_RenameModal> {
 }
 
 // ── Service QR modal ──────────────────────────────────────────────────────────
+// Step 1: fan picker (if multiple fans paired).
+// Step 2: real QR code + 3-hour countdown.
+// The QR encodes JSON that QrScanScreen recognises as a service_access token.
 
 class _ServiceQrModal extends StatefulWidget {
-  const _ServiceQrModal();
+  final List<FanDevice> fans;
+  const _ServiceQrModal({required this.fans});
 
   @override
   State<_ServiceQrModal> createState() => _ServiceQrModalState();
 }
 
 class _ServiceQrModalState extends State<_ServiceQrModal> {
-  static const _ttl = 15 * 60; // 15 minutes in seconds
-  int _remaining = _ttl;
-  Timer? _timer;
+  static const _accessDuration = Duration(hours: 3);
+  static const _ttlSecs        = 3 * 60 * 60;
+
+  FanDevice? _selectedFan;
+  DateTime?  _expiresAt;
+  int        _remaining = _ttlSecs;
+  Timer?     _timer;
 
   @override
   void initState() {
     super.initState();
-    _startTimer();
-  }
-
-  void _startTimer() {
-    _remaining = _ttl;
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _remaining = math.max(0, _remaining - 1));
-    });
+    // Auto-select when exactly one fan is paired.
+    if (widget.fans.length == 1) _selectFan(widget.fans[0]);
   }
 
   @override
@@ -497,8 +505,43 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
     super.dispose();
   }
 
-  String get _mins => (_remaining ~/ 60).toString().padLeft(2, '0');
-  String get _secs => (_remaining % 60).toString().padLeft(2, '0');
+  void _selectFan(FanDevice fan) {
+    setState(() {
+      _selectedFan = fan;
+      _expiresAt   = DateTime.now().add(_accessDuration);
+      _remaining   = _ttlSecs;
+    });
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _remaining = math.max(0, _remaining - 1));
+    });
+  }
+
+  void _regenerate() {
+    setState(() {
+      _expiresAt = DateTime.now().add(_accessDuration);
+      _remaining = _ttlSecs;
+    });
+    _startTimer();
+  }
+
+  String get _hh => (_remaining ~/ 3600).toString().padLeft(2, '0');
+  String get _mm => ((_remaining % 3600) ~/ 60).toString().padLeft(2, '0');
+  String get _ss => (_remaining % 60).toString().padLeft(2, '0');
+
+  String _buildQrData() => jsonEncode({
+    'type':         'service_access',
+    'version':      1,
+    'fan_mac':      _selectedFan!.macAddress,
+    'fan_nickname': _selectedFan!.nickname,
+    'model':        _selectedFan!.model,
+    'expires_at':   _expiresAt!.millisecondsSinceEpoch ~/ 1000,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -521,220 +564,261 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
                 border: Border.all(color: kHairlineStrong),
                 boxShadow: const [BoxShadow(color: Color(0xB3000000), blurRadius: 80)],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close ×
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Icon(Icons.close_rounded, color: kTextMut, size: 16),
-                    ),
-                  ),
-                  // QR chip
-                  Container(
-                    width: 52, height: 52,
-                    decoration: BoxDecoration(
-                      color: const Color(0x1AFFEC00),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0x47FFEC00)),
-                      boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
-                    ),
-                    child: const Icon(Icons.qr_code_rounded, color: kYellow, size: 22),
-                  ),
-                  const SizedBox(height: 18),
-                  Text('Service QR',
-                      style: GoogleFonts.manrope(
-                        fontSize: 20, fontWeight: FontWeight.w700,
-                        color: kText, letterSpacing: -0.2,
-                      )),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Let a Terraton technician temporarily access and control your fans by scanning the code below.',
-                    style: GoogleFonts.manrope(fontSize: 13, color: kTextMut, height: 1.45),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // QR card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: kBg,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0x38FFEC00)),
-                      boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 22)],
-                    ),
-                    child: Column(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: const CustomPaint(
-                            size: Size(184, 184),
-                            painter: _FakeQrPainter(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text('SVC-9F3A·BLDC52',
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 11, fontWeight: FontWeight.w700,
-                              color: kText, letterSpacing: 1.6,
-                            )),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Countdown + regenerate
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: kCard,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: kHairline),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8, height: 8,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle, color: kYellow,
-                            boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 8)],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('EXPIRES IN',
-                                  style: GoogleFonts.jetBrainsMono(
-                                    fontSize: 9, fontWeight: FontWeight.w700,
-                                    color: kTextMut, letterSpacing: 1.8,
-                                  )),
-                              const SizedBox(height: 2),
-                              Text('$_mins:$_secs',
-                                  style: GoogleFonts.jetBrainsMono(
-                                    fontSize: 16, fontWeight: FontWeight.w700,
-                                    color: kText, letterSpacing: 0.4,
-                                  )),
-                            ],
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => setState(_startTimer),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: kHairlineStrong),
-                            ),
-                            child: Text('REGENERATE',
-                                style: GoogleFonts.manrope(
-                                  fontSize: 11, fontWeight: FontWeight.w600,
-                                  color: kText, letterSpacing: 0.6,
-                                )),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // Actions
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 50,
-                          child: TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            style: TextButton.styleFrom(
-                              backgroundColor: kCardHi,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            child: Text('Cancel',
-                                style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: kText)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: SizedBox(
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: kYellow, foregroundColor: Colors.black,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              elevation: 0,
-                            ),
-                            child: Text('Share',
-                                style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w700)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              child: _selectedFan == null
+                  ? _buildFanPicker()
+                  : _buildQrView(),
             ),
           ),
         ),
       ),
     );
   }
-}
 
-// ── FakeQR painter ────────────────────────────────────────────────────────────
-// Deterministic pseudo-random module pattern + 3 finder boxes.
-// Seeded so every render is identical (matches JSX FakeQR logic).
+  // ── Step 1: fan picker ────────────────────────────────────────────────────
 
-class _FakeQrPainter extends CustomPainter {
-  const _FakeQrPainter();
-
-  static const _n = 25;
-
-  bool _rng(int i, int j) {
-    final v = math.sin(i * 12.9898 + j * 78.233) * 43758.5453;
-    return (v - v.truncateToDouble()) > 0.5;
+  Widget _buildFanPicker() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: Alignment.topRight,
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: const SizedBox(width: 32, height: 32,
+                child: Icon(Icons.close_rounded, color: kTextMut, size: 16)),
+          ),
+        ),
+        Container(
+          width: 52, height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0x1AFFEC00),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x47FFEC00)),
+            boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
+          ),
+          child: const Icon(Icons.build_circle_outlined, color: kYellow, size: 22),
+        ),
+        const SizedBox(height: 18),
+        Text('Service QR',
+            style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w700,
+                color: kText, letterSpacing: -0.2)),
+        const SizedBox(height: 6),
+        Text('Select the fan the technician will service.',
+            style: GoogleFonts.manrope(fontSize: 13, color: kTextMut, height: 1.45)),
+        const SizedBox(height: 20),
+        if (widget.fans.isEmpty)
+          Text('No fans paired yet. Add a fan first.',
+              style: GoogleFonts.manrope(fontSize: 13, color: kTextDim))
+        else
+          ...widget.fans.map((fan) {
+            final noMac = fan.macAddress.isEmpty;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GestureDetector(
+                onTap: noMac ? null : () => _selectFan(fan),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: noMac ? kCard.withAlpha(128) : kCard,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kHairline),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(fan.nickname,
+                                style: GoogleFonts.manrope(fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: noMac ? kTextDim : kText)),
+                            if (fan.model.isNotEmpty)
+                              Text(fan.model,
+                                  style: GoogleFonts.jetBrainsMono(fontSize: 10,
+                                      color: kTextMut)),
+                            if (noMac)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text('Connect to this fan once before sharing',
+                                    style: GoogleFonts.manrope(
+                                        fontSize: 11, color: kRed)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          color: noMac ? kTextDim : kTextMut, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity, height: 50,
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              backgroundColor: kCardHi,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: Text('Cancel',
+                style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: kText)),
+          ),
+        ),
+      ],
+    );
   }
 
-  bool _inFinder(int i, int j) {
-    bool f(int oi, int oj) => i >= oi && i < oi + 7 && j >= oj && j < oj + 7;
-    return f(0, 0) || f(0, _n - 7) || f(_n - 7, 0);
+  // ── Step 2: real QR + countdown ──────────────────────────────────────────
+
+  Widget _buildQrView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: Alignment.topRight,
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: const SizedBox(width: 32, height: 32,
+                child: Icon(Icons.close_rounded, color: kTextMut, size: 16)),
+          ),
+        ),
+        Container(
+          width: 52, height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0x1AFFEC00),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x47FFEC00)),
+            boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
+          ),
+          child: const Icon(Icons.qr_code_rounded, color: kYellow, size: 22),
+        ),
+        const SizedBox(height: 18),
+        Text('Service QR',
+            style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w700,
+                color: kText, letterSpacing: -0.2)),
+        const SizedBox(height: 6),
+        Text(
+          'Let a Terraton technician scan this with their copy of the app. '
+          'Access expires in 3 hours.',
+          style: GoogleFonts.manrope(fontSize: 13, color: kTextMut, height: 1.45),
+        ),
+        const SizedBox(height: 18),
+
+        // Real QR code
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: kBg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0x38FFEC00)),
+            boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 22)],
+          ),
+          child: Column(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: QrImageView(
+                  data: _buildQrData(),
+                  size: 184,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: Colors.black,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _selectedFan!.nickname.toUpperCase(),
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 11, fontWeight: FontWeight.w700,
+                  color: kText, letterSpacing: 1.6,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Countdown + regenerate
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kHairline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: kYellow,
+                  boxShadow: [BoxShadow(color: kYellowGlow, blurRadius: 8)],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('EXPIRES IN',
+                        style: GoogleFonts.jetBrainsMono(fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: kTextMut, letterSpacing: 1.8)),
+                    const SizedBox(height: 2),
+                    Text('$_hh:$_mm:$_ss',
+                        style: GoogleFonts.jetBrainsMono(fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: kText, letterSpacing: 0.4)),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: _regenerate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: kHairlineStrong),
+                  ),
+                  child: Text('REGENERATE',
+                      style: GoogleFonts.manrope(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: kText, letterSpacing: 0.6)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        SizedBox(
+          width: double.infinity, height: 50,
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              backgroundColor: kCardHi,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: Text('Done',
+                style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: kText)),
+          ),
+        ),
+      ],
+    );
   }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cell = size.width / _n;
-    final black = Paint()..color = Colors.black;
-    final white = Paint()..color = Colors.white;
-
-    canvas.drawRect(Offset.zero & size, white);
-
-    // Data modules
-    for (var i = 0; i < _n; i++) {
-      for (var j = 0; j < _n; j++) {
-        if (!_inFinder(i, j) && _rng(i, j)) {
-          canvas.drawRect(Rect.fromLTWH(j * cell, i * cell, cell, cell), black);
-        }
-      }
-    }
-
-    // Finder patterns
-    for (final corner in [(0, 0), (0, _n - 7), (_n - 7, 0)]) {
-      final (oi, oj) = corner;
-      canvas.drawRect(Rect.fromLTWH(oj * cell, oi * cell, 7 * cell, 7 * cell), black);
-      canvas.drawRect(Rect.fromLTWH((oj + 1) * cell, (oi + 1) * cell, 5 * cell, 5 * cell), white);
-      canvas.drawRect(Rect.fromLTWH((oj + 2) * cell, (oi + 2) * cell, 3 * cell, 3 * cell), black);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter _) => false;
 }
 
 // ── Section label ─────────────────────────────────────────────────────────────
