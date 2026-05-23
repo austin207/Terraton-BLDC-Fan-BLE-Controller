@@ -490,6 +490,7 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
   FanDevice? _selectedFan;
   DateTime?  _expiresAt;
   int        _remaining = _ttlSecs;
+  String     _qrData    = '';
   Timer?     _timer;
 
   @override
@@ -506,10 +507,11 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
   }
 
   void _selectFan(FanDevice fan) {
+    _expiresAt = DateTime.now().add(_accessDuration);
     setState(() {
       _selectedFan = fan;
-      _expiresAt   = DateTime.now().add(_accessDuration);
       _remaining   = _ttlSecs;
+      _qrData      = _computeQrData(fan, _expiresAt!);
     });
     _startTimer();
   }
@@ -518,14 +520,18 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() => _remaining = math.max(0, _remaining - 1));
+      final next = math.max(0, _remaining - 1);
+      setState(() => _remaining = next);
+      if (next == 0) _timer?.cancel();
     });
   }
 
   void _regenerate() {
+    final newExpiry = DateTime.now().add(_accessDuration);
     setState(() {
-      _expiresAt = DateTime.now().add(_accessDuration);
+      _expiresAt = newExpiry;
       _remaining = _ttlSecs;
+      _qrData    = _computeQrData(_selectedFan!, newExpiry);
     });
     _startTimer();
   }
@@ -534,13 +540,13 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
   String get _mm => ((_remaining % 3600) ~/ 60).toString().padLeft(2, '0');
   String get _ss => (_remaining % 60).toString().padLeft(2, '0');
 
-  String _buildQrData() => jsonEncode({
+  static String _computeQrData(FanDevice fan, DateTime expiresAt) => jsonEncode({
     'type':         'service_access',
     'version':      1,
-    'fan_mac':      _selectedFan!.macAddress,
-    'fan_nickname': _selectedFan!.nickname,
-    'model':        _selectedFan!.model,
-    'expires_at':   _expiresAt!.millisecondsSinceEpoch ~/ 1000,
+    'fan_mac':      fan.macAddress,
+    'fan_nickname': fan.nickname,
+    'model':        fan.model,
+    'expires_at':   expiresAt.millisecondsSinceEpoch ~/ 1000,
   });
 
   @override
@@ -725,7 +731,7 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: QrImageView(
-                  data: _buildQrData(),
+                  data: _qrData,
                   size: 184,
                   backgroundColor: Colors.white,
                   eyeStyle: const QrEyeStyle(

@@ -41,6 +41,7 @@ class ControlScreen extends ConsumerStatefulWidget {
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Timer? _telemetryTimer;
   Timer? _expiryTimer;
+  Timer? _expiryOnceTimer;
   StreamSubscription<List<int>>? _notifySub;
   late BleService _ble;
   DateTime? _lastWattsAt;
@@ -92,7 +93,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       }
     });
     // One-shot to fire precisely at expiry even between 30 s ticks.
-    Timer(remaining, () {
+    _expiryOnceTimer = Timer(remaining, () {
       if (mounted) unawaited(_handleServiceExpiry());
     });
   }
@@ -209,6 +210,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void dispose() {
     _telemetryTimer?.cancel();
     _expiryTimer?.cancel();
+    _expiryOnceTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     if (!_isDemo) unawaited(_ble.disconnect());
     _debug.dispose();
@@ -403,8 +405,8 @@ class _ServiceAccessBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = remaining.inHours;
     final m = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final timeStr = '${h.toString().padLeft(2, '0')}:$m:$s';
+    // Banner updates every 30 s — show HH:MM to avoid misleading seconds precision.
+    final timeStr = '${h.toString().padLeft(2, '0')}:$m';
 
     return Container(
       width: double.infinity,
