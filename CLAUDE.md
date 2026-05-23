@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Android Flutter app that controls a Terraton BLDC ceiling fan over BLE v5.2 via an Amp'ed RF BLE60 module. Fully offline — no backend, no cloud, no HTTP in Phase 1.
 
-```
+```text
 Flutter App --BLE v5.2--> BLE60 Module --UART1--> Fan MCU --> BLDC Motor
 ```
 
@@ -50,7 +50,7 @@ dart run build_runner build --delete-conflicting-outputs
 
 ### Data flow
 
-```
+```text
 assets/commands.yaml
         │
         ▼
@@ -89,7 +89,7 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 **Verified command frames:**
 
 | Operation | Frame (hex) |
-|-----------|-------------|
+| --------- | ----------- |
 | Power ON | `55 AA 06 02 01 01 09` |
 | Power OFF | `55 AA 06 02 01 00 08` |
 | Speed 1–6 | `55 AA 06 04 01 0N checksum` |
@@ -189,9 +189,11 @@ Radial dot-ring design (class name preserved for test compatibility):
 `terraton-full.png` (537×464 px) has large transparent whitespace. Pixel-measured content bounds: x=123–421, y=203–272.
 
 Rendering pattern (crop to exact content bounds):
-```
+
+```text
 Align > ClipRect > SizedBox(contentW × height) > OverflowBox > Transform.translate > Image
 ```
+
 `ClipRect` MUST wrap `SizedBox` (content width), NOT `Align` (full parent width). Wrapping `Align` allows the overflowed image to paint outside `contentW`.
 
 ### Control screen telemetry (`lib/features/control/control_screen.dart`)
@@ -238,7 +240,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 ## Known Open Issues (from 2026-05-23 audit)
 
 | Severity | File | Issue |
-|---|---|---|
+| --- | --- | --- |
 | MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet, `0xFF1E293B` text) clash with dark theme |
 | MEDIUM | `fans_list_screen.dart:275` | Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider` |
 | MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | Async work in `.then()` callback; rename/delete errors silently dropped in release |
