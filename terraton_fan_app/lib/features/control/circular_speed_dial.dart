@@ -3,6 +3,7 @@
 // Implements the radial dot-ring design from the JSX fan-control.jsx spec.
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -363,7 +364,7 @@ class _DialPainter extends CustomPainter {
   bool shouldRepaint(_DialPainter old) =>
       old.speed != speed || old.boost != boost || old.enabled != enabled
       || old.isNature != isNature
-      || old.disabledSpeeds.length != disabledSpeeds.length;
+      || !setEquals(old.disabledSpeeds, disabledSpeeds);
 }
 
 // ── Center readout ────────────────────────────────────────────────────────────

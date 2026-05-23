@@ -23,7 +23,7 @@ class UserNameNotifier extends AsyncNotifier<String> {
   Future<String> build() async {
     try {
       return await AppSettings.loadUserName();
-    } on Object {
+    } on Exception {
       return '';
     }
   }
