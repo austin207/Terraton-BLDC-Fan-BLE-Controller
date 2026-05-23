@@ -524,12 +524,16 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
   @override
   void initState() {
     super.initState();
+    final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
     // in Nature mode, a subsequent switch to Smart/Reverse has a speed to restore.
-    final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     if (s.activeMode == 'nature' && s.speed > 0) {
       _preNatureSpeed = s.speed;
     }
+    // Restore lighting UI state from last persisted values.
+    _colorType       = s.lastLightColorType;
+    _brightnessValue = s.lastLightBrightness;
+    _isLightOn       = s.lastLightIsOn;
   }
 
   /// Flush the completed segment to ObjectBox, then start a new one.
@@ -755,16 +759,22 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
           brightnessValue: _brightnessValue,
           onLightOn: () {
             setState(() => _isLightOn = true);
+            ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
             unawaited(widget.send(BleFrameBuilder.lightOn(),
                 pendingMsg: 'Lighting commands pending from Terraton'));
           },
           onLightOff: () {
             setState(() => _isLightOn = false);
+            ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
             unawaited(widget.send(BleFrameBuilder.lightOff(),
                 pendingMsg: 'Lighting commands pending from Terraton'));
           },
           onColorTypeChanged: (t) {
             setState(() => _colorType = t);
+            ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
             final byte = switch (t) {
               'neutral' => 0x80,
               'cool'    => 0xFF,
@@ -775,6 +785,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
           },
           onBrightness: (v) {
             setState(() => _brightnessValue = v);
+            ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
             final byte = (v * 255).round().clamp(0, 255);
             unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
                 pendingMsg: 'Lighting commands pending from Terraton'));
@@ -1074,6 +1086,19 @@ class _DebugSnapshot {
 
 // ── Debug card ────────────────────────────────────────────────────────────────
 
+// Named palette for the debug card — avoids magic hex values in build().
+const _kDbgBg     = Color(0xFF0F172A);
+const _kDbgBorder = Color(0xFF1E3A5F);
+const _kDbgBlue   = Color(0xFF60A5FA);
+const _kDbgSlate  = Color(0xFF475569);
+const _kDbgGreen  = Color(0xFF34D399);
+const _kDbgRed    = Color(0xFFFCA5A5);
+const _kDbgYellow = Color(0xFFFCD34D);
+const _kDbgPurple = Color(0xFF818CF8);
+const _kDbgSnow   = Color(0xFFE2E8F0);
+const _kDbgMuted  = Color(0xFF94A3B8);
+const _kDbgDim    = Color(0xFF64748B);
+
 class _DebugCard extends StatelessWidget {
   final List<int>? sentFrame;
   final String     sentLabel;
@@ -1126,9 +1151,9 @@ class _DebugCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
+        color: _kDbgBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1E3A5F)),
+        border: Border.all(color: _kDbgBorder),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1139,35 +1164,35 @@ class _DebugCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E3A5F),
+                  color: _kDbgBorder,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text('DEBUG', style: TextStyle(
                   fontSize: 10, fontWeight: FontWeight.w800,
-                  color: Color(0xFF60A5FA), letterSpacing: 1.2,
+                  color: _kDbgBlue, letterSpacing: 1.2,
                 )),
               ),
               const Spacer(),
               const Text('BLE FRAMES', style: TextStyle(
-                fontSize: 10, color: Color(0xFF475569), letterSpacing: 1.0,
+                fontSize: 10, color: _kDbgSlate, letterSpacing: 1.0,
               )),
             ],
           ),
           const SizedBox(height: 10),
           _StatusRow(label: 'CONN', value: connectStatus,
-            color: connectStatus == 'connected' ? const Color(0xFF34D399)
-              : connectStatus.contains('failed') ? const Color(0xFFFCA5A5)
-              : const Color(0xFFFCD34D)),
+            color: connectStatus == 'connected' ? _kDbgGreen
+              : connectStatus.contains('failed') ? _kDbgRed
+              : _kDbgYellow),
           const SizedBox(height: 6),
           _StatusRow(label: 'CHAR', value: writeCharStatus,
-            color: writeCharStatus.startsWith('found') ? const Color(0xFF34D399)
+            color: writeCharStatus.startsWith('found') ? _kDbgGreen
               : writeCharStatus == 'pending' || writeCharStatus == 'disconnected'
-                ? const Color(0xFF64748B)
-                : const Color(0xFFFCA5A5)),
+                ? _kDbgDim
+                : _kDbgRed),
           const SizedBox(height: 10),
           _DebugRow(
             direction: 'TX',
-            color: writeError != null ? const Color(0xFFFCA5A5) : const Color(0xFF34D399),
+            color: writeError != null ? _kDbgRed : _kDbgGreen,
             label: sentFrame != null ? sentLabel : '—',
             hex: sentFrame != null ? _hex(sentFrame!) : '',
           ),
@@ -1175,16 +1200,16 @@ class _DebugCard extends StatelessWidget {
             const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 36),
-              child: Text('ERR: $writeError', style: const TextStyle(
-                fontSize: 10, fontFamily: 'monospace',
-                color: Color(0xFFFCA5A5), height: 1.4,
-              )),
+              child: Text('ERR: $writeError',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10, color: _kDbgRed, height: 1.4,
+                )),
             ),
           ],
           const SizedBox(height: 10),
           _DebugRow(
             direction: 'RX',
-            color: const Color(0xFF818CF8),
+            color: _kDbgPurple,
             label: receivedFrame != null ? _frameLabel(receivedFrame!) : '—',
             hex: receivedFrame != null ? _hex(receivedFrame!) : '',
           ),
@@ -1205,11 +1230,11 @@ class _StatusRow extends StatelessWidget {
     children: [
       Text('$label ', style: const TextStyle(
         fontSize: 10, fontWeight: FontWeight.w700,
-        color: Color(0xFF94A3B8), letterSpacing: 0.8,
+        color: _kDbgMuted, letterSpacing: 0.8,
       )),
       Expanded(
         child: Text(value,
-          style: TextStyle(fontSize: 10, color: color, fontFamily: 'monospace'),
+          style: GoogleFonts.jetBrainsMono(fontSize: 10, color: color),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -1251,7 +1276,7 @@ class _DebugRow extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(label, style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE2E8F0),
+              fontSize: 12, fontWeight: FontWeight.w600, color: _kDbgSnow,
             )),
           ],
         ),
@@ -1259,10 +1284,10 @@ class _DebugRow extends StatelessWidget {
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 36),
-            child: Text(hex, style: const TextStyle(
-              fontSize: 11, fontFamily: 'monospace',
-              color: Color(0xFF94A3B8), letterSpacing: 0.5, height: 1.6,
-            )),
+            child: Text(hex,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, color: _kDbgMuted, letterSpacing: 0.5, height: 1.6,
+              )),
           ),
         ],
       ],

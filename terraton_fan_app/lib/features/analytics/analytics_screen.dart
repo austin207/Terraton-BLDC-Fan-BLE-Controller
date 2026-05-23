@@ -1,4 +1,5 @@
 // lib/features/analytics/analytics_screen.dart
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
@@ -33,7 +35,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   void initState() {
     super.initState();
     _tariffCtrl = TextEditingController(text: _tariff.toStringAsFixed(1));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadData());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reloadData();
+      _loadTariff();
+    });
+  }
+
+  Future<void> _loadTariff() async {
+    final saved = await AppSettings.loadTariff(fallback: _tariff);
+    if (!mounted) return;
+    setState(() {
+      _tariff = saved;
+      _tariffCtrl.text = saved.toStringAsFixed(1);
+    });
   }
 
   void _reloadData() {
@@ -386,7 +400,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         ),
                         onChanged: (v) {
                           final p = double.tryParse(v);
-                          if (p != null && p >= 0 && p <= 999) setState(() => _tariff = p);
+                          if (p != null && p >= 0 && p <= 999) {
+                            setState(() => _tariff = p);
+                            unawaited(AppSettings.saveTariff(p));
+                          }
                         },
                       ),
                     ),

@@ -95,7 +95,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 6584660752010918141),
     name: 'FanState',
-    lastPropertyId: const obx_int.IdUid(9, 8865044660608720712),
+    lastPropertyId: const obx_int.IdUid(12, 1825458419538538317),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -151,6 +151,24 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(9, 8865044660608720712),
         name: 'lastRpm',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(10, 7229972512943856743),
+        name: 'lastLightColorType',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(11, 2528041221205574876),
+        name: 'lastLightBrightness',
+        type: 8,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(12, 1825458419538538317),
+        name: 'lastLightIsOn',
+        type: 1,
         flags: 0,
       ),
     ],
@@ -353,7 +371,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final activeModeOffset = object.activeMode == null
             ? null
             : fbb.writeString(object.activeMode!);
-        fbb.startTable(10);
+        final lastLightColorTypeOffset = fbb.writeString(
+          object.lastLightColorType,
+        );
+        fbb.startTable(13);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.speed);
@@ -363,6 +384,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addBool(6, object.isPowered);
         fbb.addInt64(7, object.lastWatts);
         fbb.addInt64(8, object.lastRpm);
+        fbb.addOffset(9, lastLightColorTypeOffset);
+        fbb.addFloat64(10, object.lastLightBrightness);
+        fbb.addBool(11, object.lastLightIsOn);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -405,6 +429,21 @@ obx_int.ModelDefinition getObjectBoxModel() {
             buffer,
             rootOffset,
             20,
+          )
+          ..lastLightColorType = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGet(buffer, rootOffset, 22, '')
+          ..lastLightBrightness = const fb.Float64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            24,
+            0,
+          )
+          ..lastLightIsOn = const fb.BoolReader().vTableGet(
+            buffer,
+            rootOffset,
+            26,
+            false,
           );
 
         return object;
@@ -586,6 +625,21 @@ class FanState_ {
   /// See [FanState.lastRpm].
   static final lastRpm = obx.QueryIntegerProperty<FanState>(
     _entities[1].properties[8],
+  );
+
+  /// See [FanState.lastLightColorType].
+  static final lastLightColorType = obx.QueryStringProperty<FanState>(
+    _entities[1].properties[9],
+  );
+
+  /// See [FanState.lastLightBrightness].
+  static final lastLightBrightness = obx.QueryDoubleProperty<FanState>(
+    _entities[1].properties[10],
+  );
+
+  /// See [FanState.lastLightIsOn].
+  static final lastLightIsOn = obx.QueryBooleanProperty<FanState>(
+    _entities[1].properties[11],
   );
 }
 

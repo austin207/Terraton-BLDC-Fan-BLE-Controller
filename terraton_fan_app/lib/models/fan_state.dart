@@ -17,6 +17,11 @@ class FanState {
   int? lastWatts;
   int? lastRpm;
 
+  // Lighting UI state — persisted so the panel restores on reconnect.
+  String lastLightColorType  = 'warm'; // 'warm' | 'neutral' | 'cool'
+  double lastLightBrightness = 0.7;
+  bool   lastLightIsOn       = false;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -28,11 +33,15 @@ class FanState {
           activeTimerCode == other.activeTimerCode &&
           isPowered == other.isPowered &&
           lastWatts == other.lastWatts &&
-          lastRpm == other.lastRpm;
+          lastRpm == other.lastRpm &&
+          lastLightColorType == other.lastLightColorType &&
+          lastLightBrightness == other.lastLightBrightness &&
+          lastLightIsOn == other.lastLightIsOn;
 
   @override
   int get hashCode => Object.hash(
-      deviceId, speed, isBoost, activeMode, activeTimerCode, isPowered, lastWatts, lastRpm);
+      deviceId, speed, isBoost, activeMode, activeTimerCode, isPowered,
+      lastWatts, lastRpm, lastLightColorType, lastLightBrightness, lastLightIsOn);
 }
 
 // Nullable fields that may need explicit null use a getter param: () => null
@@ -45,15 +54,21 @@ extension FanStateCopyWith on FanState {
     bool? isPowered,
     int? Function()? lastWatts,
     int? Function()? lastRpm,
+    String? lastLightColorType,
+    double? lastLightBrightness,
+    bool? lastLightIsOn,
   }) =>
       FanState()
-        ..id              = id
-        ..deviceId        = deviceId
-        ..speed           = speed            ?? this.speed
-        ..isBoost         = isBoost          ?? this.isBoost
-        ..activeMode      = activeMode       != null ? activeMode()       : this.activeMode
-        ..activeTimerCode = activeTimerCode  != null ? activeTimerCode()  : this.activeTimerCode
-        ..isPowered       = isPowered        ?? this.isPowered
-        ..lastWatts       = lastWatts        != null ? lastWatts()        : this.lastWatts
-        ..lastRpm         = lastRpm          != null ? lastRpm()          : this.lastRpm;
+        ..id                  = id
+        ..deviceId            = deviceId
+        ..speed               = speed               ?? this.speed
+        ..isBoost             = isBoost             ?? this.isBoost
+        ..activeMode          = activeMode          != null ? activeMode()      : this.activeMode
+        ..activeTimerCode     = activeTimerCode     != null ? activeTimerCode() : this.activeTimerCode
+        ..isPowered           = isPowered           ?? this.isPowered
+        ..lastWatts           = lastWatts           != null ? lastWatts()       : this.lastWatts
+        ..lastRpm             = lastRpm             != null ? lastRpm()         : this.lastRpm
+        ..lastLightColorType  = lastLightColorType  ?? this.lastLightColorType
+        ..lastLightBrightness = lastLightBrightness ?? this.lastLightBrightness
+        ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn;
 }

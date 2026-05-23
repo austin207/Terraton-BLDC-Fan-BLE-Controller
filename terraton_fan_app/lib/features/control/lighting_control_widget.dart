@@ -312,7 +312,32 @@ class _TickPainter extends CustomPainter {
   static const _steps  = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
   static const _labels = ['0', '20', '40', '60', '80', '100'];
 
-  const _TickPainter({required this.value, required this.enabled});
+  static const _kDimText = Color(0xFF5C5C58);
+  static const _kLitText = Color(0xFFF4F4F2);
+
+  // Pre-laid painters for dim and lit variants — avoids TextPainter.layout()
+  // inside paint(), which executes on every frame during slider drags.
+  final List<TextPainter> _tpsDim;
+  final List<TextPainter> _tpsLit;
+
+  static List<TextPainter> _makeTps(Color color) => List.unmodifiable(
+    _labels.map((l) => TextPainter(
+      text: TextSpan(
+        text: l,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+          color: color,
+          letterSpacing: 0.4,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout()),
+  );
+
+  _TickPainter({required this.value, required this.enabled})
+      : _tpsDim = _makeTps(_kDimText),
+        _tpsLit = _makeTps(_kLitText);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -323,8 +348,6 @@ class _TickPainter extends CustomPainter {
 
     const kYellowC  = Color(0xFFFFEC00);
     const kInactive = Color(0x28FFFFFF);
-    const kDimText  = Color(0xFF5C5C58);
-    const kLitText  = Color(0xFFF4F4F2);
 
     final active   = enabled ? kYellowC : const Color(0x50FFEC00);
     final inactive = kInactive;
@@ -363,20 +386,7 @@ class _TickPainter extends CustomPainter {
         );
       }
 
-      // Label below tick / handle
-      final tp = TextPainter(
-        text: TextSpan(
-          text: _labels[i],
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-            color: (isHandle && enabled) ? kLitText : kDimText,
-            letterSpacing: 0.4,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
+      final tp = (isHandle && enabled) ? _tpsLit[i] : _tpsDim[i];
       final lx = (x - tp.width / 2).clamp(0.0, size.width - tp.width);
       tp.paint(canvas, Offset(lx, labelTop));
     }

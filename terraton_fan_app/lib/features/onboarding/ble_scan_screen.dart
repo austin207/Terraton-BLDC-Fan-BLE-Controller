@@ -61,9 +61,11 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
       return;
     }
 
+    // Cancel the old subscription before clearing results so a stale delivery
+    // from the outgoing sub cannot overwrite the fresh empty list.
+    await _sub?.cancel();
     setState(() { _scanning = true; _timedOut = false; _results = []; });
 
-    await _sub?.cancel();
     if (!mounted) return;
     _sub = _ble.scanResultsStream.listen((fans) {
       if (mounted) setState(() => _results = fans);
@@ -81,7 +83,9 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
       if (mounted) setState(() { _scanning = false; _timedOut = true; });
       return;
     }
-    if (!mounted) return;
+    // startScan resolved normally — cancel the UI timer and clear the scanning flag.
+    _timeout?.cancel();
+    if (mounted) setState(() { _scanning = false; _timedOut = _results.isEmpty; });
   }
 
   @override

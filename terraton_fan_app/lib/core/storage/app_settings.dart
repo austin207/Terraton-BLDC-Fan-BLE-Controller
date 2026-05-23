@@ -59,4 +59,21 @@ abstract final class AppSettings {
     final m = await _read();
     await _write({...m, 'profile_set': true});
   }
+
+  // ── Tariff (₹ / kWh) ────────────────────────────────────────────────────────
+
+  static Future<double> loadTariff({double fallback = 5.4}) async {
+    final m = await _read();
+    final v = m['tariff'];
+    if (v is num) {
+      final d = v.toDouble();
+      if (d >= 0 && d <= 999) return d;
+    }
+    return fallback;
+  }
+
+  static Future<void> saveTariff(double tariff) async {
+    final m = await _read();
+    await _write({...m, 'tariff': tariff});
+  }
 }

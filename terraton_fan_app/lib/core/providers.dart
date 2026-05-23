@@ -139,6 +139,16 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     isBoost: mode == 'nature' ? false : state.isBoost,
     activeMode: () => mode,
   ));
+
+  void updateLighting({
+    required String colorType,
+    required double brightness,
+    required bool isOn,
+  }) => update(state.copyWith(
+    lastLightColorType:  colorType,
+    lastLightBrightness: brightness,
+    lastLightIsOn:       isOn,
+  ));
 }
 
 // autoDispose releases the notifier when no widget is watching it,

@@ -51,11 +51,14 @@ class UsageLogRepositoryImpl implements UsageLogRepository {
 
   @override
   List<String> allDeviceIds() {
-    final ids = <String>{};
-    for (final log in _box.getAll()) {
-      ids.add(log.deviceId);
+    final q = _box.query().build();
+    try {
+      final pq = q.property(UsageLog_.deviceId);
+      pq.distinct = true;
+      return pq.find().cast<String>();
+    } finally {
+      q.close();
     }
-    return ids.toList();
   }
 
   @override

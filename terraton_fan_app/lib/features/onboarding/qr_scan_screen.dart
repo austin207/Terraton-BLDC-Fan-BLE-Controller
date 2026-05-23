@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -213,16 +214,16 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white, size: 16),
+                            color: kText, size: 16),
                       ),
                     ),
                   ),
-                  const Text(
+                  Text(
                     'Scan Fan QR',
-                    style: TextStyle(
-                      color: Colors.white,
+                    style: GoogleFonts.manrope(
+                      color: kText,
                       fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -291,13 +292,13 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             const Spacer(),
 
             // ── Instructions ─────────────────────────────────────────────────
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 44),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 44),
               child: Text(
                 'Position the QR code found on your fan packaging within the frame to automatically connect.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFFB0BCC9),
+                style: GoogleFonts.manrope(
+                  color: kTextMut,
                   fontSize: 14,
                   height: 1.55,
                 ),
@@ -324,7 +325,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 ),
                 child: Icon(
                   _torchOn ? Icons.flashlight_on_rounded : Icons.bolt_rounded,
-                  color: _torchOn ? kYellow : Colors.white70,
+                  color: _torchOn ? kYellow : kTextMut,
                   size: 24,
                 ),
               ),

@@ -273,7 +273,7 @@ class _RenameModalState extends State<_RenameModal> {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialName);
     _ctrl.addListener(() => setState(() {}));
-    Future.delayed(const Duration(milliseconds: 80), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
   }

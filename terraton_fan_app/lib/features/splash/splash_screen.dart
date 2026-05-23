@@ -2,21 +2,24 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
+class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _breatheCtrl;
 
@@ -54,6 +57,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final version = ref.watch(packageInfoProvider).valueOrNull?.version ?? '—';
+
     return Scaffold(
       backgroundColor: kBg,
       body: Stack(
@@ -126,12 +131,11 @@ class _SplashScreenState extends State<SplashScreen>
             bottom: 48,
             child: Column(
               children: [
-                _BreatheDots(ctrl: _breatheCtrl),
+                const _BreatheDots(),
                 const SizedBox(height: 14),
-                const Text(
-                  'v1.0.0 · SMART BLDC',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
+                Text(
+                  'v$version · SMART BLDC',
+                  style: GoogleFonts.jetBrainsMono(
                     fontSize: 10,
                     color: kTextDim,
                     letterSpacing: 2.4,
@@ -147,8 +151,7 @@ class _SplashScreenState extends State<SplashScreen>
 }
 
 class _BreatheDots extends StatefulWidget {
-  final AnimationController ctrl;
-  const _BreatheDots({required this.ctrl});
+  const _BreatheDots();
 
   @override
   State<_BreatheDots> createState() => _BreathDotsState();

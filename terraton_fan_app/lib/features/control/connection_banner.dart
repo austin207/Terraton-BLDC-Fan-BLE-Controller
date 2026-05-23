@@ -59,9 +59,8 @@ class ConnectionLostCard extends StatelessWidget {
               ),
               child: Text(
                 connectStatus!,
-                style: TextStyle(
+                style: GoogleFonts.jetBrainsMono(
                   fontSize: 11,
-                  fontFamily: 'monospace',
                   color: connectStatus!.contains('failed') ? kRed : kTextMut,
                 ),
               ),
