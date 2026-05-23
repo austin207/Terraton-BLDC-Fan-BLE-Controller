@@ -8,7 +8,6 @@ class ModeControlWidget extends StatelessWidget {
   final String? activeMode;
   final bool isBoost;
   final bool enabled;
-  final bool boostEnabled; // false when Nature is active
   final void Function(String mode) onMode;
   final VoidCallback onBoost;
 
@@ -19,7 +18,6 @@ class ModeControlWidget extends StatelessWidget {
     required this.enabled,
     required this.onMode,
     required this.onBoost,
-    this.boostEnabled = true,
   });
 
   // Nature uses a custom PNG asset; Smart and Reverse use Material icons.
@@ -60,21 +58,20 @@ class ModeControlWidget extends StatelessWidget {
             button: true,
             label: 'Boost mode',
             selected: isBoost,
-            enabled: enabled && boostEnabled,
+            enabled: enabled,
             child: GestureDetector(
               key: const ValueKey('boost_button'),
-              onTap: (enabled && boostEnabled)
+              onTap: enabled
                   ? () {
                       unawaited(HapticFeedback.lightImpact());
                       onBoost();
                     }
                   : null,
               child: _ModeBtn(
-                // Boost uses the rocket PNG asset
                 assetPath: 'assets/icons/boost_rocket.png',
                 label: 'Boost',
                 isActive: isBoost,
-                enabled: enabled && boostEnabled,
+                enabled: enabled,
                 onTap: null, // handled by outer GestureDetector
               ),
             ),
@@ -103,7 +100,7 @@ class _ModeBtn extends StatelessWidget {
   final String     label;
   final bool       isActive;
   final bool       enabled;
-  final VoidCallback? onTap;
+  final VoidCallback? onTap;   // null for boost (outer GestureDetector handles it)
 
   const _ModeBtn({
     this.icon,
@@ -111,7 +108,7 @@ class _ModeBtn extends StatelessWidget {
     required this.label,
     required this.isActive,
     required this.enabled,
-    required this.onTap,
+    this.onTap,
   });
 
   @override

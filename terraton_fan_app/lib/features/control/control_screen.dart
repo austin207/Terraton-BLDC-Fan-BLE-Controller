@@ -399,6 +399,20 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
   int   _segmentGear = 0;
   String? _segmentMode;
 
+  // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
+  int _preNatureSpeed = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
+    // in Nature mode, a subsequent switch to Smart/Reverse has a speed to restore.
+    final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+    if (s.activeMode == 'nature' && s.speed > 0) {
+      _preNatureSpeed = s.speed;
+    }
+  }
+
   /// Flush the completed segment to ObjectBox, then start a new one.
   /// Watts are read from the live fan state at flush time.
   void _flushSegment({required int newGear, required String? newMode}) {
@@ -477,9 +491,10 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
           activeMode: fanState.activeMode,
           isBoost: fanState.isBoost,
           enabled: enabled,
-          boostEnabled: fanState.activeMode != 'nature',
           onMode: (m) {
             final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+            // Tapping the already-active mode toggles it off.
             if (fanState.activeMode == m) {
               _flushSegment(newGear: fanState.speed, newMode: null);
               notifier.setActiveMode(null);
@@ -489,6 +504,40 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
               }
               return;
             }
+
+            // Switching INTO Nature: save current speed, then activate.
+            if (m == 'nature') {
+              _preNatureSpeed = fanState.speed;
+              _flushSegment(newGear: fanState.speed, newMode: 'nature');
+              notifier.setActiveMode('nature');
+              unawaited(widget.send(BleFrameBuilder.setNature(), label: 'Mode: nature'));
+              return;
+            }
+
+            // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
+            if (fanState.activeMode == 'nature') {
+              final restore = (m == 'smart' && _preNatureSpeed < 3)
+                  ? 3
+                  : _preNatureSpeed;
+              notifier.setActiveMode(m);
+              if (restore > 0) notifier.updateSpeed(restore);
+              _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
+              // Mode frame first so the hardware exits Nature before receiving
+              // the speed command — avoids the hardware ignoring the speed frame.
+              final frame = switch (m) {
+                'smart'   => BleFrameBuilder.setSmart(),
+                'reverse' => BleFrameBuilder.setReverse(),
+                _         => null,
+              };
+              unawaited(widget.send(frame, label: 'Mode: $m'));
+              if (restore > 0) {
+                unawaited(widget.send(BleFrameBuilder.setSpeed(restore),
+                    label: 'Speed $restore'));
+              }
+              return;
+            }
+
+            // Normal activation (Smart/Reverse, not from Nature).
             if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
               notifier.updateSpeed(3);
               unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
@@ -496,7 +545,6 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
             _flushSegment(newGear: fanState.speed, newMode: m);
             notifier.setActiveMode(m);
             final frame = switch (m) {
-              'nature'  => BleFrameBuilder.setNature(),
               'reverse' => BleFrameBuilder.setReverse(),
               'smart'   => BleFrameBuilder.setSmart(),
               _         => null,
@@ -504,8 +552,17 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
             unawaited(widget.send(frame, label: 'Mode: $m'));
           },
           onBoost: () {
-            if (fanState.activeMode == 'nature') return;
             final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+            // Nature → Boost: clear Nature, activate Boost, skip speed restore.
+            if (fanState.activeMode == 'nature') {
+              _flushSegment(newGear: fanState.speed, newMode: 'boost');
+              notifier.setActiveMode(null);
+              notifier.setBoostActive(true);
+              unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
+              return;
+            }
+
             if (fanState.isBoost) {
               _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
               notifier.setBoostActive(false);

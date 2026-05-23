@@ -371,7 +371,7 @@ class _RenameModalState extends State<_RenameModal> {
                         BoxShadow(color: kYellowGlow, blurRadius: 22),
                       ],
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+                    padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
                     child: Row(
                       children: [
                         Expanded(
@@ -386,7 +386,13 @@ class _RenameModalState extends State<_RenameModal> {
                             decoration: const InputDecoration(
                               counterText: '',
                               border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(vertical: 14),
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              focusedErrorBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              filled: false,
+                              contentPadding: EdgeInsets.symmetric(vertical: 13),
                             ),
                             onSubmitted: (_) => unawaited(_save()),
                           ),
@@ -394,12 +400,9 @@ class _RenameModalState extends State<_RenameModal> {
                         if (_ctrl.text.isNotEmpty)
                           GestureDetector(
                             onTap: () => _ctrl.clear(),
-                            child: Container(
-                              width: 36, height: 36,
-                              decoration: BoxDecoration(
-                                color: kCardHi, borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.close_rounded, color: kTextMut, size: 14),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.close_rounded, color: kTextMut, size: 16),
                             ),
                           ),
                       ],

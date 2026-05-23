@@ -60,13 +60,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top brand
+            // Top brand — left-aligned to match content grid (28 px horizontal)
             const Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: BrandMark(height: 40),
-              ),
+              padding: EdgeInsets.fromLTRB(28, 20, 28, 0),
+              child: BrandMark(height: 40),
             ),
 
             // Main content — vertically centred
@@ -151,7 +148,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.all(18),
                         ),
-                        onSubmitted: (_) => _continue(),
+                        onSubmitted: (_) => unawaited(_continue()),
                       ),
                     ),
                     const SizedBox(height: 48),
