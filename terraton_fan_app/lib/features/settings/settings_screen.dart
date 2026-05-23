@@ -230,11 +230,9 @@ class SettingsScreen extends ConsumerWidget {
       final count = await ref.read(fanRepositoryProvider).importFromJson(json);
       if (!context.mounted) return;
       ref.invalidate(savedFansProvider);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Imported $count fan(s).')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported $count fan(s).')),
+      );
     } on FormatException {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -320,13 +318,9 @@ class _RenameModalState extends State<_RenameModal> {
                     alignment: Alignment.topRight,
                     child: GestureDetector(
                       onTap: () => Navigator.of(context).pop(),
-                      child: Container(
+                      child: const SizedBox(
                         width: 32, height: 32,
-                        decoration: BoxDecoration(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.close_rounded, color: kTextMut, size: 16),
+                        child: Icon(Icons.close_rounded, color: kTextMut, size: 16),
                       ),
                     ),
                   ),

@@ -20,7 +20,8 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
-  final _ctrl = TextEditingController();
+  final _ctrl      = TextEditingController();
+  final _focusNode = FocusNode();
 
   bool get _valid => _ctrl.text.trim().length >= 2;
 
@@ -28,13 +29,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   void initState() {
     super.initState();
     _ctrl.addListener(() => setState(() {}));
-    // Soft focus after mount (matches JSX setTimeout 200 ms)
     Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) FocusScope.of(context).requestFocus(_focusNode);
     });
   }
-
-  final _focusNode = FocusNode();
 
   @override
   void dispose() {

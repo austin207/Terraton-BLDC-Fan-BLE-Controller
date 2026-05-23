@@ -445,6 +445,97 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
     _    => '',
   };
 
+  void _onMode(String m) {
+    final fan      = widget.fan;
+    final fanState = ref.read(activeFanStateProvider(fan.deviceId));
+    final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+    // Tapping the already-active mode toggles it off.
+    if (fanState.activeMode == m) {
+      _flushSegment(newGear: fanState.speed, newMode: null);
+      notifier.setActiveMode(null);
+      if (fanState.speed > 0) {
+        unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
+            label: 'Speed ${fanState.speed}'));
+      }
+      return;
+    }
+
+    // Switching INTO Nature: save current speed, then activate.
+    if (m == 'nature') {
+      _preNatureSpeed = fanState.speed;
+      _flushSegment(newGear: fanState.speed, newMode: 'nature');
+      notifier.setActiveMode('nature');
+      unawaited(widget.send(BleFrameBuilder.setNature(), label: 'Mode: nature'));
+      return;
+    }
+
+    // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
+    if (fanState.activeMode == 'nature') {
+      final restore = (m == 'smart' && _preNatureSpeed < 3) ? 3 : _preNatureSpeed;
+      notifier.setActiveMode(m);
+      if (restore > 0) notifier.updateSpeed(restore);
+      _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
+      // Mode frame first so the hardware exits Nature before receiving the speed command.
+      final frame = switch (m) {
+        'smart'   => BleFrameBuilder.setSmart(),
+        'reverse' => BleFrameBuilder.setReverse(),
+        _         => null,
+      };
+      unawaited(widget.send(frame, label: 'Mode: $m'));
+      if (restore > 0) {
+        unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
+      }
+      return;
+    }
+
+    // Normal activation (Smart/Reverse, not from Nature).
+    if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
+      notifier.updateSpeed(3);
+      unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
+    }
+    _flushSegment(newGear: fanState.speed, newMode: m);
+    notifier.setActiveMode(m);
+    final frame = switch (m) {
+      'reverse' => BleFrameBuilder.setReverse(),
+      'smart'   => BleFrameBuilder.setSmart(),
+      _         => null,
+    };
+    unawaited(widget.send(frame, label: 'Mode: $m'));
+  }
+
+  void _onBoost() {
+    final fan      = widget.fan;
+    final fanState = ref.read(activeFanStateProvider(fan.deviceId));
+    final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+    // Nature → Boost: clear Nature, activate Boost, skip speed restore.
+    if (fanState.activeMode == 'nature') {
+      _flushSegment(newGear: fanState.speed, newMode: 'boost');
+      notifier.setActiveMode(null);
+      notifier.setBoostActive(true);
+      unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
+      return;
+    }
+
+    if (fanState.isBoost) {
+      _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
+      notifier.setBoostActive(false);
+      final restoreFrame = switch (fanState.activeMode) {
+        'reverse' => BleFrameBuilder.setReverse(),
+        'smart'   => BleFrameBuilder.setSmart(),
+        _         => null,
+      };
+      if (restoreFrame != null) {
+        unawaited(widget.send(restoreFrame, label: 'Mode: ${fanState.activeMode}'));
+      }
+    } else {
+      _flushSegment(newGear: fanState.speed, newMode: 'boost');
+      notifier.setBoostActive(true);
+      unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final fan      = widget.fan;
@@ -491,95 +582,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
           activeMode: fanState.activeMode,
           isBoost: fanState.isBoost,
           enabled: enabled,
-          onMode: (m) {
-            final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-
-            // Tapping the already-active mode toggles it off.
-            if (fanState.activeMode == m) {
-              _flushSegment(newGear: fanState.speed, newMode: null);
-              notifier.setActiveMode(null);
-              if (fanState.speed > 0) {
-                unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
-                    label: 'Speed ${fanState.speed}'));
-              }
-              return;
-            }
-
-            // Switching INTO Nature: save current speed, then activate.
-            if (m == 'nature') {
-              _preNatureSpeed = fanState.speed;
-              _flushSegment(newGear: fanState.speed, newMode: 'nature');
-              notifier.setActiveMode('nature');
-              unawaited(widget.send(BleFrameBuilder.setNature(), label: 'Mode: nature'));
-              return;
-            }
-
-            // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
-            if (fanState.activeMode == 'nature') {
-              final restore = (m == 'smart' && _preNatureSpeed < 3)
-                  ? 3
-                  : _preNatureSpeed;
-              notifier.setActiveMode(m);
-              if (restore > 0) notifier.updateSpeed(restore);
-              _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
-              // Mode frame first so the hardware exits Nature before receiving
-              // the speed command — avoids the hardware ignoring the speed frame.
-              final frame = switch (m) {
-                'smart'   => BleFrameBuilder.setSmart(),
-                'reverse' => BleFrameBuilder.setReverse(),
-                _         => null,
-              };
-              unawaited(widget.send(frame, label: 'Mode: $m'));
-              if (restore > 0) {
-                unawaited(widget.send(BleFrameBuilder.setSpeed(restore),
-                    label: 'Speed $restore'));
-              }
-              return;
-            }
-
-            // Normal activation (Smart/Reverse, not from Nature).
-            if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
-              notifier.updateSpeed(3);
-              unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
-            }
-            _flushSegment(newGear: fanState.speed, newMode: m);
-            notifier.setActiveMode(m);
-            final frame = switch (m) {
-              'reverse' => BleFrameBuilder.setReverse(),
-              'smart'   => BleFrameBuilder.setSmart(),
-              _         => null,
-            };
-            unawaited(widget.send(frame, label: 'Mode: $m'));
-          },
-          onBoost: () {
-            final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-
-            // Nature → Boost: clear Nature, activate Boost, skip speed restore.
-            if (fanState.activeMode == 'nature') {
-              _flushSegment(newGear: fanState.speed, newMode: 'boost');
-              notifier.setActiveMode(null);
-              notifier.setBoostActive(true);
-              unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
-              return;
-            }
-
-            if (fanState.isBoost) {
-              _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
-              notifier.setBoostActive(false);
-              final restoreFrame = switch (fanState.activeMode) {
-                'reverse' => BleFrameBuilder.setReverse(),
-                'smart'   => BleFrameBuilder.setSmart(),
-                _         => null,
-              };
-              if (restoreFrame != null) {
-                unawaited(widget.send(restoreFrame, label: 'Mode: ${fanState.activeMode}'));
-              }
-            } else {
-              _flushSegment(newGear: fanState.speed, newMode: 'boost');
-              notifier.setBoostActive(true);
-              unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
-            }
-          },
+          onMode: _onMode,
+          onBoost: _onBoost,
         ),
 
         const SizedBox(height: 20),
