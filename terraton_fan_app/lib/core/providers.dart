@@ -98,8 +98,13 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void updateMode(String? modeName) {
     switch (modeName) {
       case 'boost':
-        // Hardware confirmed boost — set isBoost, preserve activeMode (smart/reverse).
-        update(state.copyWith(isBoost: true));
+        // Hardware confirmed boost — set isBoost.
+        // Nature is mutually exclusive with boost; clear it.
+        // Smart/reverse can coexist (BOOST + SMART, BOOST + REVERSE).
+        update(state.copyWith(
+          isBoost: true,
+          activeMode: () => state.activeMode == 'nature' ? null : state.activeMode,
+        ));
       case 'nature':
         // Nature is mutually exclusive with boost.
         update(state.copyWith(isBoost: false, activeMode: () => 'nature'));

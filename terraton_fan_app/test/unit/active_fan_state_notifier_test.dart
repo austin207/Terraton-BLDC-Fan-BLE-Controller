@@ -81,16 +81,27 @@ void main() {
       expect(c.read(activeFanStateProvider(deviceId)).speed, 4);
     });
 
-    // updateMode — non-trivial: boost maps to isBoost=true + activeMode=null
-    test('updateMode boost sets isBoost=true and clears activeMode', () {
+    // updateMode — boost clears nature (mutually exclusive) but preserves smart/reverse
+    test('updateMode boost sets isBoost=true and clears nature activeMode', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
-      n.updateMode('nature'); // prime a non-boost mode first
+      n.updateMode('nature'); // prime with nature (mutually exclusive with boost)
       n.updateMode('boost');
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.isBoost, true);
-      expect(s.activeMode, isNull);
+      expect(s.activeMode, isNull); // nature cleared; boost won
+    });
+
+    test('updateMode boost preserves smart activeMode (coexistence)', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('smart'); // smart + boost can coexist
+      n.updateMode('boost');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.isBoost, true);
+      expect(s.activeMode, 'smart'); // smart preserved
     });
 
     test('updateMode nature sets isBoost=false and activeMode=nature', () {
