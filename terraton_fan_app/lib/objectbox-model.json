@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:7689092753891102258",
-      "lastPropertyId": "8:8724215114432112353",
+      "lastPropertyId": "10:5638614726256919996",
       "name": "FanDevice",
       "properties": [
         {
@@ -49,6 +49,16 @@
         {
           "id": "8:8724215114432112353",
           "name": "lastConnectedAt",
+          "type": 10
+        },
+        {
+          "id": "9:3742940356637995512",
+          "name": "isServiceAccess",
+          "type": 1
+        },
+        {
+          "id": "10:5638614726256919996",
+          "name": "serviceExpiresAt",
           "type": 10
         }
       ],

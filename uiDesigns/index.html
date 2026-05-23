@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Terraton · BLE smart-fan app</title>
+<meta name="viewport" content="width=1600"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0a0a; min-height: 100%; }
+  body {
+    font-family: 'Manrope', system-ui, sans-serif;
+    color: #f4f4f2;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+
+  @keyframes tn-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.86); }
+  }
+  @keyframes tn-spin {
+    from { transform: rotate(0deg); } to { transform: rotate(360deg); }
+  }
+  @keyframes tn-breathe {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.08); opacity: 1; }
+  }
+  @keyframes tn-dot {
+    0%, 100% { opacity: 0.25; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  @keyframes tn-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tn-slideup {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes tn-bt-blink {
+    0%, 55%, 100% { opacity: 1; filter: drop-shadow(0 0 6px rgba(64,156,255,0.65)) drop-shadow(0 0 14px rgba(64,156,255,0.35)); }
+    72%, 88% { opacity: 0.35; filter: drop-shadow(0 0 2px rgba(64,156,255,0.2)); }
+  }
+
+  /* Hide native number-input spinners on the tariff field */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  input[type="number"] { -moz-appearance: textfield; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="profile.jsx"></script>
+  <script type="text/babel" src="fan-control.jsx"></script>
+  <script type="text/babel" src="home.jsx"></script>
+  <script type="text/babel" src="fans-list.jsx"></script>
+  <script type="text/babel" src="analytics.jsx"></script>
+  <script type="text/babel" src="settings.jsx"></script>
+  <script type="text/babel" src="user-manual.jsx"></script>
+
+  <script type="text/babel">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accentHue": "yellow",
+      "frameShadow": true,
+      "fanAnim": true
+    }/*EDITMODE-END*/;
+
+    const ACCENTS = {
+      yellow: { yellow: '#FFEC00', yellowSoft: '#FFF066', yellowGlow: 'rgba(255,236,0,0.35)' },
+      amber:  { yellow: '#FFB400', yellowSoft: '#FFCD55', yellowGlow: 'rgba(255,180,0,0.35)' },
+      lime:   { yellow: '#C8FF00', yellowSoft: '#D8FF66', yellowGlow: 'rgba(200,255,0,0.32)' },
+    };
+    function applyAccent(name) {
+      const a = ACCENTS[name] || ACCENTS.yellow;
+      Object.assign(T, a);
+    }
+
+    const initialState = {
+      currentScreen: 'home', // splash | profile | home | analytics | fans | fan | settings | manual
+      userName: 'Austin',
+      activeFanId: 'f1',
+      analyticsRange: 'Week',
+      tariff: 5.4,
+      fans: [
+        { id: 'f1', name: 'Living Room Fan', model: 'Terraton BLDC Pro 52"', on: true, speed: 4, watts: 38, conn: 'connected' },
+        { id: 'f2', name: 'Bedroom Fan', model: 'Terraton BLDC Pro 48"', on: true, speed: 2, watts: 18, conn: 'connected' },
+        { id: 'f3', name: 'Study Fan', model: 'Terraton BLDC Lite 48"', on: false, speed: 0, watts: 0, conn: 'connecting' },
+        { id: 'f4', name: 'Kitchen Fan', model: 'Terraton BLDC Lite 36"', on: false, speed: 0, watts: 0, conn: 'disconnected' },
+      ],
+      // Per-fan-control snapshot (mirrors the open fan)
+      fanName: 'Living Room Fan',
+      conn: 'connected',
+      speed: 4,
+      power: true,
+      mode: 'nature',
+      timer: 'OFF',
+      boost: false,
+      light: 60,
+      colorTemp: 'neutral', // warm | neutral | cool
+    };
+
+    // ── Bottom-nav tabs: Analytics · Home · Settings ──
+    // Wrap a tab screen with the persistent nav bar.
+    function TabScreen({ tab, children, set }) {
+      return (
+        <React.Fragment>
+          {children}
+          <BottomNav active={tab} onChange={(id) => {
+            if (id === 'home')      set({ currentScreen: 'home' });
+            if (id === 'analytics') set({ currentScreen: 'analytics' });
+            if (id === 'settings')  set({ currentScreen: 'settings' });
+          }}/>
+        </React.Fragment>
+      );
+    }
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const [state, setState] = React.useState(initialState);
+      const set = (patch) => setState(s => ({ ...s, ...patch }));
+
+      React.useEffect(() => { applyAccent(t.accentHue); }, [t.accentHue]);
+      React.useEffect(() => { window.__terratonFanAnim = t.fanAnim; }, [t.fanAnim]);
+
+      const openFan = (id) => {
+        const f = state.fans.find(x => x.id === id);
+        if (!f) return;
+        set({
+          activeFanId: id, currentScreen: 'fan',
+          fanName: f.name, conn: f.conn, speed: f.speed, power: f.on,
+          mode: 'nature', timer: 'OFF', boost: false,
+        });
+      };
+
+      // Live artboard: navigates through screens
+      const renderCurrent = () => {
+        switch (state.currentScreen) {
+          case 'splash':
+            return <SplashScreen/>;
+          case 'profile':
+            return <ProfileScreen onContinue={(name) => set({ userName: name, currentScreen: 'home' })}/>;
+          case 'analytics':
+            return <TabScreen tab="analytics" set={set}>
+              <AnalyticsScreen state={state} set={set}/>
+            </TabScreen>;
+          case 'fans':
+            return <FansListScreen state={state} set={set}
+              onBack={() => set({ currentScreen: 'home' })}
+              onOpenFan={openFan}/>;
+          case 'fan':
+            return <FanControlScreen state={state} set={set}
+              onBack={() => set({ currentScreen: 'fans' })}/>;
+          case 'settings':
+            return <TabScreen tab="settings" set={set}>
+              <SettingsScreen state={state} set={set}
+                onOpenManual={() => set({ currentScreen: 'manual' })}/>
+            </TabScreen>;
+          case 'manual':
+            return <UserManualScreen
+              onBack={() => set({ currentScreen: 'settings' })}/>;
+          case 'home':
+          default:
+            return <TabScreen tab="home" set={set}>
+              <HomeScreen state={state} set={set}
+                onOpenFans={() => set({ currentScreen: 'fans' })}/>
+            </TabScreen>;
+        }
+      };
+
+      // Tiny breadcrumb under the live phone
+      const crumb = (label) => (
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', borderRadius: 100,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 600,
+          color: 'rgba(255,255,255,0.7)', letterSpacing: '0.16em',
+        }}>{label}</div>
+      );
+
+      return (
+        <React.Fragment>
+          <DesignCanvas>
+            <DCSection id="prototype" title="Terraton · BLE Smart Fan" subtitle="Tap around the live phone to navigate. Long-press a fan card on the Fans page to rename or remove. Try powering on a disconnected fan.">
+              <DCArtboard id="live" label={`LIVE · ${state.currentScreen.toUpperCase()}`} width={412} height={892}>
+                <PhoneShell label="LIVE">{renderCurrent()}</PhoneShell>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="onboarding" title="Onboarding" subtitle="Splash → Profile Setup → Home.">
+              <DCArtboard id="splash" label="00 · Splash (logo only)" width={412} height={892}>
+                <PhoneShell label="00 Splash"><SplashScreen/></PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="profile" label="01 · Profile Setup" width={412} height={892}>
+                <PhoneShell label="01 Profile">
+                  <ProfileScreen onContinue={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="home" label="02 · Home (Home tab)" width={412} height={892}>
+                <PhoneShell label="02 Home">
+                  <HomeScreen state={state} set={() => {}} onOpenFans={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="tabs" title="Bottom-nav tabs" subtitle="Analytics · Home · Settings live on the bottom navigation bar.">
+              <DCArtboard id="tab-analytics" label="Analytics tab" width={412} height={892}>
+                <PhoneShell label="Analytics">
+                  <AnalyticsScreen state={state} set={() => {}}/>
+                  <BottomNav active="analytics" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="tab-home" label="Home tab" width={412} height={892}>
+                <PhoneShell label="Home tab">
+                  <HomeScreen state={state} set={() => {}} onOpenFans={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="tab-settings" label="Settings tab" width={412} height={892}>
+                <PhoneShell label="Settings tab">
+                  <SettingsScreen state={state} set={() => {}} onOpenManual={() => {}}/>
+                  <BottomNav active="settings" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="fans-flow" title="Fans flow" subtitle="List → Long-press → Rename · Control screen with light & disconnect alert.">
+              <DCArtboard id="fans-list" label="03 · Fans (list)" width={412} height={892}>
+                <PhoneShell label="03 Fans">
+                  <FansListScreen state={state} set={() => {}} onBack={() => {}} onOpenFan={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="longpress" label="03a · Long-press action sheet" width={412} height={892}>
+                <PhoneShell label="03a Action sheet">
+                  <FansListScreenWithSheet state={state}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="rename" label="03b · Rename" width={412} height={892}>
+                <PhoneShell label="03b Rename">
+                  <FansListScreenWithRename state={state}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="fan-control" label="04 · Fan Control" width={412} height={892}>
+                <PhoneShell label="04 Fan Control">
+                  <FanControlScreen
+                    state={{ fanName: 'Living Room Fan', conn: 'connected', speed: 4, power: true, mode: 'nature', timer: 'OFF', boost: false, light: 60, colorTemp: 'neutral' }}
+                    set={() => {}} onBack={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="fan-boost" label="04a · Boost (intensified dial)" width={412} height={892}>
+                <PhoneShell label="04a Boost">
+                  <FanControlScreen
+                    state={{ fanName: 'Living Room Fan', conn: 'connected', speed: 6, power: true, mode: null, timer: 'OFF', boost: true, light: 80, colorTemp: 'warm' }}
+                    set={() => {}} onBack={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="fan-off" label="04b · Power off" width={412} height={892}>
+                <PhoneShell label="04b Power off">
+                  <FanControlScreen
+                    state={{ fanName: 'Study Fan', conn: 'connected', speed: 0, power: false, mode: null, timer: 'OFF', boost: false, light: 0, colorTemp: 'neutral' }}
+                    set={() => {}} onBack={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="fan-disconnect" label="04c · Disconnect alert" width={412} height={892}>
+                <PhoneShell label="04c Disconnect">
+                  <FanControlWithAlert/>
+                </PhoneShell>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="support" title="Settings & Manual" subtitle="Settings is now a bottom-nav tab. The manual is reached from Settings → User Manual.">
+              <DCArtboard id="settings" label="05 · Settings" width={412} height={892}>
+                <PhoneShell label="05 Settings">
+                  <SettingsScreen state={state} set={() => {}} onOpenManual={() => {}}/>
+                  <BottomNav active="settings" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="settings-rename" label="05a · Rename user (modal)" width={412} height={892}>
+                <PhoneShell label="05a Settings rename">
+                  <SettingsScreen state={state} set={() => {}} onOpenManual={() => {}} initialRename={true}/>
+                  <BottomNav active="settings" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="settings-qr" label="05b · Service QR (modal)" width={412} height={892}>
+                <PhoneShell label="05b Service QR">
+                  <SettingsScreen state={state} set={() => {}} onOpenManual={() => {}} initialServiceQr={true}/>
+                  <BottomNav active="settings" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="manual" label="06 · User Manual (collapsed)" width={412} height={892}>
+                <PhoneShell label="06 Manual">
+                  <UserManualScreen onBack={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="manual-open" label="06a · User Manual (Boost open)" width={412} height={892}>
+                <PhoneShell label="06a Manual open">
+                  <UserManualScreen onBack={() => {}} initialOpen="boost"/>
+                </PhoneShell>
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          <TweaksPanel title="Tweaks">
+            <TweakSection label="Accent">
+              <TweakRadio label="Brand hue"
+                value={t.accentHue}
+                options={['yellow', 'amber', 'lime']}
+                onChange={(v) => setTweak('accentHue', v)}/>
+              <TweakColor label="Preview"
+                value={ACCENTS[t.accentHue].yellow}
+                options={[ACCENTS.yellow.yellow, ACCENTS.amber.yellow, ACCENTS.lime.yellow]}
+                onChange={(hex) => {
+                  const key = Object.keys(ACCENTS).find(k => ACCENTS[k].yellow === hex) || 'yellow';
+                  setTweak('accentHue', key);
+                }}/>
+            </TweakSection>
+            <TweakSection label="Motion">
+              <TweakToggle label="Spin fan icons when running"
+                value={t.fanAnim}
+                onChange={(v) => setTweak('fanAnim', v)}/>
+            </TweakSection>
+            <TweakSection label="Jump to screen">
+              <TweakSelect label="Live screen"
+                value={state.currentScreen}
+                options={['splash','profile','home','analytics','fans','fan','settings','manual']}
+                onChange={(v) => set({ currentScreen: v })}/>
+            </TweakSection>
+          </TweaksPanel>
+        </React.Fragment>
+      );
+    }
+
+    // Static wrappers that pre-open the action sheet / rename / disconnect alert
+    function FansListScreenWithSheet({ state }) {
+      const [s, setS] = React.useState(state);
+      React.useEffect(() => {
+        // Synthesize the action sheet visible by mounting a Sheet directly
+      }, []);
+      return (
+        <React.Fragment>
+          <FansListScreen state={s} set={(p) => setS(x => ({ ...x, ...p }))}
+            onBack={() => {}} onOpenFan={() => {}}/>
+          <Sheet onClose={() => {}}>
+            <div style={{ padding: '4px 20px 12px' }}>
+              <div style={{ fontFamily: T.font, fontSize: 16, fontWeight: 700, color: T.text }}>Living Room Fan</div>
+              <div style={{ fontFamily: T.fontMono, fontSize: 10, fontWeight: 600, color: T.textMut, letterSpacing: '0.12em', marginTop: 4 }}>
+                TERRATON BLDC PRO 52"
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 20px 0' }}>
+              <ActionRow icon={Icon.pencil} label="Rename Fan" onClick={() => {}}/>
+              <ActionRow icon={Icon.trash} label="Remove Device" danger onClick={() => {}}/>
+            </div>
+            <div style={{ padding: '16px 20px 32px' }}>
+              <button style={{
+                width: '100%', height: 52, borderRadius: 16,
+                background: T.cardHi, color: T.text, border: 'none',
+                fontFamily: T.font, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}>Cancel</button>
+            </div>
+          </Sheet>
+        </React.Fragment>
+      );
+    }
+
+    function FansListScreenWithRename({ state }) {
+      const [s, setS] = React.useState(state);
+      return (
+        <React.Fragment>
+          <FansListScreen state={s} set={(p) => setS(x => ({ ...x, ...p }))}
+            onBack={() => {}} onOpenFan={() => {}}/>
+          <Sheet onClose={() => {}}>
+            <div style={{ padding: '4px 20px 16px' }}>
+              <div style={{ fontFamily: T.font, fontSize: 20, fontWeight: 700, color: T.text }}>Rename fan</div>
+              <div style={{ fontFamily: T.font, fontSize: 13, color: T.textMut, marginTop: 4 }}>
+                Give this fan a friendlier name.
+              </div>
+            </div>
+            <div style={{ padding: '0 20px 8px' }}>
+              <input defaultValue="Living Room Fan" style={{
+                width: '100%', boxSizing: 'border-box',
+                background: T.card, color: T.text,
+                border: `1px solid rgba(255,236,0,0.30)`,
+                borderRadius: 14, padding: '14px 16px',
+                fontFamily: T.font, fontSize: 15, fontWeight: 600,
+                outline: 'none', boxShadow: `0 0 18px ${T.yellowGlow}`,
+              }}/>
+            </div>
+            <div style={{ padding: '16px 20px 32px', display: 'flex', gap: 10 }}>
+              <button style={{
+                flex: 1, height: 52, borderRadius: 16, background: T.cardHi, color: T.text, border: 'none',
+                fontFamily: T.font, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}>Cancel</button>
+              <button style={{
+                flex: 1, height: 52, borderRadius: 16, background: T.yellow, color: '#000', border: 'none',
+                fontFamily: T.font, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                boxShadow: `0 0 18px ${T.yellowGlow}`,
+              }}>Save</button>
+            </div>
+          </Sheet>
+        </React.Fragment>
+      );
+    }
+
+    function FanControlWithAlert() {
+      return (
+        <React.Fragment>
+          <FanControlScreen
+            state={{ fanName: 'Kitchen Fan', conn: 'disconnected', speed: 0, power: false, mode: null, timer: 'OFF', boost: false, light: 40, colorTemp: 'neutral' }}
+            set={() => {}} onBack={() => {}}/>
+          <DisconnectAlert open={true} fanName="Kitchen Fan" onClose={() => {}} onRetry={() => {}}/>
+        </React.Fragment>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

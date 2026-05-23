@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Terraton · BLE smart-fan app</title>
+<meta name="viewport" content="width=1600"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0a0a; min-height: 100%; }
+  body {
+    font-family: 'Manrope', system-ui, sans-serif;
+    color: #f4f4f2;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+
+  /* Override design_canvas warm-gray background for dark mode */
+  /* (design canvas styles inject themselves; we add an after-stylesheet) */
+
+  @keyframes tn-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.86); }
+  }
+  @keyframes tn-spin {
+    from { transform: rotate(0deg); } to { transform: rotate(360deg); }
+  }
+  @keyframes tn-breathe {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.08); opacity: 1; }
+  }
+  @keyframes tn-dot {
+    0%, 100% { opacity: 0.25; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  @keyframes tn-fade {
+    from { opacity: 0; } to { opacity: 1; }
+  }
+  @keyframes tn-slideup {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  /* Custom canvas background to make dark screens pop */
+  body { background: #0a0a0a; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="fan-control.jsx"></script>
+  <script type="text/babel" src="home.jsx"></script>
+  <script type="text/babel" src="analytics.jsx"></script>
+  <script type="text/babel" src="settings.jsx"></script>
+
+  <script type="text/babel">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accentHue": "amber",
+      "frameShadow": true,
+      "fanAnim": true
+    }/*EDITMODE-END*/;
+
+    const ACCENTS = {
+      yellow: { yellow: '#FFEC00', yellowSoft: '#FFF066', yellowGlow: 'rgba(255,236,0,0.35)' },
+      amber:  { yellow: '#FFB400', yellowSoft: '#FFCD55', yellowGlow: 'rgba(255,180,0,0.35)' },
+      lime:   { yellow: '#C8FF00', yellowSoft: '#D8FF66', yellowGlow: 'rgba(200,255,0,0.32)' },
+    };
+
+    function applyAccent(name) {
+      const a = ACCENTS[name] || ACCENTS.yellow;
+      Object.assign(T, a);
+    }
+
+    // Initial demo state
+    const initialState = {
+      currentScreen: 'home',
+      activeDeviceId: 'd1',
+      pairOpen: false,
+      analyticsRange: 'Week',
+      // Per-fan control state (we always control the "active" fan)
+      activeFanId: 'f1',
+      fans: [
+        { id: 'f1', name: 'Living Room', room: 'Living Room', on: true, speed: 4, watts: 38, conn: 'connected' },
+        { id: 'f2', name: 'Master Bedroom', room: 'Bedroom', on: true, speed: 2, watts: 18, conn: 'connected' },
+        { id: 'f3', name: 'Study', room: 'Study', on: false, speed: 0, watts: 0, conn: 'connected' },
+        { id: 'f4', name: 'Kitchen', room: 'Kitchen', on: false, speed: 0, watts: 0, conn: 'offline' },
+      ],
+      devices: [
+        { id: 'd1', name: 'Terraton Hub', room: 'Living Room', conn: 'connected', signal: 4, rssi: -42, battery: 92 },
+        { id: 'd2', name: 'BLDC Pro 52"', room: 'Bedroom', conn: 'connected', signal: 3, rssi: -58, battery: 78 },
+        { id: 'd3', name: 'BLDC Lite 48"', room: 'Study', conn: 'connecting', signal: 2, rssi: -71, battery: 64 },
+      ],
+      // fan control snapshot (mirrors selected fan)
+      fanName: 'Living Room',
+      conn: 'connected',
+      speed: 4,
+      power: true,
+      mode: 'nature',
+      timer: 'OFF',
+      boost: false,
+    };
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const [state, setState] = React.useState(initialState);
+      const set = (patch) => setState(s => ({ ...s, ...patch }));
+
+      // apply accent live
+      React.useEffect(() => { applyAccent(t.accentHue); }, [t.accentHue]);
+      React.useEffect(() => { window.__terratonFanAnim = t.fanAnim; }, [t.fanAnim]);
+
+      const openFan = (id) => {
+        const f = state.fans.find(x => x.id === id);
+        if (!f) return;
+        set({
+          activeFanId: id,
+          currentScreen: 'fan',
+          fanName: f.name,
+          conn: f.conn,
+          speed: f.speed,
+          power: f.on,
+        });
+      };
+
+      const goNav = (id) => {
+        if (id === 'home') set({ currentScreen: 'home' });
+        if (id === 'analytics') set({ currentScreen: 'analytics' });
+        if (id === 'settings') set({ currentScreen: 'settings' });
+      };
+
+      // ── Renderers per phone ──
+      const renderHome = (key = 'home') => (
+        <PhoneShell label="01 Home" time="9:30">
+          <HomeScreen state={state} set={set}
+            onOpenFan={(id) => openFan(id)}
+            onAddPair={() => set({ pairOpen: true })}/>
+          <FAB onClick={() => set({ pairOpen: true })}/>
+          <BottomNav active="home" onChange={goNav}/>
+          <PairModal open={state.pairOpen} onClose={() => set({ pairOpen: false })}
+            onChoose={() => set({ pairOpen: false })}/>
+        </PhoneShell>
+      );
+
+      const renderFan = () => (
+        <PhoneShell label="02 Fan Control" time="9:30">
+          <FanControlScreen state={state} set={set}
+            onBack={() => set({ currentScreen: 'home' })}
+            onOpen={() => {}}/>
+          <BottomNav active="home" onChange={goNav}/>
+        </PhoneShell>
+      );
+
+      const renderAnalytics = () => (
+        <PhoneShell label="03 Analytics" time="9:30">
+          <AnalyticsScreen state={state} set={set}/>
+          <BottomNav active="analytics" onChange={goNav}/>
+        </PhoneShell>
+      );
+
+      const renderSettings = () => (
+        <PhoneShell label="04 Settings" time="9:30">
+          <SettingsScreen/>
+          <BottomNav active="settings" onChange={goNav}/>
+        </PhoneShell>
+      );
+
+      const renderSplash = () => (
+        <PhoneShell label="00 Splash" time="9:30">
+          <SplashScreen/>
+        </PhoneShell>
+      );
+
+      const renderModal = () => (
+        <PhoneShell label="05 Pair Modal" time="9:30">
+          <HomeScreen state={{...state, pairOpen: false}} set={() => {}}
+            onOpenFan={() => {}} onAddPair={() => {}}/>
+          <FAB onClick={() => {}}/>
+          <BottomNav active="home" onChange={() => {}}/>
+          <PairModal open={true} onClose={() => {}} onChoose={() => {}}/>
+        </PhoneShell>
+      );
+
+      // The "live prototype" artboard reflects state.currentScreen
+      const live = () => {
+        if (state.currentScreen === 'fan') return renderFan();
+        if (state.currentScreen === 'analytics') return renderAnalytics();
+        if (state.currentScreen === 'settings') return renderSettings();
+        return renderHome('live');
+      };
+
+      return (
+        <React.Fragment>
+          <DesignCanvas>
+            <DCSection id="prototype" title="Terraton · BLE Smart Fan" subtitle="Tap any fan card, the FAB, or the bottom nav to navigate the prototype.">
+              <DCArtboard id="live" label="LIVE · interactive prototype" width={412} height={892}>
+                {live()}
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="screens" title="All screens" subtitle="Static snapshots of every screen in the flow.">
+              <DCArtboard id="splash" label="00 · Splash" width={412} height={892}>{renderSplash()}</DCArtboard>
+              <DCArtboard id="home" label="01 · Home" width={412} height={892}>{renderHome('static')}</DCArtboard>
+              <DCArtboard id="fan" label="02 · Fan Control (hero)" width={412} height={892}>
+                <PhoneShell label="02 Fan Control static">
+                  <FanControlScreen
+                    state={{ fanName: 'Living Room', conn: 'connected', speed: 4, power: true, mode: 'nature', timer: 'OFF', boost: false }}
+                    set={() => {}} onBack={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="analytics" label="03 · Analytics" width={412} height={892}>
+                <PhoneShell label="03 Analytics static">
+                  <AnalyticsScreen state={{ analyticsRange: 'Week' }} set={() => {}}/>
+                  <BottomNav active="analytics" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="settings" label="04 · Settings" width={412} height={892}>
+                {renderSettings()}
+              </DCArtboard>
+              <DCArtboard id="pair" label="05 · Pair modal" width={412} height={892}>
+                {renderModal()}
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="states" title="States · Fan Control" subtitle="Power off · mid-speed · boost · sleep timer set.">
+              <DCArtboard id="off" label="Power OFF" width={412} height={892}>
+                <PhoneShell label="Fan · OFF">
+                  <FanControlScreen
+                    state={{ fanName: 'Study', conn: 'connected', speed: 0, power: false, mode: null, timer: 'OFF', boost: false }}
+                    set={() => {}} onBack={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="midspeed" label="Speed 2 · Sleep mode" width={412} height={892}>
+                <PhoneShell label="Fan · Sleep">
+                  <FanControlScreen
+                    state={{ fanName: 'Bedroom', conn: 'connected', speed: 2, power: true, mode: 'sleep', timer: '4H', boost: false }}
+                    set={() => {}} onBack={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="boost" label="Boost · Turbo" width={412} height={892}>
+                <PhoneShell label="Fan · Boost">
+                  <FanControlScreen
+                    state={{ fanName: 'Living Room', conn: 'connected', speed: 6, power: true, mode: 'turbo', timer: 'OFF', boost: true }}
+                    set={() => {}} onBack={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+              <DCArtboard id="connecting" label="Connecting" width={412} height={892}>
+                <PhoneShell label="Fan · Connecting">
+                  <FanControlScreen
+                    state={{ fanName: 'Kitchen', conn: 'connecting', speed: 3, power: true, mode: null, timer: 'OFF', boost: false }}
+                    set={() => {}} onBack={() => {}}/>
+                  <BottomNav active="home" onChange={() => {}}/>
+                </PhoneShell>
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          <TweaksPanel title="Tweaks">
+            <TweakSection label="Accent">
+              <TweakRadio label="Brand hue"
+                value={t.accentHue}
+                options={['yellow', 'amber', 'lime']}
+                onChange={(v) => setTweak('accentHue', v)}/>
+              <TweakColor label="Preview"
+                value={ACCENTS[t.accentHue].yellow}
+                options={[ACCENTS.yellow.yellow, ACCENTS.amber.yellow, ACCENTS.lime.yellow]}
+                onChange={(hex) => {
+                  const key = Object.keys(ACCENTS).find(k => ACCENTS[k].yellow === hex) || 'yellow';
+                  setTweak('accentHue', key);
+                }}/>
+            </TweakSection>
+            <TweakSection label="Motion">
+              <TweakToggle label="Spin fan icons when running"
+                value={t.fanAnim}
+                onChange={(v) => setTweak('fanAnim', v)}/>
+            </TweakSection>
+          </TweaksPanel>
+        </React.Fragment>
+      );
+    }
+
+    // Override canvas background AFTER design-canvas styles inject
+    setTimeout(() => {
+      const dc = document.querySelector('[style*="background"][style*="f0eee9"]') || document.querySelector('.dc-root');
+      // try to find the panning root and darken it
+      const rootEls = document.querySelectorAll('*');
+    }, 200);
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
