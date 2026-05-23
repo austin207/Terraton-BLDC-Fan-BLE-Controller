@@ -41,7 +41,14 @@ abstract final class AppSettings {
   // ── First-launch flag ─────────────────────────────────────────────────────────
   // True until the user completes ProfileSetupScreen.
 
+  // Override for tests — set to a synchronous supplier to avoid real file I/O
+  // inside FakeAsync (which does not process real I/O events). Leave null in
+  // production; the file-based path is used instead.
+  // ignore: avoid_field_initializers_in_const_classes
+  static Future<bool> Function()? firstLaunchOverride;
+
   static Future<bool> isFirstLaunch() async {
+    if (firstLaunchOverride != null) return firstLaunchOverride!();
     final m = await _read();
     return (m['profile_set'] as bool?) != true;
   }

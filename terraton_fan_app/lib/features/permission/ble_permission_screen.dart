@@ -75,11 +75,13 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
               child: BrandMark(height: 40),
             ),
             Expanded(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              const SizedBox(height: 40),
               // Fan icon with glow
               Container(
                 width: 120, height: 120,
@@ -219,9 +221,10 @@ class _BlePermissionScreenState extends State<BlePermissionScreen> {
                   style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
                 ),
               ),
+              const SizedBox(height: 32),
                 ],         // closes inner Column children
               ),           // closes inner Column
-            ),             // closes Padding
+            ),             // closes SingleChildScrollView
           ),               // closes Expanded
         ],                 // closes outer Column children
       ),                   // closes outer Column
