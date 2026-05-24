@@ -12,7 +12,7 @@ abstract final class DataUploadService {
   static const _endpoint = 'https://terraton-ingest.bleappterraton.workers.dev/upload';
 
   // Injected at build time via --dart-define=UPLOAD_API_KEY=<secret>.
-  // Defaults to '' (empty) which causes _post() to return false silently —
+  // Defaults to '' (empty) which causes tryUpload() to return early silently --
   // safe for debug/test builds where the key is not provided.
   static const _apiKey = String.fromEnvironment('UPLOAD_API_KEY', defaultValue: '');
 
@@ -28,7 +28,7 @@ abstract final class DataUploadService {
     final today = DateTime(now.year, now.month, now.day);
 
     // Only upload completed days — today's data is still accumulating.
-    final allLogs = repo.getLogsInRange(DateTime(2020), today);
+    final allLogs = repo.getLogsInRange(DateTime(2020), today.subtract(const Duration(milliseconds: 1)));
     if (allLogs.isEmpty) return;
 
     final uploadedDates = await AppSettings.loadUploadedDates();
@@ -81,7 +81,7 @@ abstract final class DataUploadService {
           )
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
-    } on Object {
+    } on Exception {
       return false;
     }
   }

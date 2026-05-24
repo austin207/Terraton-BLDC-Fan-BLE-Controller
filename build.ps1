@@ -19,7 +19,7 @@ if (Test-Path $SecretsFile) {
         Write-Host "Loaded UPLOAD_API_KEY from secrets.env" -ForegroundColor DarkGray
     }
 } else {
-    Write-Host "WARNING: secrets.env not found — UPLOAD_API_KEY will be empty. Copy secrets.env.template to secrets.env and fill in the values." -ForegroundColor Yellow
+    Write-Host "WARNING: secrets.env not found -- UPLOAD_API_KEY will be empty. Copy secrets.env.template to secrets.env and fill in the values." -ForegroundColor Yellow
 }
 
 # ── 0. Clear builds folder ───────────────────────────────────────────────────

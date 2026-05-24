@@ -16,12 +16,29 @@ abstract final class AppSettings {
       final f = await _file();
       if (!await f.exists()) return {};
       return jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-    } on Object {
+    } on Exception {
       return {};
     }
   }
 
-  static Future<void> _write(Map<String, dynamic> data) async {
+  // Serialises all read-modify-write cycles so concurrent callers
+  // (e.g. analytics upload marking a date while user changes a setting)
+  // don't overwrite each other.
+  static Future<void> _pending = Future<void>.value();
+
+  static Future<void> _update(
+    Map<String, dynamic> Function(Map<String, dynamic>) updater,
+  ) {
+    final next = _pending.then((_) async {
+      final m = await _read();
+      await _doWrite(updater(m));
+    });
+    // Swallow errors on the chain copy so a failed write doesn't stall future writes.
+    _pending = next.catchError((_) {});
+    return next;
+  }
+
+  static Future<void> _doWrite(Map<String, dynamic> data) async {
     final f   = await _file();
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(jsonEncode(data));
@@ -35,10 +52,8 @@ abstract final class AppSettings {
     return (m['user_name'] as String? ?? '').trim();
   }
 
-  static Future<void> saveUserName(String name) async {
-    final m = await _read();
-    await _write({...m, 'user_name': name.trim()});
-  }
+  static Future<void> saveUserName(String name) =>
+      _update((m) => {...m, 'user_name': name.trim()});
 
   // ── First-launch flag ─────────────────────────────────────────────────────────
   // True until the user completes ProfileSetupScreen.
@@ -55,10 +70,8 @@ abstract final class AppSettings {
     return (m['profile_set'] as bool?) != true;
   }
 
-  static Future<void> markProfileSet() async {
-    final m = await _read();
-    await _write({...m, 'profile_set': true});
-  }
+  static Future<void> markProfileSet() =>
+      _update((m) => {...m, 'profile_set': true});
 
   // ── Tariff (₹ / kWh) ────────────────────────────────────────────────────────
 
@@ -72,10 +85,8 @@ abstract final class AppSettings {
     return fallback;
   }
 
-  static Future<void> saveTariff(double tariff) async {
-    final m = await _read();
-    await _write({...m, 'tariff': tariff});
-  }
+  static Future<void> saveTariff(double tariff) =>
+      _update((m) => {...m, 'tariff': tariff});
 
   // ── AI training data opt-in ───────────────────────────────────────────────
   // Override for tests — avoids real file I/O inside widget test pumps.
@@ -88,10 +99,8 @@ abstract final class AppSettings {
     return (m['upload_opt_in'] as bool?) == true;
   }
 
-  static Future<void> saveUploadOptIn(bool value) async {
-    final m = await _read();
-    await _write({...m, 'upload_opt_in': value});
-  }
+  static Future<void> saveUploadOptIn(bool value) =>
+      _update((m) => {...m, 'upload_opt_in': value});
 
   // ── Uploaded date tracking (avoids re-uploading the same day) ────────────
 
@@ -102,10 +111,11 @@ abstract final class AppSettings {
     return {};
   }
 
-  static Future<void> markDateUploaded(String date) async {
-    final m     = await _read();
-    final dates = ((m['uploaded_dates'] as List?)?.cast<String>() ?? <String>[]).toSet()
-      ..add(date);
-    await _write({...m, 'uploaded_dates': dates.toList()});
-  }
+  static Future<void> markDateUploaded(String date) =>
+      _update((m) {
+        final dates =
+            ((m['uploaded_dates'] as List?)?.cast<String>() ?? <String>[]).toSet()
+              ..add(date);
+        return {...m, 'uploaded_dates': dates.toList()};
+      });
 }

@@ -56,7 +56,7 @@ Future<void> _ensureBluetoothOn() async {
   try {
     if (FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on) return;
     await FlutterBluePlus.turnOn();
-  } on Object catch (_) {
+  } on Exception catch (_) {
     // Permissions not yet granted — the BlePermissionScreen handles the retry.
   }
 }

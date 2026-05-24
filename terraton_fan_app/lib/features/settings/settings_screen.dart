@@ -219,9 +219,10 @@ class SettingsScreen extends ConsumerWidget {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final tmp = File('${dir.path}/terraton_fans_$timestamp.json');
     await tmp.writeAsString(json);
+    if (!context.mounted) return;
     try {
       await Share.shareXFiles([XFile(tmp.path)], text: 'Terraton Fan Export');
-    } on Object catch (_) {
+    } on Exception catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Export failed. Please try again.')),
@@ -848,14 +849,23 @@ class _DataSharingGroupState extends State<_DataSharingGroup> {
   @override
   void initState() {
     super.initState();
-    AppSettings.loadUploadOptIn().then((v) {
+    unawaited(_loadOptIn());
+  }
+
+  Future<void> _loadOptIn() async {
+    try {
+      final v = await AppSettings.loadUploadOptIn();
       if (mounted) setState(() { _optIn = v; _loaded = true; });
-    });
+    } on Exception catch (_) {
+      if (mounted) setState(() { _loaded = true; });
+    }
   }
 
   void _toggle(bool value) {
     setState(() => _optIn = value);
-    unawaited(AppSettings.saveUploadOptIn(value));
+    unawaited(AppSettings.saveUploadOptIn(value).catchError((_) {
+      if (mounted) setState(() => _optIn = !value);
+    }));
   }
 
   @override

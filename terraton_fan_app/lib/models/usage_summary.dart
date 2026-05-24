@@ -12,17 +12,19 @@ class UsageSummary {
   final double totalKwh;
   final double avgWatts;
 
-  const UsageSummary({
+  UsageSummary({
     required this.period,
     required this.deviceHash,
-    required this.gearDist,
-    required this.modeDist,
-    required this.hourlyUsage,
+    required List<double> gearDist,
+    required Map<String, double> modeDist,
+    required List<int> hourlyUsage,
     required this.avgSessionMins,
     required this.sessions,
     required this.totalKwh,
     required this.avgWatts,
-  });
+  })  : gearDist    = List.unmodifiable(gearDist),
+        modeDist    = Map.unmodifiable(modeDist),
+        hourlyUsage = List.unmodifiable(hourlyUsage);
 
   Map<String, dynamic> toJson() => {
     'period':           period,

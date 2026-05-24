@@ -45,12 +45,12 @@ abstract final class UsageSummaryBuilder {
     if (activeLogs == 0) return null;
 
     final gearDist = gearSecs
-        .map((s) => _r3(totalSecs > 0 ? s / totalSecs : 0))
+        .map((s) => totalSecs > 0 ? s / totalSecs : 0.0)
         .toList();
     final modeDist = modeSecs.map(
-      (k, v) => MapEntry(k, _r3(totalSecs > 0 ? v / totalSecs : 0)),
+      (k, v) => MapEntry(k, totalSecs > 0 ? v / totalSecs : 0.0),
     );
-    final avgWatts      = validSecs > 0 ? weightedWatts / validSecs : 0.0;
+    final avgWatts       = validSecs > 0 ? weightedWatts / validSecs : 0.0;
     final avgSessionMins = totalSecs / activeLogs / 60;
 
     final deviceHash = sha256
@@ -68,17 +68,13 @@ abstract final class UsageSummaryBuilder {
       gearDist:       gearDist,
       modeDist:       modeDist,
       hourlyUsage:    hourly,
-      avgSessionMins: _r1(avgSessionMins),
+      avgSessionMins: avgSessionMins,
       sessions:       activeLogs,
-      totalKwh:       _r4(totalKwh),
-      avgWatts:       _r1(avgWatts),
+      totalKwh:       totalKwh,
+      avgWatts:       avgWatts,
     );
   }
 
   static bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
-
-  static double _r1(double v) => double.parse(v.toStringAsFixed(1));
-  static double _r3(double v) => double.parse(v.toStringAsFixed(3));
-  static double _r4(double v) => double.parse(v.toStringAsFixed(4));
 }
