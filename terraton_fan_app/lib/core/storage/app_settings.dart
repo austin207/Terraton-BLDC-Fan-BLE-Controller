@@ -96,7 +96,7 @@ abstract final class AppSettings {
   static Future<bool> loadUploadOptIn() async {
     if (uploadOptInOverride != null) return uploadOptInOverride!();
     final m = await _read();
-    return (m['upload_opt_in'] as bool?) != false;
+    return (m['upload_opt_in'] as bool?) == true;
   }
 
   static Future<void> saveUploadOptIn(bool value) =>

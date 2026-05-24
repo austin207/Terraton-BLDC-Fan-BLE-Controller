@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/app.dart';
 
 Future<void> main() async {
@@ -20,14 +21,14 @@ Future<void> main() async {
     return true;
   };
   ErrorWidget.builder = (details) => const Material(
-    color: Color(0xFF000000), // kBg — dark theme
+    color: kBg,
     child: Center(
       child: Padding(
         padding: EdgeInsets.all(24),
         child: Text(
           'Something went wrong.\nPlease restart the app.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFFFF6B6B), fontSize: 14),
+          style: TextStyle(color: kRed, fontSize: 14),
         ),
       ),
     ),

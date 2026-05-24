@@ -98,8 +98,10 @@ class FanRepositoryImpl implements FanRepository {
     final existing = _useQuery(
         _stateBox.query(FanState_.deviceId.equals(fanState.deviceId)).build(),
         (q) => q.findFirst());
-    if (existing != null) fanState.id = existing.id;
-    _stateBox.put(fanState);
+    // Copy before mutating so the live Riverpod state object is never modified
+    // outside a Riverpod state transition.
+    final toSave = existing != null ? (fanState.copyWith()..id = existing.id) : fanState;
+    _stateBox.put(toSave);
   }
 
   @override
