@@ -470,7 +470,7 @@ class _ConnStatusLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     if (isDemo) {
       return Text('● DEMO MODE',
-          style: GoogleFonts.manrope(fontSize: 10, color: Colors.amber.shade400,
+          style: GoogleFonts.manrope(fontSize: 10, color: kYellow,
               fontWeight: FontWeight.w700, letterSpacing: 1.5));
     }
     final (String text, Color color) = switch (state) {

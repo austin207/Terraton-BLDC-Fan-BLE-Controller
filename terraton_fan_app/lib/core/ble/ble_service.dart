@@ -30,6 +30,8 @@ abstract class BleService {
   Stream<List<DiscoveredFan>>    get scanResultsStream;
   String                         get writeCharStatus;
   String                         get connectStatus;
+  /// MAC address of the currently connected device, or null when disconnected.
+  String?                        get connectedMacAddress;
 }
 
 class BleServiceImpl implements BleService {
@@ -73,12 +75,13 @@ class BleServiceImpl implements BleService {
   static final _microchipWrite  = Guid(kMicrochipWriteCharUUID);
   static final _microchipNotify = Guid(kMicrochipNotifyCharUUID);
 
-  @override Stream<List<int>>              get notifyStream        => _notifyCtrl.stream;
-  @override Stream<app.BleConnectionState> get connectionStateStream => _stateCtrl.stream;
-  @override Stream<List<DiscoveredFan>>    get scanResultsStream   => _scanCtrl.stream;
-  @override app.BleConnectionState         get currentState        => _currentState;
-  @override String                         get writeCharStatus     => _writeCharStatus;
-  @override String                         get connectStatus       => _connectStatus;
+  @override Stream<List<int>>              get notifyStream          => _notifyCtrl.stream;
+  @override Stream<app.BleConnectionState> get connectionStateStream  => _stateCtrl.stream;
+  @override Stream<List<DiscoveredFan>>    get scanResultsStream      => _scanCtrl.stream;
+  @override app.BleConnectionState         get currentState           => _currentState;
+  @override String                         get writeCharStatus        => _writeCharStatus;
+  @override String                         get connectStatus          => _connectStatus;
+  @override String?                        get connectedMacAddress    => _device?.remoteId.str;
 
   void _setState(app.BleConnectionState s) {
     if (_disposed) return;

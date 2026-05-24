@@ -180,7 +180,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return (
       arrow: lower ? '↓' : '↑',
       pct:   change.abs(),
-      color: lower ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+      color: lower ? kCompareGood : kCompareBad,
     );
   }
 
@@ -842,7 +842,7 @@ class _FanBar extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: barFraction,
                   minHeight: 4,
-                  backgroundColor: const Color(0x0FFFFFFF),
+                  backgroundColor: kHairline,
                   valueColor: const AlwaysStoppedAnimation<Color>(kYellow),
                 ),
               ),

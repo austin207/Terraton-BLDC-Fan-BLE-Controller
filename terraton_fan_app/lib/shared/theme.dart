@@ -35,6 +35,10 @@ const kLightCool    = Color(0xFFDDEEFF); // pale blue — cool CCT
 const kBlue     = Color(0xFF7AA7FF);
 const kBlueFill = Color(0x207AA7FF); // 12 % blue — icon badge fill
 
+// ── Comparison arrows (analytics — lower energy is better) ───────────────────
+const kCompareGood = Color(0xFF22C55E); // green — lower vs previous period
+const kCompareBad  = Color(0xFFEF4444); // red   — higher vs previous period
+
 // ── Status ────────────────────────────────────────────────────────────────────
 const kGreen = Color(0xFF7AE582);
 const kRed   = Color(0xFFFF6B6B);

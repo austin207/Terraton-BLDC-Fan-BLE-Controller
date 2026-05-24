@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
@@ -231,6 +232,13 @@ class _FanRowState extends ConsumerState<_FanRow> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch connection state so this row rebuilds when BLE connects/disconnects.
+    final connState   = ref.watch(bleConnectionStateProvider).valueOrNull;
+    final connectedMac = ref.read(bleServiceProvider).connectedMacAddress;
+    final isConnected = connState == BleConnectionState.connected &&
+        widget.fan.macAddress.isNotEmpty &&
+        connectedMac?.toLowerCase() == widget.fan.macAddress.toLowerCase();
+
     return GestureDetector(
       onTap: _tap,
       onLongPress: _longPress,
@@ -283,13 +291,19 @@ class _FanRowState extends ConsumerState<_FanRow> {
                     children: [
                       Container(
                         width: 7, height: 7,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle, color: kTextDim,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isConnected ? kGreen : kTextDim,
                         ),
                       ),
                       const SizedBox(width: 7),
-                      Text('Disconnected',
-                          style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w600, color: kTextMut)),
+                      Text(
+                        isConnected ? 'Connected' : 'Disconnected',
+                        style: GoogleFonts.manrope(
+                          fontSize: 11, fontWeight: FontWeight.w600,
+                          color: isConnected ? kGreen : kTextMut,
+                        ),
+                      ),
                     ],
                   ),
                 ],
