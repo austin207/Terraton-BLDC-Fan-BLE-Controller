@@ -48,6 +48,9 @@ dependencies:
   crypto: ^3.0.3
   connectivity_plus: ^6.0.3
 
+  # OTA updates — opens downloaded APK in Android system installer
+  open_file: ^3.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/update/app_update_service.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
+import 'package:terraton_fan_app/features/update/update_dialog.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
@@ -21,6 +23,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 1; // 0=analytics, 1=home, 2=settings
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for OTA update once when the home shell is first mounted.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_checkForUpdate()),
+    );
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await AppUpdateService.checkForUpdate();
+    if (info == null || !mounted) return;
+    unawaited(UpdateDialog.show(context, info));
+  }
 
   @override
   Widget build(BuildContext context) {

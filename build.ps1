@@ -83,7 +83,7 @@ if (-not (Test-Path $Arm64)) {
     exit 1
 }
 
-# ── 4. Save timestamped copies locally ───────────────────────────────────────
+# ── 4. Save timestamped copies locally + write release assets ────────────────
 $Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
 $Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
 $Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
@@ -97,6 +97,24 @@ Write-Host "Saved arm64 : $Arm64Local" -ForegroundColor Green
 if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Local;  Write-Host "Saved arm7  : $Arm7Local"  -ForegroundColor Green }
 if (Test-Path $X86)   { Copy-Item $X86  $X86Local;   Write-Host "Saved x86_64: $X86Local"   -ForegroundColor Green }
 
+# Fixed-name copies for stable OTA download URLs (app_update_service.dart expects these names)
+$Arm64Release = Join-Path $BuildsDir "terraton-fan-arm64.apk"
+$Arm7Release  = Join-Path $BuildsDir "terraton-fan-arm7.apk"
+$X86Release   = Join-Path $BuildsDir "terraton-fan-x86_64.apk"
+Copy-Item $Arm64 $Arm64Release
+if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Release  }
+if (Test-Path $X86)   { Copy-Item $X86  $X86Release   }
+
+# Parse version from pubspec.yaml and write version.json for OTA version check
+$PubspecRaw = Get-Content (Join-Path $AppDir "pubspec.yaml") -Raw
+$AppVersion = '1.0.0+0'
+if ($PubspecRaw -match 'version:\s+(\S+)') { $AppVersion = $Matches[1] }
+$SemVer   = $AppVersion -replace '\+.*$', ''
+$BuildNum = if ($AppVersion -match '\+(\d+)$') { [int]$Matches[1] } else { 0 }
+$VersionJsonPath = Join-Path $BuildsDir "version.json"
+Set-Content -Path $VersionJsonPath -Value "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}" -Encoding utf8
+Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
+
 # ── 5. Publish to GitHub Releases (tag: latest) ───────────────────────────────
 Write-Host ""
 Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
@@ -107,10 +125,10 @@ gh release delete $ReleaseTag --repo $Repo --yes 2>$null
 git tag -d $ReleaseTag 2>$null
 git push origin --delete $ReleaseTag 2>$null
 
-# Collect APKs to upload (arm64 always present; others if built)
-$Assets = @($Arm64Local)
-if (Test-Path $Arm7Local) { $Assets += $Arm7Local }
-if (Test-Path $X86Local)  { $Assets += $X86Local  }
+# Collect release assets: fixed-name APKs + version.json (OTA update relies on these)
+$Assets = @($Arm64Release, $VersionJsonPath)
+if (Test-Path $Arm7Release) { $Assets += $Arm7Release }
+if (Test-Path $X86Release)  { $Assets += $X86Release  }
 
 $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
 $Notes = @"
@@ -138,4 +156,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green
-Write-Host "Recommended download (arm64): https://github.com/$Repo/releases/latest/download/$Arm64Name" -ForegroundColor Cyan
+Write-Host "Recommended download (arm64): https://github.com/$Repo/releases/latest/download/terraton-fan-arm64.apk" -ForegroundColor Cyan
