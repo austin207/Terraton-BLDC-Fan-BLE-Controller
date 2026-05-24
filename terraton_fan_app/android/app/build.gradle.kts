@@ -1,4 +1,4 @@
-import File
+import java.io.File
 
 plugins {
     id("com.android.application")
