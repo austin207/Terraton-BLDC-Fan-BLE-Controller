@@ -22,8 +22,14 @@ const kTextDim = Color(0xFF5C5C58);
 const kYellow       = Color(0xFFFFEC00);
 const kYellowSoft   = Color(0xFFFFF066);
 const kYellowGlow   = Color(0x59FFEC00); // rgba(255,236,0,0.35)
-const kYellowFill   = Color(0x1AFFEC00); // 10 % yellow — icon badge fill
-const kYellowBorder = Color(0x38FFEC00); // 22 % yellow — icon badge border
+const kYellowFill     = Color(0x1AFFEC00); // 10 % yellow — icon badge fill
+const kYellowBorder   = Color(0x38FFEC00); // 22 % yellow — icon badge border
+const kYellowBorderHi = Color(0x47FFEC00); // 28 % yellow — stronger badge border
+
+// ── Lighting temperature ──────────────────────────────────────────────────────
+const kLightWarm    = Color(0xFFE6B85C); // amber — warm CCT
+const kLightNeutral = Color(0xFFCFCFCF); // white/gray — neutral CCT
+const kLightCool    = Color(0xFFDDEEFF); // pale blue — cool CCT
 
 // ── Status ────────────────────────────────────────────────────────────────────
 const kGreen = Color(0xFF7AE582);

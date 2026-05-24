@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
@@ -178,29 +179,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final response = BleResponseParser.parse(bytes);
       if (response == null) return;
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-      switch (response.command) {
-        case 0x02:
-          final v = BleResponseParser.parsePowerState(response);
-          if (v != null) notifier.updatePower(v);
-        case 0x04:
-          final v = BleResponseParser.parseSpeed(response);
-          if (v != null) {
-            notifier.updateSpeed(v);
-            if (v > 0) notifier.updatePower(true);
-          }
-        case 0x21:
-          final v = BleResponseParser.parseModeString(response);
-          if (v != null) notifier.updateMode(v);
-        case 0x22:
-          final v = BleResponseParser.parseTimer(response);
-          if (v != null) notifier.updateTimer(v);
-        case 0x23:
-          final v = BleResponseParser.parsePowerWatts(response);
-          if (v != null) { notifier.updateWatts(v); _lastWattsAt = DateTime.now(); }
-        case 0x24:
-          final v = BleResponseParser.parseRpm(response);
-          if (v != null) { notifier.updateRpm(v); _lastRpmAt = DateTime.now(); }
+      final power = BleResponseParser.parsePowerState(response);
+      if (power != null) { notifier.updatePower(power); return; }
+      final speed = BleResponseParser.parseSpeed(response);
+      if (speed != null) {
+        notifier.updateSpeed(speed);
+        if (speed > 0) notifier.updatePower(true);
+        return;
       }
+      final mode = BleResponseParser.parseModeString(response);
+      if (mode != null) { notifier.updateMode(mode); return; }
+      final timer = BleResponseParser.parseTimer(response);
+      if (timer != null) { notifier.updateTimer(timer); return; }
+      final watts = BleResponseParser.parsePowerWatts(response);
+      if (watts != null) { notifier.updateWatts(watts); _lastWattsAt = DateTime.now(); return; }
+      final rpm = BleResponseParser.parseRpm(response);
+      if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
     });
   }
 
@@ -252,18 +246,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (frame.length < 5 + dataLen + 1) return;
     final data    = frame[5];
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-    switch (cmd) {
-      case 0x02: notifier.updatePower(data == 0x01);
-      case 0x04: notifier.updateSpeed(data);
-      case 0x21:
-        notifier.updateMode(switch (data) {
-          0x01 => 'boost',
-          0x02 => 'nature',
-          0x03 => 'reverse',
-          0x04 => 'smart',
-          _    => null,
-        });
-      case 0x22: notifier.updateTimer(data);
+    if (cmd == CommandLoader.responseCommand('power')) {
+      notifier.updatePower(data == 0x01);
+    } else if (cmd == CommandLoader.responseCommand('speed')) {
+      notifier.updateSpeed(data);
+    } else if (cmd == CommandLoader.responseCommand('mode')) {
+      notifier.updateMode(switch (data) {
+        0x01 => 'boost',
+        0x02 => 'nature',
+        0x03 => 'reverse',
+        0x04 => 'smart',
+        _    => null,
+      });
+    } else if (cmd == CommandLoader.responseCommand('timer')) {
+      notifier.updateTimer(data);
     }
   }
 
@@ -441,9 +437,9 @@ class _ServiceAccessBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0x1AFFEC00),
+        color: kYellowFill,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x47FFEC00)),
+        border: Border.all(color: kYellowBorderHi),
       ),
       child: Row(
         children: [
@@ -990,9 +986,9 @@ class _DisconnectAlertOverlay extends StatelessWidget {
                   Container(
                     width: 64, height: 64,
                     decoration: BoxDecoration(
-                      color: const Color(0x1AFFEC00),
+                      color: kYellowFill,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0x47FFEC00)),
+                      border: Border.all(color: kYellowBorderHi),
                     ),
                     child: const Icon(Icons.bluetooth_rounded, size: 28, color: kYellow),
                   ),
@@ -1123,27 +1119,31 @@ class _DebugCard extends StatelessWidget {
     if (bytes.length < 4) return '';
     final cmd  = bytes[3];
     final data = bytes.length > 5 ? bytes[5] : null;
-    return switch (cmd) {
-      0x02 => data == 0x01 ? 'Power ON' : 'Power OFF',
-      0x04 => 'Speed ${data ?? '?'}',
-      0x21 => switch (data) {
+    if (cmd == CommandLoader.responseCommand('power')) {
+      return data == 0x01 ? 'Power ON' : 'Power OFF';
+    }
+    if (cmd == CommandLoader.responseCommand('speed')) return 'Speed ${data ?? '?'}';
+    if (cmd == CommandLoader.responseCommand('mode')) {
+      return switch (data) {
         0x01 => 'Boost',
         0x02 => 'Nature',
         0x03 => 'Reverse',
         0x04 => 'Smart',
         _    => 'Mode ?',
-      },
-      0x22 => switch (data) {
+      };
+    }
+    if (cmd == CommandLoader.responseCommand('timer')) {
+      return switch (data) {
         0x00 => 'Timer OFF',
         0x02 => 'Timer 2h',
         0x04 => 'Timer 4h',
         0x08 => 'Timer 8h',
         _    => 'Timer ?',
-      },
-      0x23 => 'Query Power',
-      0x24 => 'Query Speed',
-      _    => 'cmd=0x${cmd.toRadixString(16).toUpperCase()}',
-    };
+      };
+    }
+    if (cmd == CommandLoader.responseCommand('power_watts')) return 'Query Power';
+    if (cmd == CommandLoader.responseCommand('running_rpm')) return 'Query Speed';
+    return 'cmd=0x${cmd.toRadixString(16).toUpperCase()}';
   }
 
   @override

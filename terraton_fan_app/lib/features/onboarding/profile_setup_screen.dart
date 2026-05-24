@@ -29,9 +29,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   void initState() {
     super.initState();
     _ctrl.addListener(() => setState(() {}));
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (mounted) FocusScope.of(context).requestFocus(_focusNode);
-    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) { if (mounted) FocusScope.of(context).requestFocus(_focusNode); },
+    );
   }
 
   @override

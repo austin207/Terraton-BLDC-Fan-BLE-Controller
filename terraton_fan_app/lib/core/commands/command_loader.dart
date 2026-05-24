@@ -61,7 +61,7 @@ class CommandLoader {
 
   static List<int> statusPoll() {
     final node = _safeGet(['status_poll']);
-    if (node == null) return const [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00];
+    if (node == null) throw StateError('status_poll missing from commands.yaml');
     return List<int>.from((node['frame'] as YamlList));
   }
 

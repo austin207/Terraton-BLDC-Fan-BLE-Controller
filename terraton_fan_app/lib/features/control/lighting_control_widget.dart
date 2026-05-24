@@ -73,11 +73,11 @@ class LightingControlWidget extends StatelessWidget {
             opacity: enabled && isLightOn ? 1.0 : 0.4,
             child: Row(
               children: [
-                Expanded(child: _TempBtn(label: 'Warm',    isActive: colorType == 'warm'    && isLightOn, color: const Color(0xFFE6B85C), onTap: enabled && isLightOn ? () => onColorTypeChanged('warm')    : null)),
+                Expanded(child: _TempBtn(label: 'Warm',    isActive: colorType == 'warm'    && isLightOn, color: kLightWarm,    onTap: enabled && isLightOn ? () => onColorTypeChanged('warm')    : null)),
                 const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Neutral', isActive: colorType == 'neutral' && isLightOn, color: const Color(0xFFCFCFCF), onTap: enabled && isLightOn ? () => onColorTypeChanged('neutral') : null)),
+                Expanded(child: _TempBtn(label: 'Neutral', isActive: colorType == 'neutral' && isLightOn, color: kLightNeutral, onTap: enabled && isLightOn ? () => onColorTypeChanged('neutral') : null)),
                 const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Cool',    isActive: colorType == 'cool'    && isLightOn, color: const Color(0xFFDDEEFF), onTap: enabled && isLightOn ? () => onColorTypeChanged('cool')    : null)),
+                Expanded(child: _TempBtn(label: 'Cool',    isActive: colorType == 'cool'    && isLightOn, color: kLightCool,    onTap: enabled && isLightOn ? () => onColorTypeChanged('cool')    : null)),
               ],
             ),
           ),
@@ -216,7 +216,7 @@ class _TempBtn extends StatelessWidget {
           duration: const Duration(milliseconds: 260),
           height: 56,
           decoration: BoxDecoration(
-            color: isActive ? color : const Color(0xFF1A1A1A),
+            color: isActive ? color : kCardElev,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: isActive ? color.withAlpha(200) : const Color(0xFF2A2A2A),
@@ -230,7 +230,7 @@ class _TempBtn extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 13, fontWeight: FontWeight.w700,
-              color: isActive ? const Color(0xFF1A1A1A) : const Color(0xFF6F6F6F),
+              color: isActive ? kCardElev : const Color(0xFF6F6F6F),
             ),
           ),
         ),
@@ -312,8 +312,8 @@ class _TickPainter extends CustomPainter {
   static const _steps  = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
   static const _labels = ['0', '20', '40', '60', '80', '100'];
 
-  static const _kDimText = Color(0xFF5C5C58);
-  static const _kLitText = Color(0xFFF4F4F2);
+  static const _kDimText = kTextDim;
+  static const _kLitText = kText;
 
   // Pre-laid painters for dim and lit variants — avoids TextPainter.layout()
   // inside paint(), which executes on every frame during slider drags.
@@ -346,10 +346,9 @@ class _TickPainter extends CustomPainter {
     const tickHalf =  5.0;
     const labelTop = 26.0;
 
-    const kYellowC  = Color(0xFFFFEC00);
     const kInactive = Color(0x28FFFFFF);
 
-    final active   = enabled ? kYellowC : const Color(0x50FFEC00);
+    final active = enabled ? kYellow : kYellow.withAlpha(0x50);
     final inactive = kInactive;
 
     // Full track

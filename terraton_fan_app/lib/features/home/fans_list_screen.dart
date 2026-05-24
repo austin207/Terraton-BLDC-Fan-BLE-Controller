@@ -117,7 +117,7 @@ class _FanList extends ConsumerWidget {
             itemCount: fans.length,
             itemBuilder: (_, i) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _FanRow(fan: fans[i]),
+              child: _FanRow(key: ValueKey(fans[i].deviceId), fan: fans[i]),
             ),
           ),
         ),
@@ -128,7 +128,7 @@ class _FanList extends ConsumerWidget {
 
 class _FanRow extends ConsumerStatefulWidget {
   final FanDevice fan;
-  const _FanRow({required this.fan});
+  const _FanRow({super.key, required this.fan});
 
   @override
   ConsumerState<_FanRow> createState() => _FanRowState();
