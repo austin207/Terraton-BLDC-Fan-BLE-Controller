@@ -105,7 +105,7 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
                 ),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(color: kHairlineStrong),
-                boxShadow: const [BoxShadow(color: Color(0xB3000000), blurRadius: 80)],
+                boxShadow: const [BoxShadow(color: kModalShadow, blurRadius: 80)],
               ),
               child: _selectedFan == null
                   ? _buildFanPicker()
@@ -133,9 +133,9 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
         Container(
           width: 52, height: 52,
           decoration: BoxDecoration(
-            color: const Color(0x1AFFEC00),
+            color: kYellowFill,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x47FFEC00)),
+            border: Border.all(color: kYellowBorderHi),
             boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
           ),
           child: const Icon(Icons.build_circle_outlined, color: kYellow, size: 22),
@@ -229,9 +229,9 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
         Container(
           width: 52, height: 52,
           decoration: BoxDecoration(
-            color: const Color(0x1AFFEC00),
+            color: kYellowFill,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x47FFEC00)),
+            border: Border.all(color: kYellowBorderHi),
             boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
           ),
           child: const Icon(Icons.qr_code_rounded, color: kYellow, size: 22),
@@ -253,7 +253,7 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
           decoration: BoxDecoration(
             color: kBg,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0x38FFEC00)),
+            border: Border.all(color: kYellowBorder),
             boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 22)],
           ),
           child: Column(

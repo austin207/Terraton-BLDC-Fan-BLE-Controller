@@ -905,7 +905,7 @@ class _PowerButton extends StatelessWidget {
       rim       = const Color(0x47FFFFFF);
       iconColor = const Color(0x8CFFFFFF);
       bgColor   = kCard;
-      shadows   = const [BoxShadow(color: Color(0x0FFFFFFF), blurRadius: 8)];
+      shadows   = const [BoxShadow(color: kHairline, blurRadius: 8)];
     } else if (isPowered) {
       rim       = kPowerOn;
       iconColor = kPowerOn;

@@ -29,7 +29,7 @@ const _sections = [
     id: 'getting-started',
     label: 'Getting Started',
     icon: Icons.power_settings_new_rounded,
-    accent: Color(0xFF7AA7FF),
+    accent: kBlue,
     body: [
       'Power on your Terraton fan from the wall switch — the indicator LED will pulse yellow.',
       'On first launch, open the Terraton app and tap the Fans tile on the Home screen.',
@@ -41,7 +41,7 @@ const _sections = [
     id: 'speed',
     label: 'Controlling Fan Speed',
     icon: Icons.speed_rounded,
-    accent: Color(0xFFB68BFF),
+    accent: kPurple,
     body: [
       'Open any fan from the list to view its control screen.',
       'Tap a dot on the radial ring to set speed from 1 to 6.',
@@ -53,7 +53,7 @@ const _sections = [
     id: 'boost',
     label: 'Boost Mode',
     icon: Icons.bolt_rounded,
-    accent: Color(0xFFFFB400),
+    accent: kAmber,
     body: [
       'Tap BOOST to instantly push the fan to its maximum airflow.',
       'The dial visualizes Boost with an intensified glow ring.',
@@ -65,7 +65,7 @@ const _sections = [
     id: 'modes',
     label: 'Operating Modes',
     icon: Icons.air_rounded,
-    accent: Color(0xFF7AE582),
+    accent: kGreen,
     body: [
       'Nature: gently varies speed to mimic natural breeze patterns.',
       'Smart: learns your usage and adjusts speed based on time-of-day.',
@@ -77,7 +77,7 @@ const _sections = [
     id: 'timer',
     label: 'Sleep Timer',
     icon: Icons.timer_rounded,
-    accent: Color(0xFF7AE582),
+    accent: kGreen,
     body: [
       'Set a 2H, 4H, or 8H timer to automatically power the fan off.',
       'The remaining time appears beside the SLEEP TIMER label.',
@@ -89,7 +89,7 @@ const _sections = [
     id: 'lighting',
     label: 'Mood Lighting',
     icon: Icons.light_mode_rounded,
-    accent: Color(0xFFFFEC00),
+    accent: kYellow,
     body: [
       'Toggle the light ON/OFF using the switch in the MOOD LIGHTING section.',
       'Choose Warm, Neutral, or Cool colour temperature to match your mood.',
@@ -101,7 +101,7 @@ const _sections = [
     id: 'managing',
     label: 'Managing Your Fans',
     icon: Icons.devices_rounded,
-    accent: Color(0xFF9A9A95),
+    accent: kTextMut,
     body: [
       'Long-press any fan card to open the action sheet.',
       'Tap Rename Fan to give it a friendlier name (e.g. "Bedroom Fan").',
@@ -113,7 +113,7 @@ const _sections = [
     id: 'ai-training',
     label: 'AI Training & Data Sharing',
     icon: Icons.auto_graph_rounded,
-    accent: Color(0xFFFFEC00),
+    accent: kYellow,
     body: [
       'When you use your fan, the app quietly notes things like what speed you normally use, which mode you prefer, and roughly how many watts it draws.',
       'That information gets sent to us — but we never know it came from you. Your phone is given a scrambled code instead of your name or device details.',
@@ -127,7 +127,7 @@ const _sections = [
     id: 'troubleshooting',
     label: 'Troubleshooting',
     icon: Icons.help_outline_rounded,
-    accent: Color(0xFFFF6B6B),
+    accent: kRed,
     body: [
       'Fan not responding? Make sure Bluetooth is enabled and you\'re within ~10 m.',
       'If a fan shows Disconnected, tap Reconnect in the popup, or cycle the wall switch.',

@@ -77,9 +77,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     Container(
                       width: 76, height: 76,
                       decoration: BoxDecoration(
-                        color: const Color(0x1AFFEC00),
+                        color: kYellowFill,
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0x40FFEC00)),
+                        border: Border.all(color: kYellowBorderHi),
                         boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 40)],
                       ),
                       child: const Icon(
@@ -123,7 +123,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: _ctrl.text.isNotEmpty
-                              ? const Color(0x59FFEC00)
+                              ? kYellowGlow
                               : kHairlineStrong,
                           width: 1.5,
                         ),

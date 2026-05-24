@@ -319,7 +319,7 @@ class _FanResultRow extends StatelessWidget {
 
   static Color _rssiColor(int rssi) {
     if (rssi >= -60) return kGreen;
-    if (rssi >= -80) return const Color(0xFFF97316);
+    if (rssi >= -80) return kOrange;
     return kRed;
   }
 

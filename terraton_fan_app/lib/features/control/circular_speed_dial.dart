@@ -270,7 +270,7 @@ class _DialPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(cx, cy), r,
         Paint()
-          ..color = const Color(0x1AFFFFFF)
+          ..color = kHairlineStrong
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5,
       );
@@ -327,7 +327,7 @@ class _DialPainter extends CustomPainter {
 
       // Dot on the ring — selected: bright yellow glow; off: dark fill covers arc
       final dotPos = _polar(cx, cy, r, ang);
-      final dotFill   = st == _DotState.selected ? kYellow : const Color(0xFF1A1A1A);
+      final dotFill   = st == _DotState.selected ? kYellow : kCardElev;
       final dotStroke = st == _DotState.selected ? kYellow : const Color(0x38FFFFFF);
 
       // Bloom/glow for selected dot

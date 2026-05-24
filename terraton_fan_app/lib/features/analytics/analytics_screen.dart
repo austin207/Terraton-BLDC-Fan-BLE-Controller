@@ -755,7 +755,7 @@ class _RingPainter extends CustomPainter {
   static const _sw = 7.0;
 
   static final _trackPaint = Paint()
-    ..color = const Color(0x0FFFFFFF)
+    ..color = kHairline
     ..style = PaintingStyle.stroke
     ..strokeWidth = _sw;
 

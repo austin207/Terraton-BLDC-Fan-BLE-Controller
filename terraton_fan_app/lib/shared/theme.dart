@@ -35,13 +35,26 @@ const kLightCool    = Color(0xFFDDEEFF); // pale blue — cool CCT
 const kBlue     = Color(0xFF7AA7FF);
 const kBlueFill = Color(0x207AA7FF); // 12 % blue — icon badge fill
 
+// ── Green fill (data management import icon) ──────────────────────────────────
+const kGreenFill = Color(0x207AE582); // 12 % green — icon badge fill
+
+// ── Yellow misc ───────────────────────────────────────────────────────────────
+const kYellowFaint = Color(0x03FFEC00); // 1 % yellow — gradient terminal fade
+const kYellowDim   = Color(0x0FFFEC00); // 6 % yellow — spread shadow tint
+
+// ── Overlay ───────────────────────────────────────────────────────────────────
+const kModalShadow = Color(0xB3000000); // 70 % black — modal drop shadow
+
 // ── Comparison arrows (analytics — lower energy is better) ───────────────────
 const kCompareGood = Color(0xFF22C55E); // green — lower vs previous period
 const kCompareBad  = Color(0xFFEF4444); // red   — higher vs previous period
 
 // ── Status ────────────────────────────────────────────────────────────────────
-const kGreen = Color(0xFF7AE582);
-const kRed   = Color(0xFFFF6B6B);
+const kGreen  = Color(0xFF7AE582);
+const kRed    = Color(0xFFFF6B6B);
+const kOrange = Color(0xFFF97316); // orange — fair RSSI signal, kSpeedColors[4]
+const kPurple = Color(0xFFB68BFF); // soft lavender — user manual accent
+const kAmber  = Color(0xFFFFB400); // warm amber    — boost/highlight accent
 
 // ── Power button states ───────────────────────────────────────────────────────
 const kPowerOn  = Color(0xFF3FD37A); // connected + powered on

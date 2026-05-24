@@ -38,7 +38,7 @@ class SettingsScreen extends ConsumerWidget {
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [kYellowFill, Color(0x03FFEC00)],
+              colors: [kYellowFill, kYellowFaint],
             ),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: kYellowBorder),
@@ -98,7 +98,7 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _export(context, ref),
           ),
           _SettingRow(
-            iconBg: const Color(0x207AE582),
+            iconBg: kGreenFill,
             iconColor: kGreen,
             icon: Icons.download_rounded,
             label: 'Import Fans Data',
@@ -343,7 +343,7 @@ class _RenameModalState extends State<_RenameModal> {
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(color: kHairlineStrong),
                 boxShadow: const [
-                  BoxShadow(color: Color(0xB3000000), blurRadius: 80),
+                  BoxShadow(color: kModalShadow, blurRadius: 80),
                 ],
               ),
               child: Column(
@@ -365,9 +365,9 @@ class _RenameModalState extends State<_RenameModal> {
                   Container(
                     width: 52, height: 52,
                     decoration: BoxDecoration(
-                      color: const Color(0x1AFFEC00),
+                      color: kYellowFill,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0x47FFEC00)),
+                      border: Border.all(color: kYellowBorderHi),
                       boxShadow: const [BoxShadow(color: kYellowGlow, blurRadius: 24)],
                     ),
                     child: const Icon(Icons.edit_rounded, color: kYellow, size: 20),
@@ -396,9 +396,9 @@ class _RenameModalState extends State<_RenameModal> {
                     decoration: BoxDecoration(
                       color: kBg,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0x52FFEC00)),
+                      border: Border.all(color: kYellowGlow),
                       boxShadow: const [
-                        BoxShadow(color: Color(0x0FFFEC00), blurRadius: 0, spreadRadius: 4),
+                        BoxShadow(color: kYellowDim, blurRadius: 0, spreadRadius: 4),
                         BoxShadow(color: kYellowGlow, blurRadius: 22),
                       ],
                     ),
