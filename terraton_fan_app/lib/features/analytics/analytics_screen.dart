@@ -367,9 +367,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0x0DFFEC00),
+                  color: kYellowFill,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x2EFFEC00)),
+                  border: Border.all(color: kYellowBorder),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
