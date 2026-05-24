@@ -115,12 +115,12 @@ const _sections = [
     icon: Icons.auto_graph_rounded,
     accent: Color(0xFFFFEC00),
     body: [
-      'The app collects anonymous usage patterns to train an on-device AI model that suggests energy-saving settings tailored to your habits.',
-      'Data collected includes: speed used, mode selected, hours of operation, and estimated watt draw — never your name, location, or device ID.',
-      'Your device ID is converted into a one-way hash before any data leaves the app, making it impossible to trace back to you.',
-      'Uploads happen automatically on Wi-Fi only, once per day, covering the previous day\'s completed sessions.',
-      'The trained model will be embedded in a future update to provide personalised efficiency recommendations directly in the Analytics screen.',
-      'You can opt out at any time in Settings → AI Training. Turning it off stops all future uploads; no data already sent can be recalled.',
+      'When you use your fan, the app quietly notes things like what speed you normally use, which mode you prefer, and roughly how many watts it draws.',
+      'That information gets sent to us — but we never know it came from you. Your phone is given a scrambled code instead of your name or device details.',
+      'We use everyone\'s combined data to train an AI that will one day suggest the best fan settings to save energy based on how people actually use their fans.',
+      'Nothing is sent over mobile data — uploads only happen when you\'re on Wi-Fi, once a day, and only for days that are already finished.',
+      'A future app update will add personalised tips in the Analytics screen powered by this model — for example, "switching to Speed 3 at night could save you ₹X per month".',
+      'Not comfortable? Go to Settings → AI Training and flip the switch off. That\'s it — no more data is sent from that point on.',
     ],
   ),
   _SectionData(
