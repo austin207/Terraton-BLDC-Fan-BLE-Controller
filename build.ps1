@@ -22,6 +22,51 @@ if (Test-Path $SecretsFile) {
     Write-Host "WARNING: secrets.env not found -- UPLOAD_API_KEY will be empty. Copy secrets.env.template to secrets.env and fill in the values." -ForegroundColor Yellow
 }
 
+# ── Version bump ─────────────────────────────────────────────────────────────
+$PubspecPath = Join-Path $AppDir "pubspec.yaml"
+$PubspecRaw  = Get-Content $PubspecPath -Raw
+if ($PubspecRaw -match 'version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)') {
+    $vMaj = [int]$Matches[1]; $vMin = [int]$Matches[2]
+    $vPat = [int]$Matches[3]; $vBld = [int]$Matches[4]
+} else {
+    Write-Host "ERROR: Could not parse version from pubspec.yaml (expected format: x.y.z+N)" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host ""
+Write-Host "Current version: $vMaj.$vMin.$vPat+$vBld" -ForegroundColor Yellow
+Write-Host "  [P]atch  ->  $vMaj.$vMin.$($vPat + 1)+$($vBld + 1)   (default — small fixes / tweaks)"     -ForegroundColor DarkGray
+Write-Host "  mi[N]or  ->  $vMaj.$($vMin + 1).0+$($vBld + 1)   (new features, backwards-compatible)"      -ForegroundColor DarkGray
+Write-Host "  ma[J]or  ->  $($vMaj + 1).0.0+$($vBld + 1)   (breaking changes / landmark release)"         -ForegroundColor DarkGray
+Write-Host "  [S]kip   ->  keep $vMaj.$vMin.$vPat+$vBld  (rebuild without bumping)"                        -ForegroundColor DarkGray
+Write-Host ""
+$bumpChoice = Read-Host "Bump type [P/N/J/S]"
+if ([string]::IsNullOrEmpty($bumpChoice)) { $bumpChoice = 'P' }
+
+switch ($bumpChoice.Trim().ToUpper()) {
+    'P' { $vPat++;                          $vBld++ }
+    'N' { $vMin++; $vPat = 0;              $vBld++ }
+    'J' { $vMaj++; $vMin = 0; $vPat = 0;  $vBld++ }
+    'S' { <# no change #> }
+    default { Write-Host "Unknown input — defaulting to Patch." -ForegroundColor Yellow; $vPat++; $vBld++ }
+}
+
+$SemVer     = "$vMaj.$vMin.$vPat"
+$BuildNum   = $vBld
+$NewVersion = "$SemVer+$BuildNum"
+
+if ($bumpChoice.Trim().ToUpper() -ne 'S') {
+    # Replace version line; '${1}' is the regex back-reference for the captured prefix
+    $replacement = '${1}' + $NewVersion
+    $PubspecRaw  = $PubspecRaw -replace '(?m)^(version:\s+)\d+\.\d+\.\d+\+\d+', $replacement
+    $enc = New-Object System.Text.UTF8Encoding($false)   # UTF-8 without BOM
+    [System.IO.File]::WriteAllText($PubspecPath, $PubspecRaw, $enc)
+    Write-Host "Version bumped  ->  $NewVersion" -ForegroundColor Green
+} else {
+    Write-Host "Keeping version $NewVersion" -ForegroundColor DarkGray
+}
+Write-Host ""
+
 # ── 0. Clear builds folder ───────────────────────────────────────────────────
 if (Test-Path $BuildsDir) {
     Remove-Item (Join-Path $BuildsDir "*.apk") -Force
@@ -105,12 +150,7 @@ Copy-Item $Arm64 $Arm64Release
 if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Release  }
 if (Test-Path $X86)   { Copy-Item $X86  $X86Release   }
 
-# Parse version from pubspec.yaml and write version.json for OTA version check
-$PubspecRaw = Get-Content (Join-Path $AppDir "pubspec.yaml") -Raw
-$AppVersion = '1.0.0+0'
-if ($PubspecRaw -match 'version:\s+(\S+)') { $AppVersion = $Matches[1] }
-$SemVer   = $AppVersion -replace '\+.*$', ''
-$BuildNum = if ($AppVersion -match '\+(\d+)$') { [int]$Matches[1] } else { 0 }
+# Write version.json for OTA version check (version already set by bump prompt)
 $VersionJsonPath = Join-Path $BuildsDir "version.json"
 Set-Content -Path $VersionJsonPath -Value "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}" -Encoding utf8
 Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
@@ -132,20 +172,20 @@ if (Test-Path $X86Release)  { $Assets += $X86Release  }
 
 $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
 $Notes = @"
-Built on $BuildDate
+**v$NewVersion** — built $BuildDate
 
 Both QR scan and Bluetooth scan onboarding are included in every APK.
 
 | APK | Architecture | Use for |
 |-----|-------------|---------|
-| terraton-fan-arm64-*.apk | arm64-v8a | All modern Android phones (recommended) |
-| terraton-fan-arm7-*.apk  | armeabi-v7a | Older 32-bit Android phones |
-| terraton-fan-x86_64-*.apk | x86_64 | Android emulators |
+| terraton-fan-arm64.apk | arm64-v8a | All modern Android phones (recommended) |
+| terraton-fan-arm7.apk  | armeabi-v7a | Older 32-bit Android phones |
+| terraton-fan-x86_64.apk | x86_64 | Android emulators |
 "@
 
 gh release create $ReleaseTag @Assets `
     --repo $Repo `
-    --title "Latest Build ($BuildDate)" `
+    --title "v$NewVersion ($BuildDate)" `
     --notes $Notes `
     --latest
 
@@ -154,6 +194,19 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# ── 6. Commit & push the version bump ────────────────────────────────────────
+if ($bumpChoice.Trim().ToUpper() -ne 'S') {
+    Set-Location $ProjectRoot
+    git add (Join-Path $AppDir "pubspec.yaml") (Join-Path $AppDir "pubspec.lock")
+    git commit -m "chore: bump version to $NewVersion"
+    if ($LASTEXITCODE -eq 0) {
+        git push
+        Write-Host "Committed and pushed version bump  ->  $NewVersion" -ForegroundColor Green
+    } else {
+        Write-Host "Warning: git commit failed — commit pubspec.yaml manually." -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
-Write-Host "Done!" -ForegroundColor Green
+Write-Host "Done!  v$NewVersion" -ForegroundColor Green
 Write-Host "Recommended download (arm64): https://github.com/$Repo/releases/latest/download/terraton-fan-arm64.apk" -ForegroundColor Cyan
