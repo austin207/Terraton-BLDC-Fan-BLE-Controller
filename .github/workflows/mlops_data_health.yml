@@ -1,0 +1,48 @@
+name: MLOps — Data Health
+
+# Runs daily at 06:00 UTC. Fails the workflow (sending a GitHub email
+# notification) if no data has arrived in R2 in the past 48 hours.
+# Gives you an early warning that the app's upload pipeline is broken.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  health:
+    name: R2 Data Freshness Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ml/requirements.txt
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Run health check
+        env:
+          R2_ENDPOINT:   https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python ml/data_health.py --alert-threshold-hours 48
+
+      - name: Write job summary
+        if: always()
+        run: |
+          python ml/data_health.py --json --no-exit > health.json 2>/dev/null || echo '{}' > health.json
+          python - <<'EOF'
+          import json, os
+          h = json.load(open('health.json'))
+          s = open(os.environ['GITHUB_STEP_SUMMARY'], 'a')
+          s.write('### R2 Data Health\n')
+          s.write(f"- Total rows: **{h.get('total_rows', '?')}**\n")
+          s.write(f"- Last upload: **{h.get('last_upload_age_hours', '?'):.1f}h ago**\n")
+          s.write(f"- Status: {'✅ Healthy' if h.get('healthy') else '🚨 Alert'}\n")
+          EOF
