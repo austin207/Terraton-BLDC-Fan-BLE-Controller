@@ -243,7 +243,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 | --- | --- | --- |
 | MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet, `0xFF1E293B` text) clash with dark theme |
 | MEDIUM | `fans_list_screen.dart:275` | Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider` |
-| MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | Async work in `.then()` callback; rename/delete errors silently dropped in release |
+| ~~MEDIUM~~ | ~~`fans_list_screen.dart:180`, `fan_card.dart:167`~~ | ~~Async work in `.then()` callback; rename/delete errors silently dropped in release~~ | **Fixed 2026-05-24** |
 | LOW | `splash_screen.dart:131` | Version string hardcoded; should read from `packageInfoProvider` |
 
 ---
