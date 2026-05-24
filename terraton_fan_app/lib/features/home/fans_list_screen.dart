@@ -168,8 +168,10 @@ class _FanRowState extends ConsumerState<_FanRow> {
     ));
   }
 
-  void _showRename() {
-    unawaited(showModalBottomSheet<String>(
+  void _showRename() => unawaited(_doRename());
+
+  Future<void> _doRename() async {
+    final name = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: kSurface,
@@ -177,16 +179,24 @@ class _FanRowState extends ConsumerState<_FanRow> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (_) => _RenameSheet(initialName: widget.fan.nickname),
-    ).then((name) async {
-      if (name != null && name.isNotEmpty && mounted) {
-        await ref.read(fanRepositoryProvider).renameFan(widget.fan.deviceId, name);
-        if (mounted) ref.invalidate(savedFansProvider);
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    try {
+      await ref.read(fanRepositoryProvider).renameFan(widget.fan.deviceId, name);
+      if (mounted) ref.invalidate(savedFansProvider);
+    } on Exception catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rename failed. Please try again.')),
+        );
       }
-    }));
+    }
   }
 
-  void _confirmDelete() {
-    unawaited(showDialog<bool>(
+  void _confirmDelete() => unawaited(_doDelete());
+
+  Future<void> _doDelete() async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: kSurface,
@@ -205,12 +215,18 @@ class _FanRowState extends ConsumerState<_FanRow> {
           ),
         ],
       ),
-    ).then((confirmed) async {
-      if (confirmed == true && mounted) {
-        await ref.read(fanRepositoryProvider).deleteFan(widget.fan.deviceId);
-        if (mounted) ref.invalidate(savedFansProvider);
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(fanRepositoryProvider).deleteFan(widget.fan.deviceId);
+      if (mounted) ref.invalidate(savedFansProvider);
+    } on Exception catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Remove failed. Please try again.')),
+        );
       }
-    }));
+    }
   }
 
   @override

@@ -37,7 +37,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     _tariffCtrl = TextEditingController(text: _tariff.toStringAsFixed(1));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reloadData();
-      _loadTariff();
+      unawaited(_loadTariff());
     });
   }
 
