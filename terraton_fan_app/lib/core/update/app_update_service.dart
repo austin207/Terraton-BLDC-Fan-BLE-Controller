@@ -32,13 +32,13 @@ abstract final class AppUpdateService {
     final pkgInfo    = await PackageInfo.fromPlatform();
     final localBuild = int.tryParse(pkgInfo.buildNumber) ?? 0;
 
-    // Cache-busting query param forces a fresh response from GitHub's CDN;
-    // without it a deleted+recreated "latest" release may return stale JSON.
-    final uri = Uri.parse(_versionUrl).replace(
-      queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch.toString()},
-    );
-
-    final res = await http.get(uri).timeout(const Duration(seconds: 10));
+    // Cache-Control header asks CDN not to serve a stale response.
+    // Query params are NOT used — GitHub release download URLs reject unknown
+    // query parameters and return a non-200, which looks like a network error.
+    final res = await http.get(
+      Uri.parse(_versionUrl),
+      headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+    ).timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
       throw Exception('HTTP ${res.statusCode}');
     }
