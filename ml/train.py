@@ -50,10 +50,22 @@ warnings.filterwarnings('ignore')
 
 # ── 0. Config ──────────────────────────────────────────────────────────────────
 
-# Fill in your Cloudflare R2 credentials before running.
-R2_ENDPOINT   = 'https://<account_id>.r2.cloudflarestorage.com'
-R2_ACCESS_KEY = '<r2_access_key_id>'
-R2_SECRET_KEY = '<r2_secret_access_key>'
+# Cloudflare R2 — S3-compatible direct access for reading training data.
+#
+# IMPORTANT: These are R2 API tokens, NOT the Worker Bearer token
+# (terraton-secret-2026 is for the upload endpoint only — different thing).
+#
+# To get R2 API tokens:
+#   Cloudflare dashboard → R2 → Manage R2 API Tokens → Create API Token
+#   Permissions: Object Read  (read-only is enough for training)
+#   Copy the Access Key ID and Secret Access Key shown once on creation.
+#
+# To get your account ID:
+#   Cloudflare dashboard → right sidebar → Account ID (32-char hex string)
+#
+R2_ENDPOINT   = 'https://<account_id>.r2.cloudflarestorage.com'  # fill in account_id
+R2_ACCESS_KEY = '<r2_access_key_id>'                              # from R2 API tokens
+R2_SECRET_KEY = '<r2_secret_access_key>'                          # from R2 API tokens
 R2_BUCKET     = 'terraton-usage-data'
 
 OUTPUT_DIR = Path('output')
