@@ -203,7 +203,7 @@ if ($bumpChoice.Trim().ToUpper() -ne 'S') {
         git push
         Write-Host "Committed and pushed version bump  ->  $NewVersion" -ForegroundColor Green
     } else {
-        Write-Host "Warning: git commit failed — commit pubspec.yaml manually." -ForegroundColor Yellow
+        Write-Host "Warning: git commit failed - commit pubspec.yaml manually." -ForegroundColor Yellow
     }
 }
 
