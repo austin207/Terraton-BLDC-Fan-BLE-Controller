@@ -126,22 +126,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             child: const BrandMark(height: 148, full: false),
           ),
 
-          // Loading dots + version — bottom section
-          Positioned(
-            bottom: 48,
-            child: Column(
-              children: [
-                const _BreatheDots(),
-                const SizedBox(height: 14),
-                Text(
-                  'v$version · SMART BLDC',
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 10,
-                    color: kTextDim,
-                    letterSpacing: 2.4,
-                  ),
+          // Loading dots + version — pinned to screen bottom
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _BreatheDots(),
+                    const SizedBox(height: 14),
+                    Text(
+                      'v$version · SMART BLDC',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10,
+                        color: kTextDim,
+                        letterSpacing: 2.4,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],

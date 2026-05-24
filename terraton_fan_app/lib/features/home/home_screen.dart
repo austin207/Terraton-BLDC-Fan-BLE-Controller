@@ -1,5 +1,6 @@
 // lib/features/home/home_screen.dart
 import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _checkForUpdate() async {
+    // Fast-fail when offline — avoids burning the full 8-second timeout.
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.every((r) => r == ConnectivityResult.none)) return;
+
     final info = await AppUpdateService.checkForUpdate();
     if (info == null || !mounted) return;
     unawaited(UpdateDialog.show(context, info));
@@ -149,9 +154,9 @@ class _UsageCard extends StatelessWidget {
           Container(
             width: 48, height: 48,
             decoration: BoxDecoration(
-              color: const Color(0x1AFFEC00),
+              color: kYellowFill,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0x38FFEC00)),
+              border: Border.all(color: kYellowBorder),
             ),
             child: const Icon(Icons.bolt_rounded, color: kYellow, size: 24),
           ),
@@ -188,9 +193,9 @@ class _UsageCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0x1AFFEC00),
+              color: kYellowFill,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0x38FFEC00)),
+              border: Border.all(color: kYellowBorder),
             ),
             child: Text('SOON',
                 style: GoogleFonts.jetBrainsMono(

@@ -2,7 +2,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -18,7 +17,7 @@ class UpdateDialog extends StatefulWidget {
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        builder: (_) => UpdateDialog(info: info),
+        builder: (sheetContext) => UpdateDialog(info: info),
       );
 
   @override
@@ -31,18 +30,6 @@ class _UpdateDialogState extends State<UpdateDialog> {
   _Phase _phase = _Phase.idle;
   double _progress = 0;
   String? _errorMsg;
-  String _localVersion = '';
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadLocalVersion());
-  }
-
-  Future<void> _loadLocalVersion() async {
-    final info = await PackageInfo.fromPlatform();
-    if (mounted) setState(() => _localVersion = info.version);
-  }
 
   Future<void> _startDownload() async {
     setState(() { _phase = _Phase.downloading; _progress = 0; });
@@ -91,9 +78,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
               Container(
                 width: 44, height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0x1AFFEC00),
+                  color: kYellowFill,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x38FFEC00)),
+                  border: Border.all(color: kYellowBorder),
                 ),
                 child: const Icon(Icons.system_update_rounded, color: kYellow, size: 22),
               ),
@@ -107,7 +94,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                           fontSize: 18, fontWeight: FontWeight.w700, color: kText,
                         )),
                     Text(
-                      'v${_localVersion.isNotEmpty ? _localVersion : '…'} → v${widget.info.version}',
+                      'v${widget.info.localVersion} → v${widget.info.version}',
                       style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
                     ),
                   ],

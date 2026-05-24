@@ -1,6 +1,7 @@
 // lib/core/update/app_update_service.dart
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -9,36 +10,52 @@ import 'package:path_provider/path_provider.dart';
 class UpdateInfo {
   final String version;
   final int buildNumber;
-  const UpdateInfo({required this.version, required this.buildNumber});
+  final String localVersion;
+  const UpdateInfo({
+    required this.version,
+    required this.buildNumber,
+    required this.localVersion,
+  });
 }
 
 abstract final class AppUpdateService {
   static const _repo = 'austin207/Terraton-BLDC-Fan-BLE-Controller';
+  // Tag-based URL — avoids GitHub's "latest release" redirect, which is
+  // unreliable when the release tag itself is the string "latest".
   static const _versionUrl =
-      'https://github.com/$_repo/releases/latest/download/version.json';
+      'https://github.com/$_repo/releases/download/latest/version.json';
   static const _apkUrl =
-      'https://github.com/$_repo/releases/latest/download/terraton-fan-arm64.apk';
+      'https://github.com/$_repo/releases/download/latest/terraton-fan-arm64.apk';
 
   /// Returns [UpdateInfo] if remote build_number > installed build, else null.
-  /// Returns null silently on any network/parse error.
+  /// Returns null silently on any network / parse error.
   static Future<UpdateInfo?> checkForUpdate() async {
     try {
-      final info = await PackageInfo.fromPlatform();
-      final localBuild = int.tryParse(info.buildNumber) ?? 0;
+      final pkgInfo    = await PackageInfo.fromPlatform();
+      final localBuild = int.tryParse(pkgInfo.buildNumber) ?? 0;
 
       final res = await http
           .get(Uri.parse(_versionUrl))
           .timeout(const Duration(seconds: 8));
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) {
+        if (kDebugMode) debugPrint('[OTA] version check failed: HTTP ${res.statusCode}');
+        return null;
+      }
 
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      final remoteBuild = (body['build_number'] as num).toInt();
+      final body         = jsonDecode(res.body) as Map<String, dynamic>;
+      final remoteBuild  = (body['build_number'] as num).toInt();
       final remoteVersion = body['version'] as String;
 
+      if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
       return remoteBuild > localBuild
-          ? UpdateInfo(version: remoteVersion, buildNumber: remoteBuild)
+          ? UpdateInfo(
+              version: remoteVersion,
+              buildNumber: remoteBuild,
+              localVersion: pkgInfo.version,
+            )
           : null;
-    } on Exception {
+    } on Exception catch (e) {
+      if (kDebugMode) debugPrint('[OTA] checkForUpdate error: $e');
       return null;
     }
   }
@@ -48,7 +65,7 @@ abstract final class AppUpdateService {
   /// Returns the [File] on success, or null on any failure.
   static Future<File?> downloadUpdate(void Function(double) onProgress) async {
     try {
-      final dir = await getTemporaryDirectory();
+      final dir  = await getTemporaryDirectory();
       final file = File('${dir.path}/terraton-update.apk');
 
       final client = http.Client();
@@ -57,23 +74,25 @@ abstract final class AppUpdateService {
         final res = await client.send(req);
         if (res.statusCode != 200) return null;
 
-        final total = res.contentLength ?? 0;
-        var received = 0;
-        final sink = file.openWrite();
-
-        await for (final chunk in res.stream) {
-          sink.add(chunk);
-          received += chunk.length;
-          if (total > 0) onProgress(received / total);
+        final total    = res.contentLength ?? 0;
+        var   received = 0;
+        final sink     = file.openWrite();
+        try {
+          await for (final chunk in res.stream) {
+            sink.add(chunk);
+            received += chunk.length;
+            if (total > 0) onProgress(received / total);
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
         }
-
-        await sink.flush();
-        await sink.close();
         return file;
       } finally {
         client.close();
       }
-    } on Exception {
+    } on Exception catch (e) {
+      if (kDebugMode) debugPrint('[OTA] downloadUpdate error: $e');
       return null;
     }
   }

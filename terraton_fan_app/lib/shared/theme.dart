@@ -19,9 +19,11 @@ const kTextMut = Color(0xFF9A9A95);
 const kTextDim = Color(0xFF5C5C58);
 
 // ── Accent ────────────────────────────────────────────────────────────────────
-const kYellow     = Color(0xFFFFEC00);
-const kYellowSoft = Color(0xFFFFF066);
-const kYellowGlow = Color(0x59FFEC00); // rgba(255,236,0,0.35)
+const kYellow       = Color(0xFFFFEC00);
+const kYellowSoft   = Color(0xFFFFF066);
+const kYellowGlow   = Color(0x59FFEC00); // rgba(255,236,0,0.35)
+const kYellowFill   = Color(0x1AFFEC00); // 10 % yellow — icon badge fill
+const kYellowBorder = Color(0x38FFEC00); // 22 % yellow — icon badge border
 
 // ── Status ────────────────────────────────────────────────────────────────────
 const kGreen = Color(0xFF7AE582);
