@@ -12,6 +12,17 @@ class UsageSummary {
   final double totalKwh;
   final double avgWatts;
 
+  // Weather for the day (Open-Meteo, central Kerala coords).
+  // -1.0 when the fetch failed — model training pipeline treats as missing.
+  final double tempMaxC;
+  final double tempMinC;
+  final double humidityPct;
+
+  // Tariff context
+  final double tariffPerKwh;  // ₹/kWh — user-set in Settings
+  final int    ksebSlab;      // KSEB LT domestic slab 1–8 (from fan's 30-day kWh)
+  final double monthlyKwhEst; // fan's rolling 30-day kWh total
+
   UsageSummary({
     required this.period,
     required this.deviceHash,
@@ -22,6 +33,12 @@ class UsageSummary {
     required this.sessions,
     required this.totalKwh,
     required this.avgWatts,
+    required this.tempMaxC,
+    required this.tempMinC,
+    required this.humidityPct,
+    required this.tariffPerKwh,
+    required this.ksebSlab,
+    required this.monthlyKwhEst,
   })  : gearDist    = List.unmodifiable(gearDist),
         modeDist    = Map.unmodifiable(modeDist),
         hourlyUsage = List.unmodifiable(hourlyUsage);
@@ -36,5 +53,11 @@ class UsageSummary {
     'sessions':         sessions,
     'total_kwh':        totalKwh,
     'avg_watts':        avgWatts,
+    'temp_max_c':       tempMaxC,
+    'temp_min_c':       tempMinC,
+    'humidity_pct':     humidityPct,
+    'tariff_per_kwh':   tariffPerKwh,
+    'kseb_slab':        ksebSlab,
+    'monthly_kwh_est':  monthlyKwhEst,
   };
 }

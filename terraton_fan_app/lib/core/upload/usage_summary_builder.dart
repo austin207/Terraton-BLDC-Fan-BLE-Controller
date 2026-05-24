@@ -7,11 +7,19 @@ import 'package:terraton_fan_app/models/usage_summary.dart';
 abstract final class UsageSummaryBuilder {
   /// Builds a [UsageSummary] for [deviceId] on [date] from [logs].
   /// Returns null if there are no active (gear > 0) segments for that day.
+  ///
+  /// Weather values default to -1.0 (missing sentinel) when the caller
+  /// could not fetch them. The training pipeline handles -1 as NaN.
   static UsageSummary? build(
     String deviceId,
     DateTime date,
-    List<UsageLog> logs,
-  ) {
+    List<UsageLog> logs, {
+    double tempMaxC      = -1,
+    double tempMinC      = -1,
+    double humidityPct   = -1,
+    double tariffPerKwh  = 5.4,
+    double monthlyKwhEst = 0,
+  }) {
     final dayLogs = logs.where((l) => _sameDay(l.startTime.toLocal(), date)).toList();
     if (dayLogs.isEmpty) return null;
 
@@ -72,7 +80,27 @@ abstract final class UsageSummaryBuilder {
       sessions:       activeLogs,
       totalKwh:       totalKwh,
       avgWatts:       avgWatts,
+      tempMaxC:       tempMaxC,
+      tempMinC:       tempMinC,
+      humidityPct:    humidityPct,
+      tariffPerKwh:   tariffPerKwh,
+      ksebSlab:       _ksebSlab(monthlyKwhEst),
+      monthlyKwhEst:  monthlyKwhEst,
     );
+  }
+
+  // KSEB LT domestic slab based on the fan's estimated monthly consumption.
+  // Total household consumption is not known, so this is a rough proxy —
+  // but the model can still learn cost-sensitivity patterns from it.
+  static int _ksebSlab(double monthlyKwh) {
+    if (monthlyKwh <= 50)  return 1;  // ₹3.15 / unit
+    if (monthlyKwh <= 100) return 2;  // ₹3.70 / unit
+    if (monthlyKwh <= 150) return 3;  // ₹4.50 / unit
+    if (monthlyKwh <= 200) return 4;  // ₹5.80 / unit
+    if (monthlyKwh <= 250) return 5;  // ₹6.70 / unit
+    if (monthlyKwh <= 300) return 6;  // ₹7.50 / unit
+    if (monthlyKwh <= 350) return 7;  // ₹7.90 / unit
+    return 8;                          // ₹8.20 / unit
   }
 
   static bool _sameDay(DateTime a, DateTime b) =>
