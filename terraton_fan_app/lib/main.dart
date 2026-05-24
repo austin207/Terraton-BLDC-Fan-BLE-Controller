@@ -1,10 +1,14 @@
 // lib/main.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
+import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
+import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
 import 'package:terraton_fan_app/app.dart';
 
 Future<void> main() async {
@@ -29,12 +33,20 @@ Future<void> main() async {
     ),
   );
 
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await CommandLoader.load();
   await initObjectBox();
   // Permissions are requested contextually by BlePermissionScreen after the
   // splash screen checks status. Requesting here (before any UI) shows the
   // system dialog over a blank screen, violating Android UX guidelines.
   await _ensureBluetoothOn();
+
+  // Fire-and-forget — uploads previous days' summaries if user opted in + Wi-Fi.
+  unawaited(DataUploadService.tryUpload(UsageLogRepositoryImpl(store)));
 
   runApp(const ProviderScope(child: TerratorApp()));
 }

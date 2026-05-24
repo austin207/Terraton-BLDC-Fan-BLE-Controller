@@ -76,4 +76,36 @@ abstract final class AppSettings {
     final m = await _read();
     await _write({...m, 'tariff': tariff});
   }
+
+  // ── AI training data opt-in ───────────────────────────────────────────────
+  // Override for tests — avoids real file I/O inside widget test pumps.
+  // ignore: avoid_field_initializers_in_const_classes
+  static Future<bool> Function()? uploadOptInOverride;
+
+  static Future<bool> loadUploadOptIn() async {
+    if (uploadOptInOverride != null) return uploadOptInOverride!();
+    final m = await _read();
+    return (m['upload_opt_in'] as bool?) == true;
+  }
+
+  static Future<void> saveUploadOptIn(bool value) async {
+    final m = await _read();
+    await _write({...m, 'upload_opt_in': value});
+  }
+
+  // ── Uploaded date tracking (avoids re-uploading the same day) ────────────
+
+  static Future<Set<String>> loadUploadedDates() async {
+    final m = await _read();
+    final raw = m['uploaded_dates'];
+    if (raw is List) return raw.cast<String>().toSet();
+    return {};
+  }
+
+  static Future<void> markDateUploaded(String date) async {
+    final m     = await _read();
+    final dates = ((m['uploaded_dates'] as List?)?.cast<String>() ?? <String>[]).toSet()
+      ..add(date);
+    await _write({...m, 'uploaded_dates': dates.toList()});
+  }
 }

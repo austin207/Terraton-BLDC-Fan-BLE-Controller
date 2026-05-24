@@ -6,6 +6,22 @@ $BuildsDir   = Join-Path $ProjectRoot "builds"
 $Repo        = "austin207/Terraton-BLDC-Fan-BLE-Controller"
 $ReleaseTag  = "latest"
 
+# ── Load secrets from secrets.env (gitignored) ───────────────────────────────
+$SecretsFile = Join-Path $ProjectRoot "secrets.env"
+$UploadApiKey = ''
+if (Test-Path $SecretsFile) {
+    Get-Content $SecretsFile | ForEach-Object {
+        if ($_ -match '^\s*UPLOAD_API_KEY\s*=\s*(.+)$') {
+            $UploadApiKey = $Matches[1].Trim()
+        }
+    }
+    if ($UploadApiKey) {
+        Write-Host "Loaded UPLOAD_API_KEY from secrets.env" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "WARNING: secrets.env not found — UPLOAD_API_KEY will be empty. Copy secrets.env.template to secrets.env and fill in the values." -ForegroundColor Yellow
+}
+
 # ── 0. Clear builds folder ───────────────────────────────────────────────────
 if (Test-Path $BuildsDir) {
     Remove-Item (Join-Path $BuildsDir "*.apk") -Force
@@ -48,7 +64,8 @@ if ($LASTEXITCODE -ne 0) { Write-Host "build_runner failed." -ForegroundColor Re
 # ── 3. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
 Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 
-flutter build apk --release --split-per-abi
+flutter build apk --release --split-per-abi `
+    --dart-define="UPLOAD_API_KEY=$UploadApiKey"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed." -ForegroundColor Red
     exit 1

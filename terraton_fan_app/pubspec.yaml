@@ -43,6 +43,11 @@ dependencies:
   google_fonts: ^6.2.1
   qr_flutter: ^4.1.0
 
+  # Data upload for AI training
+  http: ^1.2.2
+  crypto: ^3.0.3
+  connectivity_plus: ^6.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -59,6 +64,10 @@ flutter:
     - assets/icon/
     - assets/icons/
     - assets/logos/
+    - assets/fonts/Manrope-Regular.ttf
+    - assets/fonts/Manrope-SemiBold.ttf
+    - assets/fonts/Manrope-Bold.ttf
+    - assets/fonts/Manrope-ExtraBold.ttf
 
 flutter_launcher_icons:
   android: true

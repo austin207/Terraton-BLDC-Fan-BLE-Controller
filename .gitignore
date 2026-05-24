@@ -3,3 +3,6 @@ terraton_fan_app/.dart_tool/
 terraton_fan_app/.flutter-plugins
 terraton_fan_app/.flutter-plugins-dependencies
 builds/*.apk
+
+# Local secrets — never commit
+secrets.env

@@ -10,6 +10,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
@@ -70,6 +71,13 @@ void main() {
     registerFallbackValue(FanDevice());
     registerFallbackValue(FanState());
     registerFallbackValue(DateTime.now());
+    // Avoid real file I/O from _DataSharingGroup which would change layout
+    // after scrollUntilVisible has positioned widgets, causing tap() to miss.
+    AppSettings.uploadOptInOverride = () async => false;
+  });
+
+  tearDownAll(() {
+    AppSettings.uploadOptInOverride = null;
   });
 
   group('SettingsScreen — profile card', () {
@@ -141,7 +149,22 @@ void main() {
       await tester.pumpWidget(_buildScreen());
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(
+        find.text('SUPPORT'), 200,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('SUPPORT'), findsOneWidget);
+    });
+
+    testWidgets('shows AI TRAINING section', (tester) async {
+      await tester.pumpWidget(_buildScreen());
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('AI TRAINING'), 200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('AI TRAINING'), findsOneWidget);
     });
   });
 
@@ -223,10 +246,15 @@ void main() {
       await tester.pumpWidget(_buildScreen(fans: []));
       await tester.pumpAndSettle();
 
+      // scrollUntilVisible renders the widget; ensureVisible brings it fully
+      // into the tap zone (scrollUntilVisible stops at render-tree visibility,
+      // not viewport visibility).
       await tester.scrollUntilVisible(
         find.text('Service QR'), 200,
         scrollable: find.byType(Scrollable).last,
       );
+      await tester.ensureVisible(find.text('Service QR'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Service QR'));
       await tester.pumpAndSettle();
 
@@ -241,6 +269,8 @@ void main() {
         find.text('Service QR'), 200,
         scrollable: find.byType(Scrollable).last,
       );
+      await tester.ensureVisible(find.text('Service QR'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Service QR'));
       await tester.pumpAndSettle();
 

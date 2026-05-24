@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
@@ -104,6 +105,10 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _import(context, ref),
           ),
         ]),
+
+        // AI TRAINING
+        const _SectionLabel('AI TRAINING'),
+        const _DataSharingGroup(),
 
         // ABOUT
         const _SectionLabel('ABOUT'),
@@ -823,6 +828,111 @@ class _ServiceQrModalState extends State<_ServiceQrModal> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── AI training data sharing group ───────────────────────────────────────────
+
+class _DataSharingGroup extends StatefulWidget {
+  const _DataSharingGroup();
+
+  @override
+  State<_DataSharingGroup> createState() => _DataSharingGroupState();
+}
+
+class _DataSharingGroupState extends State<_DataSharingGroup> {
+  bool _optIn = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    AppSettings.loadUploadOptIn().then((v) {
+      if (mounted) setState(() { _optIn = v; _loaded = true; });
+    });
+  }
+
+  void _toggle(bool value) {
+    setState(() => _optIn = value);
+    unawaited(AppSettings.saveUploadOptIn(value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kHairline),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: kYellow.withAlpha(30),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(Icons.auto_graph_rounded, color: kYellow, size: 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Contribute to AI Training',
+                        style: GoogleFonts.manrope(
+                          fontSize: 15, fontWeight: FontWeight.w600, color: kText,
+                        ),
+                      ),
+                      Text(
+                        'Share anonymous usage data to improve energy optimisation suggestions.',
+                        style: GoogleFonts.manrope(fontSize: 11, color: kTextMut, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _loaded
+                    ? Switch(
+                        value: _optIn,
+                        onChanged: _toggle,
+                        activeColor: kYellow,
+                        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+                        thumbColor: WidgetStateProperty.resolveWith(
+                          (s) => s.contains(WidgetState.selected) ? Colors.black : kTextMut,
+                        ),
+                      )
+                    : const SizedBox(width: 51, height: 31),
+              ],
+            ),
+          ),
+          const Divider(height: 1, indent: 70, color: kHairline),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: Row(
+              children: [
+                const Icon(Icons.shield_outlined, color: kTextDim, size: 13),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Data is anonymised using a one-way hash — your device ID is never sent. '
+                    'Uploaded on Wi-Fi only, once per day.',
+                    style: GoogleFonts.manrope(fontSize: 10, color: kTextDim, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
