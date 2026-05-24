@@ -35,7 +35,7 @@ if ($PubspecRaw -match 'version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)') {
 
 Write-Host ""
 Write-Host "Current version: $vMaj.$vMin.$vPat+$vBld" -ForegroundColor Yellow
-Write-Host "  [P]atch  ->  $vMaj.$vMin.$($vPat + 1)+$($vBld + 1)   (default — small fixes / tweaks)"     -ForegroundColor DarkGray
+Write-Host "  [P]atch  ->  $vMaj.$vMin.$($vPat + 1)+$($vBld + 1)   (default - small fixes / tweaks)"     -ForegroundColor DarkGray
 Write-Host "  mi[N]or  ->  $vMaj.$($vMin + 1).0+$($vBld + 1)   (new features, backwards-compatible)"      -ForegroundColor DarkGray
 Write-Host "  ma[J]or  ->  $($vMaj + 1).0.0+$($vBld + 1)   (breaking changes / landmark release)"         -ForegroundColor DarkGray
 Write-Host "  [S]kip   ->  keep $vMaj.$vMin.$vPat+$vBld  (rebuild without bumping)"                        -ForegroundColor DarkGray
@@ -48,7 +48,7 @@ switch ($bumpChoice.Trim().ToUpper()) {
     'N' { $vMin++; $vPat = 0;              $vBld++ }
     'J' { $vMaj++; $vMin = 0; $vPat = 0;  $vBld++ }
     'S' { <# no change #> }
-    default { Write-Host "Unknown input — defaulting to Patch." -ForegroundColor Yellow; $vPat++; $vBld++ }
+    default { Write-Host "Unknown input - defaulting to Patch." -ForegroundColor Yellow; $vPat++; $vBld++ }
 }
 
 $SemVer     = "$vMaj.$vMin.$vPat"
@@ -172,7 +172,7 @@ if (Test-Path $X86Release)  { $Assets += $X86Release  }
 
 $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
 $Notes = @"
-**v$NewVersion** — built $BuildDate
+**v$NewVersion** - built $BuildDate
 
 Both QR scan and Bluetooth scan onboarding are included in every APK.
 
