@@ -169,6 +169,28 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ]),
 
+        // LEGAL
+        const _SectionLabel('LEGAL'),
+        _SettingsGroup(tiles: [
+          _SettingRow(
+            iconBg: const Color(0x207AA7FF),
+            iconColor: const Color(0xFF7AA7FF),
+            icon: Icons.privacy_tip_outlined,
+            label: 'Privacy Policy',
+            chevron: true,
+            divider: true,
+            onTap: () => unawaited(context.push(AppRoutes.privacyPolicy)),
+          ),
+          _SettingRow(
+            iconBg: const Color(0x207AA7FF),
+            iconColor: const Color(0xFF7AA7FF),
+            icon: Icons.gavel_rounded,
+            label: 'Terms of Service',
+            chevron: true,
+            onTap: () => unawaited(context.push(AppRoutes.terms)),
+          ),
+        ]),
+
         // Footer
         const SizedBox(height: 48),
         const Divider(height: 1, color: kHairline),

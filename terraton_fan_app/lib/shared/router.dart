@@ -16,6 +16,8 @@ import 'package:terraton_fan_app/features/control/control_screen.dart';
 import 'package:terraton_fan_app/features/permission/ble_permission_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/features/settings/user_manual_screen.dart';
+import 'package:terraton_fan_app/features/legal/privacy_policy_screen.dart';
+import 'package:terraton_fan_app/features/legal/terms_screen.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 
 final appRouter = GoRouter(
@@ -82,6 +84,14 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.userManual,
       builder: (_, __) => const UserManualScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.privacyPolicy,
+      builder: (_, __) => const PrivacyPolicyScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.terms,
+      builder: (_, __) => const TermsScreen(),
     ),
   ],
 );

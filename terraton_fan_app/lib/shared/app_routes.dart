@@ -13,4 +13,6 @@ abstract final class AppRoutes {
   static const control            = '/control';
   static const settings           = '/settings';
   static const userManual         = '/settings/user-manual';
+  static const privacyPolicy      = '/settings/privacy-policy';
+  static const terms              = '/settings/terms';
 }

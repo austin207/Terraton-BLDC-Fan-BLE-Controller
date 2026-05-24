@@ -1,0 +1,19 @@
+name             = "terraton-ingest"
+main             = "worker.js"
+compatibility_date = "2024-09-23"
+
+# ── R2 bucket ────────────────────────────────────────────────────────────────
+[[r2_buckets]]
+binding     = "R2"
+bucket_name = "terraton-usage-data"
+
+# ── Rate-limiting KV namespace ───────────────────────────────────────────────
+# Create it once with: wrangler kv:namespace create RATE_LIMIT_KV
+# Then paste the returned `id` below.
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id      = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# ── Secret ───────────────────────────────────────────────────────────────────
+# Set via:  wrangler secret put UPLOAD_API_KEY
+# (never put the value in this file — it would be committed to git)
