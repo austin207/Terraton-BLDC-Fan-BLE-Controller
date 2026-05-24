@@ -48,9 +48,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
     }
 
     setState(() => _phase = _Phase.installing);
-    await AppUpdateService.installUpdate(file);
-    // After the install intent fires, the OS takes over — dismiss the sheet.
-    if (mounted) Navigator.of(context).pop();
+    final installError = await AppUpdateService.installUpdate(file);
+    if (!mounted) return;
+    if (installError != null) {
+      setState(() { _phase = _Phase.error; _errorMsg = installError; });
+      return;
+    }
+    // Installer opened — OS takes over; dismiss the sheet.
+    Navigator.of(context).pop();
   }
 
   @override

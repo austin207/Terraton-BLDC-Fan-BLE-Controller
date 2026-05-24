@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class UpdateInfo {
   final String version;
@@ -120,7 +121,24 @@ abstract final class AppUpdateService {
   }
 
   /// Triggers the Android system package installer for [apkFile].
-  static Future<void> installUpdate(File apkFile) async {
-    await OpenFile.open(apkFile.path);
+  /// Returns null on success, or an error message string on failure.
+  ///
+  /// On Android 8+ the "Install Unknown Apps" special permission must be
+  /// granted by the user. If it isn't, [Permission.requestInstallPackages]
+  /// opens the correct system settings page for the user to enable it.
+  static Future<String?> installUpdate(File apkFile) async {
+    if (!await Permission.requestInstallPackages.isGranted) {
+      final status = await Permission.requestInstallPackages.request();
+      if (!status.isGranted) {
+        return 'Enable "Install Unknown Apps" for Terraton Fan in system settings, then try again.';
+      }
+    }
+    final result = await OpenFile.open(apkFile.path);
+    if (result.type != ResultType.done) {
+      return result.message.isNotEmpty
+          ? result.message
+          : 'Could not open the installer. Please install the APK manually.';
+    }
+    return null;
   }
 }
