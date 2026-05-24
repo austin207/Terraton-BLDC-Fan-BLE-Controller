@@ -6,3 +6,5 @@ builds/*.apk
 
 # Local secrets — never commit
 secrets.env
+ml/.r2.env
+*.keystore

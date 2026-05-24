@@ -1,6 +1,8 @@
 name: MLOps — Retrain
 
-# Runs every Sunday at 01:00 UTC or on manual trigger.
+# Manual-trigger only — retraining runs on your laptop via ml/retrain.ps1.
+# This workflow is a cloud fallback if you need a one-off run without your machine.
+#
 # Phase 1 (XGBoost) runs whenever there are 500+ rows.
 # Phase 2 (Keras → TFLite) runs when there are 10,000+ rows.
 # On a successful Phase 2, the new model is uploaded to R2 and
@@ -13,8 +15,6 @@ name: MLOps — Retrain
 # R2_SECRET_ACCESS_KEY  — R2 API token Secret Access Key
 
 on:
-  schedule:
-    - cron: '0 1 * * 0'   # 01:00 UTC every Sunday
   workflow_dispatch:
     inputs:
       phase:
