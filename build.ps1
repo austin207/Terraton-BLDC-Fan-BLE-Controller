@@ -24,7 +24,7 @@ if (Test-Path $SecretsFile) {
 
 # ── Version bump ─────────────────────────────────────────────────────────────
 $PubspecPath = Join-Path $AppDir "pubspec.yaml"
-$PubspecRaw  = Get-Content $PubspecPath -Raw
+$PubspecRaw  = [System.IO.File]::ReadAllText($PubspecPath, [System.Text.Encoding]::UTF8)
 if ($PubspecRaw -match 'version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)') {
     $vMaj = [int]$Matches[1]; $vMin = [int]$Matches[2]
     $vPat = [int]$Matches[3]; $vBld = [int]$Matches[4]
