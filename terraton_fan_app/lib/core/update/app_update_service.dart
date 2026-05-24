@@ -38,13 +38,22 @@ abstract final class AppUpdateService {
     final res = await http.get(
       Uri.parse(_versionUrl),
       headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
-    ).timeout(const Duration(seconds: 10));
+    ).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('HTTP ${res.statusCode}');
     }
 
-    final body          = jsonDecode(res.body) as Map<String, dynamic>;
-    final remoteBuild   = (body['build_number'] as num).toInt();
+    // GitHub serves release assets as application/octet-stream — Dart's http
+    // package defaults to Latin-1 for that content type, so res.body is wrong.
+    // Decode bodyBytes as UTF-8 explicitly and strip the UTF-8 BOM (0xEF BB BF)
+    // that PowerShell 5.1 Set-Content writes by default.
+    final bytes   = res.bodyBytes;
+    final trimmed = (bytes.length >= 3 &&
+            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        ? bytes.sublist(3)
+        : bytes;
+    final body        = jsonDecode(utf8.decode(trimmed)) as Map<String, dynamic>;
+    final remoteBuild = (body['build_number'] as num).toInt();
     final remoteVersion = body['version'] as String;
 
     if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');

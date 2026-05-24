@@ -646,13 +646,24 @@ class _UpdateCheckTileState extends State<_UpdateCheckTile> {
           const SnackBar(content: Text("You're up to date.")),
         );
       }
-    } on Exception catch (_) {
+    } on SocketException catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Couldn't check for updates. Check your connection."),
-          ),
+          const SnackBar(content: Text("No internet connection.")),
         );
+      }
+    } on TimeoutException catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Request timed out. Try again.")),
+        );
+      }
+    } on Exception catch (e) {
+      if (mounted) {
+        final msg = e.toString().contains('HTTP')
+            ? "Update server error. Try again later."
+            : "Couldn't read update info. Try again.";
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
     } finally {
       if (mounted) setState(() => _checking = false);

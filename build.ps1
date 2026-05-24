@@ -151,8 +151,11 @@ if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Release  }
 if (Test-Path $X86)   { Copy-Item $X86  $X86Release   }
 
 # Write version.json for OTA version check (version already set by bump prompt)
+# IMPORTANT: use WriteAllText with UTF8Encoding(false) — Set-Content -Encoding utf8 in
+# PowerShell 5.1 adds a BOM which breaks jsonDecode() in the app.
 $VersionJsonPath = Join-Path $BuildsDir "version.json"
-Set-Content -Path $VersionJsonPath -Value "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}" -Encoding utf8
+$versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}"
+[System.IO.File]::WriteAllText($VersionJsonPath, $versionJsonContent, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
 
 # ── 5. Publish to GitHub Releases (tag: latest) ───────────────────────────────
