@@ -197,13 +197,19 @@ if ($LASTEXITCODE -ne 0) {
 # ── 6. Commit & push the version bump ────────────────────────────────────────
 if ($bumpChoice.Trim().ToUpper() -ne 'S') {
     Set-Location $ProjectRoot
-    git add (Join-Path $AppDir "pubspec.yaml") (Join-Path $AppDir "pubspec.lock")
-    git commit -m "chore: bump version to $NewVersion"
-    if ($LASTEXITCODE -eq 0) {
-        git push
-        Write-Host "Committed and pushed version bump  ->  $NewVersion" -ForegroundColor Green
+    # Only commit if pubspec.yaml actually has uncommitted changes.
+    $dirty = git status --porcelain $PubspecPath 2>&1
+    if ($dirty) {
+        git add $PubspecPath (Join-Path $AppDir "pubspec.lock")
+        git commit -m "chore: bump version to $NewVersion"
+        if ($LASTEXITCODE -eq 0) {
+            git push
+            Write-Host "Committed and pushed version bump  ->  $NewVersion" -ForegroundColor Green
+        } else {
+            Write-Host "Warning: git commit failed - commit pubspec.yaml manually." -ForegroundColor Yellow
+        }
     } else {
-        Write-Host "Warning: git commit failed - commit pubspec.yaml manually." -ForegroundColor Yellow
+        Write-Host "Version $NewVersion already committed." -ForegroundColor DarkGray
     }
 }
 
