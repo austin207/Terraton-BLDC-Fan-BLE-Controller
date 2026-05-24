@@ -56,9 +56,7 @@ class _NameFanScreenState extends ConsumerState<NameFanScreen> {
     await ref.read(fanRepositoryProvider).saveFan(fan);
     if (!mounted) return;
     ref.invalidate(savedFansProvider);
-    if (mounted) {
-      context.go(AppRoutes.control, extra: fan);
-    }
+    context.go(AppRoutes.control, extra: fan);
   }
 
   @override

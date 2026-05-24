@@ -317,13 +317,13 @@ class _FanResultRow extends StatelessWidget {
     required this.onTap,
   });
 
-  Color _rssiColor(int rssi) {
+  static Color _rssiColor(int rssi) {
     if (rssi >= -60) return kGreen;
     if (rssi >= -80) return const Color(0xFFF97316);
     return kRed;
   }
 
-  String _rssiLabel(int rssi) {
+  static String _rssiLabel(int rssi) {
     if (rssi >= -60) return 'Strong';
     if (rssi >= -80) return 'Fair';
     return 'Weak';

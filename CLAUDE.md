@@ -116,7 +116,7 @@ Both paths end at `/name-fan` (receives `FanDevice` as GoRouter `extra`), then `
 - **1 = Home** (`_HomeTab`) — greeting, "Fans" tile (pushes `FansListScreen`), usage card
 - **2 = Settings** (`SettingsScreen`)
 
-`FansListScreen` (`/fans`) is a separate route pushed from the Home tab. It shows all paired fans with long-press rename/remove actions. Status badges currently hardcoded to "Disconnected" (not wired to `bleConnectionStateProvider`).
+`FansListScreen` (`/fans`) is a separate route pushed from the Home tab. It shows all paired fans with long-press rename/remove actions. Status badges are wired to `bleConnectionStateProvider` + `connectedMacAddress` — show green "Connected" when the displayed fan matches the live BLE connection.
 
 ### Router (`lib/shared/router.dart`)
 
@@ -242,7 +242,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 | Severity | File | Issue |
 | --- | --- | --- |
 | MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet, `0xFF1E293B` text) clash with dark theme |
-| MEDIUM | `fans_list_screen.dart:275` | Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider` |
+| ~~MEDIUM~~ | ~~`fans_list_screen.dart:275`~~ | ~~Status badge hardcoded "Disconnected"; not wired to `bleConnectionStateProvider`~~ | **Fixed 2026-05-24** |
 | ~~MEDIUM~~ | ~~`fans_list_screen.dart:180`, `fan_card.dart:167`~~ | ~~Async work in `.then()` callback; rename/delete errors silently dropped in release~~ | **Fixed 2026-05-24** |
 | LOW | `splash_screen.dart:131` | Version string hardcoded; should read from `packageInfoProvider` |
 
