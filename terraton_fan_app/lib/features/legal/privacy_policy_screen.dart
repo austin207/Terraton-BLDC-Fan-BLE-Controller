@@ -1,6 +1,6 @@
 // lib/features/legal/privacy_policy_screen.dart
 import 'package:flutter/material.dart';
-import 'legal_screen.dart';
+import 'package:terraton_fan_app/features/legal/legal_screen.dart';
 
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});

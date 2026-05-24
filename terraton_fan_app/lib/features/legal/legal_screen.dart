@@ -60,7 +60,7 @@ class LegalSection {
 
 class _SectionCard extends StatelessWidget {
   final LegalSection section;
-  const _SectionCard({super.key, required this.section});
+  const _SectionCard({required this.section});
 
   @override
   Widget build(BuildContext context) {
