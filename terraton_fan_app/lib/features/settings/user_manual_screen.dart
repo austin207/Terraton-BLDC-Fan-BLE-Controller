@@ -110,6 +110,20 @@ const _sections = [
     ],
   ),
   _SectionData(
+    id: 'ai-training',
+    label: 'AI Training & Data Sharing',
+    icon: Icons.auto_graph_rounded,
+    accent: Color(0xFFFFEC00),
+    body: [
+      'The app collects anonymous usage patterns to train an on-device AI model that suggests energy-saving settings tailored to your habits.',
+      'Data collected includes: speed used, mode selected, hours of operation, and estimated watt draw — never your name, location, or device ID.',
+      'Your device ID is converted into a one-way hash before any data leaves the app, making it impossible to trace back to you.',
+      'Uploads happen automatically on Wi-Fi only, once per day, covering the previous day\'s completed sessions.',
+      'The trained model will be embedded in a future update to provide personalised efficiency recommendations directly in the Analytics screen.',
+      'You can opt out at any time in Settings → AI Training. Turning it off stops all future uploads; no data already sent can be recalled.',
+    ],
+  ),
+  _SectionData(
     id: 'troubleshooting',
     label: 'Troubleshooting',
     icon: Icons.help_outline_rounded,

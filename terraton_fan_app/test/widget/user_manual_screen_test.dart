@@ -56,6 +56,19 @@ void main() {
       expect(find.text('Boost Mode'), findsOneWidget);
     });
 
+    testWidgets('shows "AI Training & Data Sharing" section header', (tester) async {
+      await tester.pumpWidget(_buildScreen());
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('AI Training & Data Sharing'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+
+      expect(find.text('AI Training & Data Sharing'), findsOneWidget);
+    });
+
     testWidgets('shows "Troubleshooting" section header', (tester) async {
       await tester.pumpWidget(_buildScreen());
       await tester.pumpAndSettle();
