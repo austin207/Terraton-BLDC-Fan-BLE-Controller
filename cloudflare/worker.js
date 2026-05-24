@@ -92,18 +92,18 @@ function isValid(b) {
   // Date string YYYY-MM-DD
   if (typeof b.period !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.period)) return false;
 
-  // Anonymous device hash — first 16 hex chars of SHA-256
-  if (typeof b.device_hash !== 'string' || b.device_hash.length < 8) return false;
+  // Anonymous device hash — hex string, 8–64 chars (matches SHA-256 truncated to 16)
+  if (typeof b.device_hash !== 'string' || !/^[0-9a-f]{8,64}$/.test(b.device_hash)) return false;
 
-  // Gear distribution — exactly 6 non-negative numbers summing to ≈ 1
+  // Gear distribution — exactly 6 finite non-negative numbers
   if (!Array.isArray(b.gear_dist) || b.gear_dist.length !== 6) return false;
-  if (!b.gear_dist.every(v => typeof v === 'number' && v >= 0)) return false;
+  if (!b.gear_dist.every(v => Number.isFinite(v) && v >= 0)) return false;
 
-  // Must have at least one session
-  if (typeof b.sessions !== 'number' || b.sessions < 1) return false;
+  // Must have at least one session (finite positive integer)
+  if (!Number.isFinite(b.sessions) || b.sessions < 1) return false;
 
-  // kWh must be non-negative
-  if (typeof b.total_kwh !== 'number' || b.total_kwh < 0) return false;
+  // kWh must be a finite non-negative number (NaN/Infinity would corrupt training data)
+  if (!Number.isFinite(b.total_kwh) || b.total_kwh < 0) return false;
 
   return true;
 }

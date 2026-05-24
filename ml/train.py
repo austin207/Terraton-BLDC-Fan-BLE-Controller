@@ -37,6 +37,7 @@ Flutter integration
 
 import argparse
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -51,22 +52,12 @@ warnings.filterwarnings('ignore')
 # ── 0. Config ──────────────────────────────────────────────────────────────────
 
 # Cloudflare R2 — S3-compatible direct access for reading training data.
-#
-# IMPORTANT: These are R2 API tokens, NOT the Worker Bearer token
-# (terraton-secret-2026 is for the upload endpoint only — different thing).
-#
-# To get R2 API tokens:
-#   Cloudflare dashboard → R2 → Manage R2 API Tokens → Create API Token
-#   Permissions: Object Read  (read-only is enough for training)
-#   Copy the Access Key ID and Secret Access Key shown once on creation.
-#
-# To get your account ID:
-#   Cloudflare dashboard → right sidebar → Account ID (32-char hex string)
-#
-R2_ENDPOINT   = 'https://<account_id>.r2.cloudflarestorage.com'  # fill in account_id
-R2_ACCESS_KEY = '<r2_access_key_id>'                              # from R2 API tokens
-R2_SECRET_KEY = '<r2_secret_access_key>'                          # from R2 API tokens
-R2_BUCKET     = 'terraton-usage-data'
+# Credentials are read from environment variables (set in ml/.r2.env for local
+# runs, or via GitHub Secrets for CI). Never hardcode values here.
+R2_ENDPOINT   = os.getenv('R2_ENDPOINT',   '')
+R2_ACCESS_KEY = os.getenv('R2_ACCESS_KEY', '')
+R2_SECRET_KEY = os.getenv('R2_SECRET_KEY', '')
+R2_BUCKET     = os.getenv('R2_BUCKET', 'terraton-usage-data')
 
 OUTPUT_DIR = Path('output')
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -100,6 +91,10 @@ KERALA_DEFAULTS = {'temp_max_c': 31.0, 'temp_min_c': 26.0, 'humidity_pct': 80.0}
 
 def load_from_r2() -> pd.DataFrame:
     import boto3
+    if not R2_ENDPOINT or not R2_ACCESS_KEY:
+        print('ERROR: R2_ENDPOINT and R2_ACCESS_KEY must be set.', file=sys.stderr)
+        print('       Create ml/.r2.env or set environment variables.', file=sys.stderr)
+        sys.exit(1)
     print('Connecting to Cloudflare R2...')
     s3 = boto3.client(
         's3',

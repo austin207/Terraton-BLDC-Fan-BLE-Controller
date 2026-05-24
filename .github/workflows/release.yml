@@ -5,7 +5,7 @@ name: Release
 #
 # Required GitHub Secrets
 # ───────────────────────
-# UPLOAD_API_KEY    — Cloudflare Worker Bearer token (terraton-secret-2026)
+# UPLOAD_API_KEY    — Cloudflare Worker Bearer token (set via GitHub Secrets)
 # KEYSTORE_BASE64   — base64-encoded release keystore (see setup below)
 # STORE_PASSWORD    — keystore store password
 # KEY_ALIAS         — key alias inside the keystore (e.g. "terraton")
@@ -77,17 +77,18 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       # Decode the release keystore from the GitHub Secret.
+      # Written to RUNNER_TEMP (outside the repo tree) to avoid accidental staging.
       # Falls back to Android debug signing if secret is absent (local forks).
       - name: Decode keystore
-        if: secrets.KEYSTORE_BASE64 != ''
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d \
-            > terraton_fan_app/android/app/release.keystore
+            > $RUNNER_TEMP/release.keystore
 
       - name: Build split APKs
         working-directory: terraton_fan_app
         env:
-          KEYSTORE_PATH: ${{ github.workspace }}/terraton_fan_app/android/app/release.keystore
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
