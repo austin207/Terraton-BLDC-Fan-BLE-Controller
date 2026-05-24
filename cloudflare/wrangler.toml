@@ -12,7 +12,7 @@ bucket_name = "terraton-usage-data"
 # Then paste the returned `id` below.
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
-id      = "REPLACE_WITH_KV_NAMESPACE_ID"
+id      = "fe23694cb21e413f990cb8e2a35ad4e9"
 
 # ── Secret ───────────────────────────────────────────────────────────────────
 # Set via:  wrangler secret put UPLOAD_API_KEY
