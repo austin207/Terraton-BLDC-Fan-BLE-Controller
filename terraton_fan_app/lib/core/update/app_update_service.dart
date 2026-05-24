@@ -27,38 +27,51 @@ abstract final class AppUpdateService {
   static const _apkUrl =
       'https://github.com/$_repo/releases/download/latest/terraton-fan-arm64.apk';
 
+  /// Core check — throws on network/HTTP/parse failure; returns null if up to date.
+  static Future<UpdateInfo?> _doCheck() async {
+    final pkgInfo    = await PackageInfo.fromPlatform();
+    final localBuild = int.tryParse(pkgInfo.buildNumber) ?? 0;
+
+    // Cache-busting query param forces a fresh response from GitHub's CDN;
+    // without it a deleted+recreated "latest" release may return stale JSON.
+    final uri = Uri.parse(_versionUrl).replace(
+      queryParameters: {'_t': DateTime.now().millisecondsSinceEpoch.toString()},
+    );
+
+    final res = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw Exception('HTTP ${res.statusCode}');
+    }
+
+    final body          = jsonDecode(res.body) as Map<String, dynamic>;
+    final remoteBuild   = (body['build_number'] as num).toInt();
+    final remoteVersion = body['version'] as String;
+
+    if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
+    return remoteBuild > localBuild
+        ? UpdateInfo(
+            version: remoteVersion,
+            buildNumber: remoteBuild,
+            localVersion: pkgInfo.version,
+          )
+        : null;
+  }
+
   /// Returns [UpdateInfo] if remote build_number > installed build, else null.
-  /// Returns null silently on any network / parse error.
+  /// Swallows all errors silently — safe for the automatic on-launch check.
   static Future<UpdateInfo?> checkForUpdate() async {
     try {
-      final pkgInfo    = await PackageInfo.fromPlatform();
-      final localBuild = int.tryParse(pkgInfo.buildNumber) ?? 0;
-
-      final res = await http
-          .get(Uri.parse(_versionUrl))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode != 200) {
-        if (kDebugMode) debugPrint('[OTA] version check failed: HTTP ${res.statusCode}');
-        return null;
-      }
-
-      final body         = jsonDecode(res.body) as Map<String, dynamic>;
-      final remoteBuild  = (body['build_number'] as num).toInt();
-      final remoteVersion = body['version'] as String;
-
-      if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
-      return remoteBuild > localBuild
-          ? UpdateInfo(
-              version: remoteVersion,
-              buildNumber: remoteBuild,
-              localVersion: pkgInfo.version,
-            )
-          : null;
+      return await _doCheck();
     } on Exception catch (e) {
       if (kDebugMode) debugPrint('[OTA] checkForUpdate error: $e');
       return null;
     }
   }
+
+  /// Same check as [checkForUpdate] but surfaces errors to the caller.
+  /// Returns null if up to date; throws [Exception] on network/parse failure.
+  /// Use this for the manual "Check for Updates" trigger in Settings.
+  static Future<UpdateInfo?> checkForUpdateManual() => _doCheck();
 
   /// Streams the arm64 APK to a temp file.
   /// [onProgress] receives values from 0.0 to 1.0.

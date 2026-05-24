@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
+import 'package:terraton_fan_app/core/update/app_update_service.dart';
+import 'package:terraton_fan_app/features/update/update_dialog.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/features/settings/service_qr_modal.dart';
@@ -36,10 +38,10 @@ class SettingsScreen extends ConsumerWidget {
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [Color(0x14FFEC00), Color(0x03FFEC00)],
+              colors: [kYellowFill, Color(0x03FFEC00)],
             ),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0x38FFEC00)),
+            border: Border.all(color: kYellowBorder),
           ),
           child: Row(
             children: [
@@ -88,8 +90,8 @@ class SettingsScreen extends ConsumerWidget {
         const _SectionLabel('DATA MANAGEMENT'),
         _SettingsGroup(tiles: [
           _SettingRow(
-            iconBg: const Color(0x26507FFF),
-            iconColor: const Color(0xFF7AA7FF),
+            iconBg: kBlueFill,
+            iconColor: kBlue,
             icon: Icons.upload_rounded,
             label: 'Export Fans Data',
             divider: true,
@@ -123,6 +125,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
             divider: true,
           ),
+          const _UpdateCheckTile(divider: true),
           const _SettingRow(
             iconBg: kCardHi,
             iconColor: kText,
@@ -132,11 +135,11 @@ class SettingsScreen extends ConsumerWidget {
             divider: true,
           ),
           const _SettingRow(
-            iconBg: Color(0x207AA7FF),
-            iconColor: Color(0xFF7AA7FF),
+            iconBg: kBlueFill,
+            iconColor: kBlue,
             icon: Icons.bluetooth_rounded,
             label: 'BLE Protocol',
-            trailingPill: _PillData(label: 'BLE 5.2', color: Color(0xFF7AA7FF), outlined: true),
+            trailingPill: _PillData(label: 'BLE 5.2', color: kBlue, outlined: true),
           ),
         ]),
 
@@ -171,8 +174,8 @@ class SettingsScreen extends ConsumerWidget {
         const _SectionLabel('LEGAL'),
         _SettingsGroup(tiles: [
           _SettingRow(
-            iconBg: const Color(0x207AA7FF),
-            iconColor: const Color(0xFF7AA7FF),
+            iconBg: kBlueFill,
+            iconColor: kBlue,
             icon: Icons.privacy_tip_outlined,
             label: 'Privacy Policy',
             chevron: true,
@@ -180,8 +183,8 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => unawaited(context.push(AppRoutes.privacyPolicy)),
           ),
           _SettingRow(
-            iconBg: const Color(0x207AA7FF),
-            iconColor: const Color(0xFF7AA7FF),
+            iconBg: kBlueFill,
+            iconColor: kBlue,
             icon: Icons.gavel_rounded,
             label: 'Terms of Service',
             chevron: true,
@@ -617,6 +620,88 @@ class _DataSharingGroupState extends State<_DataSharingGroup> {
   }
 }
 
+// ── Manual update check tile ──────────────────────────────────────────────────
+
+class _UpdateCheckTile extends StatefulWidget {
+  final bool divider;
+  const _UpdateCheckTile({this.divider = false});
+
+  @override
+  State<_UpdateCheckTile> createState() => _UpdateCheckTileState();
+}
+
+class _UpdateCheckTileState extends State<_UpdateCheckTile> {
+  bool _checking = false;
+
+  Future<void> _check() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+    try {
+      final info = await AppUpdateService.checkForUpdateManual();
+      if (!mounted) return;
+      if (info != null) {
+        unawaited(UpdateDialog.show(context, info));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("You're up to date.")),
+        );
+      }
+    } on Exception catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't check for updates. Check your connection."),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        InkWell(
+          onTap: _checking ? null : () => unawaited(_check()),
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: kYellowFill,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(Icons.system_update_rounded, color: kYellow, size: 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text('Check for Updates',
+                      style: GoogleFonts.manrope(
+                        fontSize: 15, fontWeight: FontWeight.w600, color: kText,
+                      )),
+                ),
+                if (_checking)
+                  const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: kYellow),
+                  )
+                else
+                  const Icon(Icons.chevron_right_rounded, color: kTextMut, size: 20),
+              ],
+            ),
+          ),
+        ),
+        if (widget.divider) const Divider(height: 1, indent: 70, color: kHairline),
+      ],
+    );
+  }
+}
+
 // ── Section label ─────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
@@ -639,7 +724,7 @@ class _SectionLabel extends StatelessWidget {
 // ── Settings group ────────────────────────────────────────────────────────────
 
 class _SettingsGroup extends StatelessWidget {
-  final List<_SettingRow> tiles;
+  final List<Widget> tiles;
   const _SettingsGroup({required this.tiles});
 
   @override

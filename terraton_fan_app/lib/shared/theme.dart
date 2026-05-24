@@ -31,6 +31,10 @@ const kLightWarm    = Color(0xFFE6B85C); // amber — warm CCT
 const kLightNeutral = Color(0xFFCFCFCF); // white/gray — neutral CCT
 const kLightCool    = Color(0xFFDDEEFF); // pale blue — cool CCT
 
+// ── Blue accent (settings, BLE badge, data management icons) ─────────────────
+const kBlue     = Color(0xFF7AA7FF);
+const kBlueFill = Color(0x207AA7FF); // 12 % blue — icon badge fill
+
 // ── Status ────────────────────────────────────────────────────────────────────
 const kGreen = Color(0xFF7AE582);
 const kRed   = Color(0xFFFF6B6B);
