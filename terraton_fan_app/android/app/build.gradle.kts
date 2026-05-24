@@ -1,3 +1,5 @@
+import File
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -32,8 +34,8 @@ android {
         // build.ps1 and `flutter run --release` continue to work unchanged.
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
-            if (!keystorePath.isNullOrBlank() && java.io.File(keystorePath).exists()) {
-                storeFile     = java.io.File(keystorePath)
+            if (!keystorePath.isNullOrBlank() && File(keystorePath).exists()) {
+                storeFile     = File(keystorePath)
                 storePassword = System.getenv("STORE_PASSWORD")
                 keyAlias      = System.getenv("KEY_ALIAS")
                 keyPassword   = System.getenv("KEY_PASSWORD")
