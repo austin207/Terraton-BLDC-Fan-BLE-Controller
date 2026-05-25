@@ -1,6 +1,6 @@
 # Terraton BLDC Fan BLE Controller
 
-Android app that controls a Terraton BLDC ceiling fan over Bluetooth Low Energy 5.2 via an Amp'ed RF BLE60 module. Fully offline — no backend, no cloud, no internet required.
+Android app that controls a Terraton BLDC ceiling fan over Bluetooth Low Energy 5.2 via an Amp'ed RF BLE60 module.
 
 ```text
 Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan MCU  ──►  BLDC Motor
@@ -12,15 +12,18 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 
 | Category | Details |
 | --- | --- |
-| **Onboarding** | BLE scan or QR code pairing; profile setup on first launch |
+| **Onboarding** | BLE scan or full-screen immersive QR code scanner (dark overlay, corner brackets, animated scan line); profile setup on first launch |
 | **Fan control** | Power, 6 speed steps, Boost / Nature / Reverse / Smart modes, 2 / 4 / 8 h sleep timer |
 | **Nature mode** | Locks speed dial and disables other modes while active; restores pre-nature speed on switch to Smart/Reverse |
 | **Mood Lighting** | ON/OFF toggle + warm↔cool colour temperature slider *(bytes pending from Terraton)* |
 | **Telemetry** | Live watts and RPM polled every 3 s over BLE; stale values auto-clear after 5 s |
 | **Analytics** | Energy consumption (kWh), estimated cost, avg wattage, efficiency vs. traditional fan; Day / Week / Month views with per-fan breakdown |
-| **Multi-fan** | Manage multiple fans; grouped list with rename, remove, and long-press actions |
+| **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service keeps the process alive when swiped from recents |
+| **Data upload** | Anonymised usage summaries uploaded to Cloudflare R2 for AI training (opt-in; injected API key at build time only) |
+| **Multi-fan** | Manage multiple fans; live connection status badge with spinning icon; rename, remove, and long-press actions |
 | **Storage** | Fan metadata + last-known state persisted with ObjectBox; usage logs for analytics |
 | **Backup** | Export / import fan list as JSON |
+| **OTA updates** | Self-update via GitHub Releases; manual "Check for Updates" in Settings |
 | **Permissions** | Guided BT permission screen with retry, settings deep-link, demo-mode fallback |
 | **Demo mode** | Full UI walkthrough without a physical fan; triggered from the permission fallback |
 | **User Manual** | In-app manual — 8 expandable sections |
@@ -51,6 +54,9 @@ assets/commands.yaml
         ▼
   FanRepository (ObjectBox) ← persists FanDevice + FanState
   UsageLogRepository        ← persists per-session usage segments
+        │
+        ▼
+  DataUploadService         ← async upload to Cloudflare Worker (opt-in, key injected at build time)
 ```
 
 ### Startup sequence (`main.dart`)
@@ -169,6 +175,8 @@ terraton_fan_app/
 │   └── logos/                     # terraton-full.png, terraton-mark.png
 ├── lib/
 │   ├── core/
+│   │   ├── background/
+│   │   │   └── ble_foreground_service.dart  # MethodChannel wrapper for Android foreground service
 │   │   ├── ble/
 │   │   │   ├── ble_constants.dart         # All UUID constants (only location)
 │   │   │   ├── ble_connection_state.dart  # Enum: disconnected/scanning/connecting/connected
@@ -178,11 +186,13 @@ terraton_fan_app/
 │   │   ├── commands/
 │   │   │   └── command_loader.dart        # YAML singleton; buildFrame(); statusPoll(); custom()
 │   │   ├── providers.dart                 # All Riverpod providers; ActiveFanStateNotifier
-│   │   └── storage/
-│   │       ├── app_settings.dart          # JSON file: user name, first-launch flag
-│   │       ├── fan_repository.dart        # ObjectBox CRUD + JSON export/import
-│   │       ├── objectbox_store.dart       # Singleton Store init
-│   │       └── usage_log_repository.dart  # Usage log read/write for analytics
+│   │   ├── storage/
+│   │   │   ├── app_settings.dart          # JSON file: user name, first-launch flag, opt-in prefs
+│   │   │   ├── fan_repository.dart        # ObjectBox CRUD + JSON export/import
+│   │   │   ├── objectbox_store.dart       # Singleton Store init
+│   │   │   └── usage_log_repository.dart  # Usage log read/write for analytics
+│   │   └── upload/
+│   │       └── data_upload_service.dart   # Cloudflare Worker upload (opt-in; key injected at build time)
 │   ├── features/
 │   │   ├── analytics/
 │   │   │   └── analytics_screen.dart      # kWh / cost / efficiency / per-fan breakdown
@@ -194,18 +204,17 @@ terraton_fan_app/
 │   │   │   ├── mode_control_widget.dart   # Nature / Smart / Reverse / Boost buttons
 │   │   │   └── timer_control_widget.dart  # OFF / 2H / 4H / 8H selector
 │   │   ├── home/
-│   │   │   ├── fan_card.dart              # Fan card (legacy light-theme; used in FansListScreen)
-│   │   │   ├── fans_list_screen.dart      # Dark-theme fan list with long-press actions
+│   │   │   ├── fans_list_screen.dart      # Dark-theme fan list with live status badge and long-press actions
 │   │   │   └── home_screen.dart           # Bottom-nav shell (Analytics / Home / Settings tabs)
 │   │   ├── onboarding/
 │   │   │   ├── ble_scan_screen.dart       # BLE scan list; 15 s timeout; stopScan on dispose
 │   │   │   ├── name_fan_screen.dart       # Nickname entry after scan/QR
 │   │   │   ├── profile_setup_screen.dart  # "What should we call you?" — shown on first launch
-│   │   │   └── qr_scan_screen.dart        # Reads device_id / model / fw_version from QR JSON
+│   │   │   └── qr_scan_screen.dart        # Full-screen immersive QR scanner with overlay cutout
 │   │   ├── permission/
 │   │   │   └── ble_permission_screen.dart # Permission request; settings deep-link; demo fallback
 │   │   ├── settings/
-│   │   │   ├── settings_screen.dart       # Profile edit; data export/import; about; service QR
+│   │   │   ├── settings_screen.dart       # Profile edit; data export/import; OTA check; service QR
 │   │   │   └── user_manual_screen.dart    # 8-section expandable manual
 │   │   └── splash/
 │   │       └── splash_screen.dart         # 2 s hold; checks permissions; routes to profile/home
@@ -220,6 +229,10 @@ terraton_fan_app/
 │       ├── router.dart                    # GoRouter config + goToOnboarding() bottom sheet
 │       ├── terraton_fan_icon.dart         # Animated spinning fan icon (dark-theme)
 │       └── theme.dart                     # kBg / kCard / kYellow / kText / kSpeedColors / etc.
+├── android/
+│   └── app/src/main/kotlin/com/terraton/terraton_fan_app/
+│       ├── MainActivity.kt                # MethodChannel handler for bg_service start/update/stop
+│       └── TerraBgService.kt             # Android foreground service; persistent "Fan running" notification
 ├── test/
 │   ├── unit/
 │   │   ├── active_fan_state_notifier_test.dart
@@ -281,7 +294,9 @@ flutter run -d emulator-5554   # target a specific emulator by ID
 .\build.ps1
 ```
 
-Signed APK is saved to `builds/` and published to GitHub Releases automatically.
+Signed APK is saved to `builds/` and published to GitHub Releases automatically. The build script prompts for a **P**atch / **N**ew feature / **J**umbo (major) version bump and increments `pubspec.yaml` accordingly.
+
+> **API key:** The Cloudflare upload key is read from a gitignored `secrets.env` at build time via `--dart-define=UPLOAD_API_KEY=<secret>`. Debug builds skip the upload silently.
 
 ---
 
@@ -327,39 +342,7 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 | Storage | ObjectBox only — no Hive, Isar, or SharedPreferences for fan data |
 | Platform | Android only — no iOS build target |
 | Connections | One fan at a time — single active BLE connection |
-| Network | No backend, no HTTP — Phase 1 is fully offline |
-
----
-
-## Known Issues & Open Items
-
-These are verified findings from a full codebase audit. All previously identified issues from the `ui-revamp` review cycle have been resolved.
-
-### Open (not yet fixed)
-
-| Severity | File | Description |
-| --- | --- | --- |
-| MEDIUM | `fan_card.dart` | Light-theme hardcoded colours (`Colors.white` bottom sheet background, `Color(0xFF1E293B)` text) clash with the app's dark theme. The card was ported from an earlier light-theme design and not yet migrated to dark-theme constants. |
-| MEDIUM | `fans_list_screen.dart:275` | Fan status badge hardcoded to "Disconnected". It does not reflect live BLE connection state — the `bleConnectionStateProvider` is not wired into the list screen. |
-| MEDIUM | `fans_list_screen.dart:180`, `fan_card.dart:167` | `.then((name) async { await repo.rename... })` pattern: the async work inside `.then()` is fire-and-forget. Rename/delete failures are silently dropped in production (debug mode catches them via the ObjectBox `assert(false)` in `ActiveFanStateNotifier.update`). |
-| LOW | `splash_screen.dart:131` | Version string `v1.0.0 · SMART BLDC` is hardcoded. Should be read from `package_info_plus` (`packageInfoProvider`) to stay in sync with `pubspec.yaml`. |
-
-### Fixed in `ui-revamp` (2026-05-23)
-
-| Fix | Commit |
-| --- | --- |
-| Nature mode: locks speed dial, saves/restores pre-nature speed, correct BLE frame order | `fadcaeb` |
-| `BrandMark`: pixel-precise PNG crop using measured content bounds (537×464 canvas, content x=123–421, y=203–272) | `fadcaeb` |
-| Settings rename modal: all `InputBorder` variants suppressed; clear button is plain `Icon`, not a styled container | `fadcaeb` |
-| Profile screen logo padding 20→28 px to match content grid | `fadcaeb` |
-| `_onMode`/`_onBoost` extracted to named methods; `_FanControlsPanelState.build()` under 100 lines | `9b87be6` |
-| Double `context.mounted` guard in `_import` removed | `9b87be6` |
-| `_DialPainter.shouldRepaint`: `disabledSpeeds.length` replaced with `setEquals()` | `d6beb6a` |
-| `UserNameNotifier.build()` exception scope narrowed from `Object` to `Exception` | `d6beb6a` |
-| Service QR: one-shot expiry `Timer` stored and cancelled in `dispose()`; QR data cached as field (not rebuilt every second tick) | `1df872b` |
-| `_LineChartPainter.shouldRepaint`: identity comparison replaced with `listEquals()` | `3806dc6` |
-| `kDemoDeviceId` extracted to `app_routes.dart`; magic string `'__demo__'` removed from all call-sites | `3806dc6` |
-| `_connect()`: QR-only device with no MAC now shows "Bluetooth Not Linked" dialog with "Scan for Fan" action | `40e5f0b` |
+| API key | `UPLOAD_API_KEY` must never appear in committed source — injected via `--dart-define` at build time from a gitignored `secrets.env` |
 
 ---
 
@@ -391,10 +374,16 @@ These are verified findings from a full codebase audit. All previously identifie
 | `yaml` | ^3.1.3 | `commands.yaml` parsing |
 | `share_plus` | ^10.1.2 | JSON export via share sheet |
 | `file_picker` | ^8.1.6 | JSON import |
-| `permission_handler` | ^11.3.1 | Runtime BT permissions |
-| `package_info_plus` | ^8.3.0 | App version in Settings |
+| `permission_handler` | ^11.3.1 | Runtime BT + camera permissions |
+| `package_info_plus` | ^8.3.0 | App version in Settings and OTA check |
 | `path_provider` | ^2.1.5 | Temp dir for export file |
+| `path` | ^1.9.1 | File path manipulation |
 | `google_fonts` | ^6.2.1 | Manrope + JetBrains Mono |
+| `qr_flutter` | ^4.1.0 | Service-access QR code generation |
+| `http` | ^1.2.2 | Cloudflare upload + OTA version check |
+| `crypto` | ^3.0.3 | SHA-256 payload hash for upload deduplication |
+| `connectivity_plus` | ^6.0.3 | Network availability check before upload |
+| `open_file` | ^3.3.2 | Opens downloaded APK in Android system installer |
 
 ---
 
@@ -407,14 +396,17 @@ These are verified findings from a full codebase audit. All previously identifie
 | 1 | Live telemetry — watts and RPM | ✅ Complete |
 | 1 | Multi-fan management and persistence | ✅ Complete |
 | 1 | QR code and BLE scan onboarding | ✅ Complete |
+| 1 | Full-screen immersive QR scanner | ✅ Complete |
+| 1 | Live connection status + spinning icon in fan list | ✅ Complete |
 | 1 | Permissions screen, splash, demo mode | ✅ Complete |
 | 1 | Profile setup + user name personalisation | ✅ Complete |
 | 1 | Analytics — energy, cost, efficiency | ✅ Complete |
 | 1 | In-app User Manual | ✅ Complete |
+| 1 | Background usage tracking + Android foreground service | ✅ Complete |
+| 2 | OTA self-update from GitHub Releases | ✅ Complete |
 | 2 | Lighting control | ⏳ UI complete — awaiting command bytes from Terraton |
-| 2 | Live connection status in fan list | 📋 Planned |
+| 2 | AI training data upload (Cloudflare Worker + R2) | ✅ Complete |
 | 2 | Remote command updates (fetch `commands.yaml` from URL) | 📋 Planned |
-| 2 | Migrate `fan_card.dart` to dark-theme constants | 📋 Planned |
 
 ---
 
