@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Required on API 34+ for foreground services that use BLE -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
 
     <application
         android:label="Terraton"
@@ -37,6 +40,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <service
+            android:name=".TerraBgService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false"/>
     </application>
     <queries>
         <intent>

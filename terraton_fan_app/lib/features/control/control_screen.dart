@@ -18,6 +18,8 @@ import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
+import 'package:terraton_fan_app/core/background/ble_foreground_service.dart';
+import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -180,7 +182,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       if (response == null) return;
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
       final power = BleResponseParser.parsePowerState(response);
-      if (power != null) { notifier.updatePower(power); return; }
+      if (power != null) {
+        notifier.updatePower(power);
+        if (!_isDemo) {
+          if (power) {
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
+            unawaited(BleForegroundService.start(label));
+          } else {
+            unawaited(BleForegroundService.stop());
+          }
+        }
+        return;
+      }
       final speed = BleResponseParser.parseSpeed(response);
       if (speed != null) {
         notifier.updateSpeed(speed);
@@ -192,7 +206,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final timer = BleResponseParser.parseTimer(response);
       if (timer != null) { notifier.updateTimer(timer); return; }
       final watts = BleResponseParser.parsePowerWatts(response);
-      if (watts != null) { notifier.updateWatts(watts); _lastWattsAt = DateTime.now(); return; }
+      if (watts != null) {
+        notifier.updateWatts(watts);
+        _lastWattsAt = DateTime.now();
+        if (!_isDemo) {
+          final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+          if (s.isPowered) {
+            final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
+            unawaited(BleForegroundService.update(label));
+          }
+        }
+        return;
+      }
       final rpm = BleResponseParser.parseRpm(response);
       if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
     });
@@ -235,6 +260,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _expiryOnceTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     if (!_isDemo) unawaited(_ble.disconnect());
+    unawaited(BleForegroundService.stop());
     _debug.dispose();
     super.dispose();
   }
@@ -504,7 +530,8 @@ class _FanControlsPanel extends ConsumerStatefulWidget {
   ConsumerState<_FanControlsPanel> createState() => _FanControlsPanelState();
 }
 
-class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
+class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
+    with WidgetsBindingObserver {
   String _colorType       = 'warm';
   double _brightnessValue = 0.7;
   bool   _isLightOn       = false;
@@ -514,12 +541,17 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
   int   _segmentGear = 0;
   String? _segmentMode;
 
+  // Cached in initState — ref.read() is forbidden inside dispose().
+  late final UsageLogRepository _usageLogRepo;
+
   // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
   int _preNatureSpeed = 0;
 
   @override
   void initState() {
     super.initState();
+    _usageLogRepo = ref.read(usageLogRepositoryProvider);
+    WidgetsBinding.instance.addObserver(this);
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
     // in Nature mode, a subsequent switch to Smart/Reverse has a speed to restore.
@@ -530,6 +562,53 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel> {
     _colorType       = s.lastLightColorType;
     _brightnessValue = s.lastLightBrightness;
     _isLightOn       = s.lastLightIsOn;
+    // Seed segment tracking if the fan is already running (e.g. screen reopened).
+    if (s.isPowered && s.speed > 0) {
+      _segmentStart = DateTime.now();
+      _segmentGear  = s.speed;
+      _segmentMode  = s.activeMode;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // Flush the open segment before the app is backgrounded.
+      _flushSegment(newGear: 0, newMode: null);
+    } else if (state == AppLifecycleState.resumed) {
+      // Restart tracking from the live fan state when the user returns.
+      final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+      if (s.isPowered && s.speed > 0) {
+        _segmentStart = DateTime.now();
+        _segmentGear  = s.speed;
+        _segmentMode  = s.activeMode;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _flushOnClose();
+    super.dispose();
+  }
+
+  /// Flush the current open segment directly (no ref — safe for dispose).
+  void _flushOnClose() {
+    final start = _segmentStart;
+    if (start == null || _segmentGear <= 0) return;
+    final secs = DateTime.now().difference(start).inSeconds;
+    if (secs <= 0) return;
+    try {
+      _usageLogRepo.addLog(UsageLog(
+        deviceId:     widget.fan.deviceId,
+        startTime:    start,
+        durationSecs: secs,
+        gear:         _segmentGear,
+        watts:        0, // watts unavailable in dispose; duration/gear matter most
+        mode:         _segmentMode,
+      ));
+    } on Object catch (_) {}
   }
 
   /// Flush the completed segment to ObjectBox, then start a new one.
