@@ -238,9 +238,6 @@ class _FanRowState extends ConsumerState<_FanRow> {
     final isConnected  = connState == BleConnectionState.connected &&
         widget.fan.macAddress.isNotEmpty &&
         connectedMac?.toLowerCase() == widget.fan.macAddress.toLowerCase();
-    final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
-    final isPowered = isConnected && fanState.isPowered;
-
     return GestureDetector(
       onTap: _tap,
       onLongPress: _longPress,
@@ -267,7 +264,7 @@ class _FanRowState extends ConsumerState<_FanRow> {
               ),
               child: TerratonFanIcon(
                 size: 26,
-                spinning: isPowered,
+                spinning: isConnected,
                 color: isConnected ? kYellow : kTextDim,
               ),
             ),
