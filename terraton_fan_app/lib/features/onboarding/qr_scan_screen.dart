@@ -156,9 +156,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
       ..addedAt          = DateTime.now();
 
     await ref.read(fanRepositoryProvider).saveFan(fan);
-    ref.invalidate(savedFansProvider);
-
     if (!mounted) return;
+    ref.invalidate(savedFansProvider);
     unawaited(context.push(AppRoutes.control, extra: fan).then((_) {
       if (mounted) setState(() => _handled = false);
     }));

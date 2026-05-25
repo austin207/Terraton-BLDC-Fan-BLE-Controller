@@ -118,7 +118,11 @@ class _FanList extends ConsumerWidget {
             itemCount: fans.length,
             itemBuilder: (_, i) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _FanRow(key: ValueKey(fans[i].deviceId), fan: fans[i]),
+              // RepaintBoundary isolates the spinning AnimationController so
+              // one row's animation does not trigger repaints on other rows.
+              child: RepaintBoundary(
+                child: _FanRow(key: ValueKey(fans[i].deviceId), fan: fans[i]),
+              ),
             ),
           ),
         ),

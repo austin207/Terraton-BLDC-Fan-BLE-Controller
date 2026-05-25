@@ -80,7 +80,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (expiry == null) return;
     final remaining = expiry.difference(DateTime.now());
     if (remaining.isNegative) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _handleServiceExpiry());
+      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_handleServiceExpiry()));
       return;
     }
     setState(() => _serviceRemaining = remaining);
@@ -106,8 +106,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     if (!mounted) return;
     if (!_isDemo) unawaited(_ble.disconnect());
     await ref.read(fanRepositoryProvider).deleteFan(widget.fan.deviceId);
-    ref.invalidate(savedFansProvider);
     if (!mounted) return;
+    ref.invalidate(savedFansProvider);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Service access has expired. Fan disconnected.')),
     );
@@ -174,7 +174,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   void _subscribeNotify() {
-    unawaited(_notifySub?.cancel() ?? Future<void>.value());
+    // Assign new subscription before cancelling old one so no events are
+    // missed between cancel and listen on the broadcast stream.
+    final old = _notifySub;
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
       _debug.value = _debug.value.copyWith(receivedFrame: bytes);
@@ -221,6 +223,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final rpm = BleResponseParser.parseRpm(response);
       if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
     });
+    unawaited(old?.cancel() ?? Future<void>.value());
   }
 
   void _startTelemetry() {
@@ -554,8 +557,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
     // in Nature mode, a subsequent switch to Smart/Reverse has a speed to restore.
-    if (s.activeMode == 'nature' && s.speed > 0) {
-      _preNatureSpeed = s.speed;
+    if (s.activeMode == 'nature') {
+      // Default to 3 when speed is 0 (e.g. screen re-opened before first telemetry).
+      _preNatureSpeed = s.speed > 0 ? s.speed : 3;
     }
     // Restore lighting UI state from last persisted values.
     _colorType       = s.lastLightColorType;

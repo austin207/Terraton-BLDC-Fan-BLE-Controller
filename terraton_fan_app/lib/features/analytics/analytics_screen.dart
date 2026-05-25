@@ -25,11 +25,17 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   double _tariff = 5.4;
   late final TextEditingController _tariffCtrl;
 
-  // Cached query results — reloaded on initState and range change only,
-  // not on every build(). Avoids synchronous ObjectBox queries in build()
-  // which runs on every IndexedStack parent rebuild (bottom nav taps).
-  List<UsageLog> _curLogs  = const [];
-  List<UsageLog> _prevLogs = const [];
+  // Cached query results and derived aggregations — reloaded on initState
+  // and range change only, not on every build(). Avoids both ObjectBox queries
+  // and O(n) aggregation loops running on every IndexedStack parent rebuild.
+  List<UsageLog>         _curLogs    = const [];
+  List<UsageLog>         _prevLogs   = const [];
+  List<(String, double)> _chartPoints = const [];
+  double                 _totalKwh   = 0.0;
+  double                 _prevKwh    = 0.0;
+  int                    _avgWattsV  = 0;
+  int                    _effPct     = 0;
+  Map<String, double>    _fanMap     = const {};
 
   @override
   void initState() {
@@ -56,8 +62,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final (curFrom, curTo) = _currentWindow(_range);
     final (preFrom, preTo) = _prevWindow(_range);
     setState(() {
-      _curLogs  = repo.getLogsInRange(curFrom, curTo);
-      _prevLogs = repo.getLogsInRange(preFrom, preTo);
+      _curLogs     = repo.getLogsInRange(curFrom, curTo);
+      _prevLogs    = repo.getLogsInRange(preFrom, preTo);
+      _chartPoints = _chartData(_curLogs, _range);
+      _totalKwh    = _sumKwh(_curLogs);
+      _prevKwh     = _sumKwh(_prevLogs);
+      _avgWattsV   = _avgWatts(_curLogs);
+      _effPct      = _efficiency(_curLogs);
+      final map    = <String, double>{};
+      for (final l in _curLogs) {
+        map[l.deviceId] = (map[l.deviceId] ?? 0) + l.kwh;
+      }
+      _fanMap = map;
     });
   }
 
@@ -202,24 +218,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Widget build(BuildContext context) {
     final fansAsync = ref.watch(savedFansProvider);
 
-    final chartData  = _chartData(_curLogs, _range);
-    final total      = _sumKwh(_curLogs);
-    final prevTotal  = _sumKwh(_prevLogs);
-    final cmp        = _comparison(total, prevTotal);
-    final cost       = total * _tariff;
-    final avgW       = _avgWatts(_curLogs);
-    final eff        = _efficiency(_curLogs);
+    // All O(n) aggregation is cached in _reloadData(); build() only does O(1) arithmetic.
+    final cost = _totalKwh * _tariff;
+    final cmp  = _comparison(_totalKwh, _prevKwh);
 
-    // By-fan: group logs by deviceId, map deviceId → fan name.
-    final fanMap = <String, double>{};
-    for (final log in _curLogs) {
-      fanMap[log.deviceId] = (fanMap[log.deviceId] ?? 0) + log.kwh;
-    }
+    // Fan-name lookup comes from the async provider — must stay in build().
     final fanNames = fansAsync.valueOrNull
         ?.asMap()
         .map((_, f) => MapEntry(f.deviceId, f.nickname.isNotEmpty ? f.nickname : f.model)) ??
         {};
-    final fanKwh = fanMap.entries
+    final fanKwh = _fanMap.entries
         .map((e) => (fanNames[e.key] ?? e.key, e.value))
         .toList()
       ..sort((a, b) => b.$2.compareTo(a.$2));
@@ -301,7 +309,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Text(total.toStringAsFixed(1),
+                          Text(_totalKwh.toStringAsFixed(1),
                               style: kMonoStyle(size: 36, weight: FontWeight.w600,
                                   letterSpacing: -0.5)),
                           const SizedBox(width: 6),
@@ -311,7 +319,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     ],
                   ),
                   const Spacer(),
-                  if (prevTotal > 0)
+                  if (_prevKwh > 0)
                     Text(
                       '${cmp.arrow} ${cmp.pct.toStringAsFixed(0)}% ${_comparisonLabel(_range)}',
                       style: kMonoStyle(size: 10, color: cmp.color,
@@ -320,11 +328,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 ],
               ),
               const SizedBox(height: 18),
-              _LineChart(data: chartData),
+              _LineChart(data: _chartPoints),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: chartData.map((d) => Text(d.$1,
+                children: _chartPoints.map((d) => Text(d.$1,
                     style: kMonoStyle(size: 9, color: kTextDim,
                         letterSpacing: 0.6))).toList(),
               ),
@@ -355,7 +363,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     child: _MiniStatCard(
                       icon: Icons.bolt_outlined,
                       label: 'UNITS USED',
-                      value: '${total.toStringAsFixed(1)} U',
+                      value: '${_totalKwh.toStringAsFixed(1)} U',
                       valueColor: kText,
                       sub: _periodLabel(_range),
                     ),
@@ -430,7 +438,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(avgW > 0 ? '$avgW' : '--',
+                  Text(_avgWattsV > 0 ? '$_avgWattsV' : '--',
                       style: kMonoStyle(size: 36, weight: FontWeight.w600,
                           letterSpacing: -0.5)),
                   const SizedBox(width: 6),
@@ -439,8 +447,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                avgW > 0
-                    ? '${((_traditionalWatts - avgW) / _traditionalWatts * 100).round()}% lower than a typical ${_traditionalWatts.round()}W fan'
+                _avgWattsV > 0
+                    ? '${((_traditionalWatts - _avgWattsV) / _traditionalWatts * 100).round()}% lower than a typical ${_traditionalWatts.round()}W fan'
                     : 'No usage data yet',
                 style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
               ),
@@ -454,7 +462,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _DarkCard(
           child: Row(
             children: [
-              _RingChart(pct: eff),
+              _RingChart(pct: _effPct),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
@@ -464,14 +472,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         style: kMonoStyle(size: 10, color: kTextMut,
                             letterSpacing: 2.0)),
                     const SizedBox(height: 6),
-                    Text(_efficiencyLabel(eff),
+                    Text(_efficiencyLabel(_effPct),
                         style: GoogleFonts.manrope(
                             fontSize: 16, fontWeight: FontWeight.w700,
                             color: kText)),
                     const SizedBox(height: 4),
                     Text(
-                      eff > 0
-                          ? 'Your fans are running $eff% more efficiently than a typical ceiling fan at the same airflow.'
+                      _effPct > 0
+                          ? 'Your fans are running $_effPct% more efficiently than a typical ceiling fan at the same airflow.'
                           : 'Run your fans to see efficiency data.',
                       style: GoogleFonts.manrope(
                           fontSize: 12, color: kTextMut, height: 1.4),
@@ -639,24 +647,46 @@ class _LineChart extends StatelessWidget {
 
 class _LineChartPainter extends CustomPainter {
   final List<(String, double)> data;
-  const _LineChartPainter({required this.data});
+
+  // Pre-computed so paint() does not allocate new objects on every frame.
+  final bool   _allZero;
+  final Paint  _linePaint;
+  final Paint  _dotStrokePaint;
+  final Paint  _fillPaint;  // shader assigned inside paint() — size unknown here
+
+  _LineChartPainter({required this.data})
+      : _allZero = data.every((d) => d.$2 == 0),
+        _linePaint = Paint()
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+        _dotStrokePaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+        _fillPaint = Paint() {
+    final dotColor = data.every((d) => d.$2 == 0)
+        ? kYellow.withAlpha(60) : kYellow;
+    _linePaint.color      = dotColor;
+    _dotStrokePaint.color = dotColor;
+  }
 
   // Static paints for values that never change across instances.
   static final _gridPaint = Paint()
     ..color = const Color(0x0AFFFFFF)
     ..strokeWidth = 1;
-  static final _dotInnerPaint = Paint()..color = Colors.black;
+  static final _dotInnerPaint  = Paint()..color = Colors.black;
+  static final _lastDotPaint   = Paint()..color = kYellow;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
-    final allZero = data.every((d) => d.$2 == 0);
 
     final W = size.width;
     final H = size.height;
     const P = 6.0;
 
-    final maxVal = allZero ? 1.0 : data.map((d) => d.$2).reduce(math.max) * 1.15;
+    final maxVal = _allZero ? 1.0 : data.map((d) => d.$2).reduce(math.max) * 1.15;
     final xs = List.generate(
         data.length, (i) => P + i * (W - P * 2) / (data.length - 1));
     final ys = data
@@ -673,45 +703,29 @@ class _LineChartPainter extends CustomPainter {
       path.cubicTo(cx, ys[i - 1], cx, ys[i], xs[i], ys[i]);
     }
 
-    // Fill — shader depends on allZero so computed per-paint.
+    // Fill — shader rect depends on canvas size so assigned here, not in constructor.
     final areaPath = Path.from(path)
       ..lineTo(xs.last, H)
       ..lineTo(xs.first, H)
       ..close();
-    canvas.drawPath(
-      areaPath,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [kYellow.withAlpha(allZero ? 20 : 70), kYellow.withAlpha(0)],
-        ).createShader(Rect.fromLTWH(0, 0, W, H)),
-    );
+    _fillPaint.shader = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [kYellow.withAlpha(_allZero ? 20 : 70), kYellow.withAlpha(0)],
+    ).createShader(Rect.fromLTWH(0, 0, W, H));
+    canvas.drawPath(areaPath, _fillPaint);
 
-    // Line
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = allZero ? kYellow.withAlpha(60) : kYellow
-        ..strokeWidth = 2
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+    // Line — uses pre-computed _linePaint (color set in constructor).
+    canvas.drawPath(path, _linePaint);
 
-    // Dots — last dot is filled yellow; others are stroke only.
-    final dotColor = allZero ? kYellow.withAlpha(60) : kYellow;
-    final dotStrokePaint = Paint()
-      ..color = dotColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+    // Dots — last dot is filled yellow; others use pre-computed _dotStrokePaint.
     for (int i = 0; i < xs.length; i++) {
       final isLast = i == xs.length - 1;
       if (isLast) {
-        canvas.drawCircle(Offset(xs[i], ys[i]), 4.5, Paint()..color = kYellow);
+        canvas.drawCircle(Offset(xs[i], ys[i]), 4.5, _lastDotPaint);
       } else {
         canvas.drawCircle(Offset(xs[i], ys[i]), 2.5, _dotInnerPaint);
-        canvas.drawCircle(Offset(xs[i], ys[i]), 2.5, dotStrokePaint);
+        canvas.drawCircle(Offset(xs[i], ys[i]), 2.5, _dotStrokePaint);
       }
     }
   }
@@ -736,8 +750,9 @@ class _RingChart extends StatelessWidget {
 class _RingPainter extends CustomPainter {
   final int pct;
 
-  // Pre-laid-out TextPainter so layout() is not called on every paint().
+  // Pre-laid-out TextPainter and glow paint so neither is allocated in paint().
   final TextPainter _textPainter;
+  final Paint        _glowPaint;
 
   _RingPainter({required this.pct})
       : _textPainter = TextPainter(
@@ -749,7 +764,12 @@ class _RingPainter extends CustomPainter {
               TextSpan(text: '%', style: kMonoStyle(size: 10, color: kTextMut)),
           ]),
           textDirection: TextDirection.ltr,
-        )..layout();
+        )..layout(),
+        _glowPaint = Paint()
+          ..color = kYellow.withAlpha((pct * 1.5).round().clamp(20, 160))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _sw + 10
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
 
   static const _r  = 38.0;
   static const _sw = 7.0;
@@ -773,15 +793,8 @@ class _RingPainter extends CustomPainter {
 
     canvas.drawArc(rect, 0, 2 * math.pi, false, _trackPaint);
 
-    final sweep     = 2 * math.pi * pct / 100;
-    final glowAlpha = (pct * 1.5).round().clamp(20, 160);
-
-    canvas.drawArc(rect, -math.pi / 2, sweep, false,
-      Paint()
-        ..color = kYellow.withAlpha(glowAlpha)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _sw + 10
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10));
+    final sweep = 2 * math.pi * pct / 100;
+    canvas.drawArc(rect, -math.pi / 2, sweep, false, _glowPaint);
 
     canvas.drawArc(rect, -math.pi / 2, sweep, false, _arcPaint);
 
