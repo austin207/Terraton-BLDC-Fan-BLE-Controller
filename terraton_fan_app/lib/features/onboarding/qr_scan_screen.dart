@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class QrScanScreen extends ConsumerStatefulWidget {
@@ -117,7 +116,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
         ..addedAt   = DateTime.now();
 
       if (mounted) {
-        // Reset _handled when NameFanScreen is popped so the user can re-scan.
         unawaited(
           context.push(AppRoutes.nameFan, extra: fan).then((_) {
             if (mounted) setState(() => _handled = false);
@@ -136,8 +134,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     final expSecs  = json['expires_at']   as int?    ?? 0;
 
     if (mac.isEmpty) { _showInvalidSnack(); return; }
-
-    // expSecs <= 0 means missing or explicitly zero — reject as invalid.
     if (expSecs <= 0) { _showInvalidSnack(); return; }
 
     final expiresAt = DateTime.fromMillisecondsSinceEpoch(expSecs * 1000);
@@ -151,22 +147,19 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 
     _handled = true;
     final fan = FanDevice()
-      ..deviceId        = 'svc_${mac}_${DateTime.now().millisecondsSinceEpoch}'
-      ..macAddress      = mac
-      ..nickname        = nickname
-      ..model           = model
-      ..isServiceAccess = true
+      ..deviceId         = 'svc_${mac}_${DateTime.now().millisecondsSinceEpoch}'
+      ..macAddress       = mac
+      ..nickname         = nickname
+      ..model            = model
+      ..isServiceAccess  = true
       ..serviceExpiresAt = expiresAt
-      ..addedAt         = DateTime.now();
+      ..addedAt          = DateTime.now();
 
     await ref.read(fanRepositoryProvider).saveFan(fan);
     ref.invalidate(savedFansProvider);
 
     if (!mounted) return;
-    // Skip naming screen — nickname comes from the QR.
     unawaited(context.push(AppRoutes.control, extra: fan).then((_) {
-      // Delete the temporary entry when the tech navigates back
-      // (expiry timer in ControlScreen handles mid-session deletion).
       if (mounted) setState(() => _handled = false);
     }));
   }
@@ -189,155 +182,194 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 
   @override
   Widget build(BuildContext context) {
-    const frameSize = 260.0;
+    final mq          = MediaQuery.of(context);
+    final screenSize  = mq.size;
+    final topPad      = mq.padding.top;
+    final bottomPad   = mq.padding.bottom;
+
+    // Frame sits centered in the space between the top bar and the bottom panel.
+    const topBarH      = 64.0;
+    const bottomPanelH = 148.0;
+    const frameSize    = 272.0;
+    final availH   = screenSize.height - topPad - topBarH - bottomPanelH - bottomPad;
+    final frameTop = topPad + topBarH + (availH - frameSize).clamp(0.0, double.infinity) / 2;
+    final frameLeft = (screenSize.width - frameSize) / 2;
+    final cutout = Rect.fromLTWH(frameLeft, frameTop, frameSize, frameSize);
 
     return Scaffold(
-      backgroundColor: kBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── Header ───────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: Stack(
-                alignment: Alignment.center,
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+
+          // ── Camera feed ────────────────────────────────────────────────────
+          if (_cameraReady)
+            MobileScanner(
+              controller: _ctrl,
+              onDetect: _onDetect,
+              fit: BoxFit.cover,
+            )
+          else
+            const ColoredBox(color: Color(0xFF0A0A0A)),
+
+          // ── Semi-transparent overlay with cutout ───────────────────────────
+          CustomPaint(
+            size: screenSize,
+            painter: _OverlayCutoutPainter(cutout: cutout),
+          ),
+
+          // ── Corner bracket markers ─────────────────────────────────────────
+          Positioned(
+            left: cutout.left - 3,
+            top:  cutout.top  - 3,
+            width:  cutout.width  + 6,
+            height: cutout.height + 6,
+            child: const CustomPaint(painter: _CornerBracketPainter()),
+          ),
+
+          // ── Scan line ──────────────────────────────────────────────────────
+          if (_cameraReady)
+            AnimatedBuilder(
+              animation: _scanPos,
+              builder: (_, __) => Positioned(
+                left:   cutout.left   + 16,
+                top:    cutout.top    + 12 + _scanPos.value * (cutout.height - 24),
+                width:  cutout.width  - 32,
+                height: 2,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        kYellow.withAlpha(140),
+                        kYellow,
+                        kYellow.withAlpha(140),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Top bar: close + torch ─────────────────────────────────────────
+          Positioned(
+            top:   topPad,
+            left:  0,
+            right: 0,
+            height: topBarH,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onTap: () => context.pop(),
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: kCard,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: kText, size: 16),
-                      ),
+                  _OverlayIconBtn(
+                    icon: Icons.close_rounded,
+                    onTap: () => context.pop(),
+                  ),
+                  const Spacer(),
+                  _OverlayIconBtn(
+                    icon: _torchOn
+                        ? Icons.flashlight_on_rounded
+                        : Icons.flashlight_off_rounded,
+                    active: _torchOn,
+                    onTap: !_cameraReady ? null : () {
+                      setState(() => _torchOn = !_torchOn);
+                      unawaited(_ctrl.toggleTorch());
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Bottom panel ───────────────────────────────────────────────────
+          Positioned(
+            bottom: 0,
+            left:   0,
+            right:  0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(28, 20, 28, 20 + bottomPad),
+              decoration: const BoxDecoration(
+                color: Color(0xEE111111),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Drag handle
+                  Container(
+                    width: 36, height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: kCardHi,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                   Text(
-                    'Scan Fan QR',
+                    'Scan Fan QR Code',
                     style: GoogleFonts.manrope(
-                      color: kText,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 16, fontWeight: FontWeight.w700, color: kText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Point the camera at the QR sticker on your Terraton fan packaging.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.manrope(
+                      fontSize: 13, color: kTextMut, height: 1.5,
                     ),
                   ),
                 ],
               ),
             ),
+          ),
 
-            // Brand mark — top-left, below the nav header
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: BrandMark(height: 36),
-              ),
-            ),
-
-            const Spacer(),
-
-            // ── Camera frame ─────────────────────────────────────────────────
-            SizedBox(
-              width: frameSize,
-              height: frameSize,
-              child: Stack(
+          // ── No-permission placeholder ──────────────────────────────────────
+          if (!_cameraReady)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Live camera (or black placeholder while requesting permission)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: _cameraReady
-                        ? MobileScanner(
-                            controller: _ctrl,
-                            onDetect: _onDetect,
-                          )
-                        : Container(color: Colors.black),
-                  ),
-
-                  // Corner brackets
-                  const CustomPaint(
-                    size: Size(frameSize, frameSize),
-                    painter: _CornerBracketPainter(),
-                  ),
-
-                  // Animated scan line
-                  AnimatedBuilder(
-                    animation: _scanPos,
-                    builder: (_, __) => Positioned(
-                      top: 20 + _scanPos.value * (frameSize - 40),
-                      left: 20,
-                      right: 20,
-                      child: Container(
-                        height: 2,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.transparent,
-                              kYellow,
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  const Icon(Icons.camera_alt_outlined, color: kTextDim, size: 48),
+                  const SizedBox(height: 16),
+                  Text('Camera access required',
+                      style: GoogleFonts.manrope(
+                          fontSize: 15, fontWeight: FontWeight.w600, color: kTextMut)),
                 ],
               ),
             ),
-
-            const Spacer(),
-
-            // ── Instructions ─────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 44),
-              child: Text(
-                'Position the QR code found on your fan packaging within the frame to automatically connect.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.manrope(
-                  color: kTextMut,
-                  fontSize: 14,
-                  height: 1.55,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 36),
-
-            // ── Torch toggle ─────────────────────────────────────────────────
-            GestureDetector(
-              onTap: !_cameraReady ? null : () {
-                setState(() => _torchOn = !_torchOn);
-                unawaited(_ctrl.toggleTorch());
-              },
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: _torchOn ? kYellow.withAlpha(40) : kCard,
-                  shape: BoxShape.circle,
-                  border: _torchOn
-                      ? Border.all(color: kYellow.withAlpha(160), width: 1.5)
-                      : null,
-                ),
-                child: Icon(
-                  _torchOn ? Icons.flashlight_on_rounded : Icons.bolt_rounded,
-                  color: _torchOn ? kYellow : kTextMut,
-                  size: 24,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 36),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
+
+// ── Overlay with transparent cutout ──────────────────────────────────────────
+
+class _OverlayCutoutPainter extends CustomPainter {
+  final Rect cutout;
+  const _OverlayCutoutPainter({required this.cutout});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.saveLayer(Offset.zero & size, Paint());
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xC0000000),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cutout, const Radius.circular(18)),
+      Paint()..blendMode = BlendMode.clear,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_OverlayCutoutPainter old) => old.cutout != cutout;
+}
+
+// ── Corner bracket markers ────────────────────────────────────────────────────
 
 class _CornerBracketPainter extends CustomPainter {
   const _CornerBracketPainter();
@@ -346,54 +378,51 @@ class _CornerBracketPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = kYellow
-      ..strokeWidth = 3.5
+      ..strokeWidth = 4.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    const arm   = 28.0; // length of each bracket arm
-    const corner = 10.0; // corner radius
+    const arm    = 32.0;
+    const radius = 18.0;
 
-    // ── top-left ─────────────────────────────────────────────────────────────
+    // top-left
     canvas.drawPath(
       Path()
-        ..moveTo(0, corner + arm)
-        ..lineTo(0, corner)
-        ..arcToPoint(const Offset(corner, 0),
-            radius: const Radius.circular(corner), clockwise: true)
-        ..lineTo(corner + arm, 0),
+        ..moveTo(0, radius + arm)
+        ..lineTo(0, radius)
+        ..arcToPoint(const Offset(radius, 0),
+            radius: const Radius.circular(radius), clockwise: true)
+        ..lineTo(radius + arm, 0),
       paint,
     );
-
-    // ── top-right ────────────────────────────────────────────────────────────
+    // top-right
     canvas.drawPath(
       Path()
-        ..moveTo(size.width - corner - arm, 0)
-        ..lineTo(size.width - corner, 0)
-        ..arcToPoint(Offset(size.width, corner),
-            radius: const Radius.circular(corner), clockwise: true)
-        ..lineTo(size.width, corner + arm),
+        ..moveTo(size.width - radius - arm, 0)
+        ..lineTo(size.width - radius, 0)
+        ..arcToPoint(Offset(size.width, radius),
+            radius: const Radius.circular(radius), clockwise: true)
+        ..lineTo(size.width, radius + arm),
       paint,
     );
-
-    // ── bottom-left ──────────────────────────────────────────────────────────
+    // bottom-left
     canvas.drawPath(
       Path()
-        ..moveTo(0, size.height - corner - arm)
-        ..lineTo(0, size.height - corner)
-        ..arcToPoint(Offset(corner, size.height),
-            radius: const Radius.circular(corner), clockwise: false)
-        ..lineTo(corner + arm, size.height),
+        ..moveTo(0, size.height - radius - arm)
+        ..lineTo(0, size.height - radius)
+        ..arcToPoint(Offset(radius, size.height),
+            radius: const Radius.circular(radius), clockwise: false)
+        ..lineTo(radius + arm, size.height),
       paint,
     );
-
-    // ── bottom-right ─────────────────────────────────────────────────────────
+    // bottom-right
     canvas.drawPath(
       Path()
-        ..moveTo(size.width - corner - arm, size.height)
-        ..lineTo(size.width - corner, size.height)
-        ..arcToPoint(Offset(size.width, size.height - corner),
-            radius: const Radius.circular(corner), clockwise: false)
-        ..lineTo(size.width, size.height - corner - arm),
+        ..moveTo(size.width - radius - arm, size.height)
+        ..lineTo(size.width - radius, size.height)
+        ..arcToPoint(Offset(size.width, size.height - radius),
+            radius: const Radius.circular(radius), clockwise: false)
+        ..lineTo(size.width, size.height - radius - arm),
       paint,
     );
   }
@@ -402,4 +431,32 @@ class _CornerBracketPainter extends CustomPainter {
   bool shouldRepaint(_CornerBracketPainter _) => false;
 }
 
+// ── Icon button for the overlay controls ──────────────────────────────────────
 
+class _OverlayIconBtn extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final VoidCallback? onTap;
+  const _OverlayIconBtn({required this.icon, this.active = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 44, height: 44,
+      decoration: BoxDecoration(
+        color: active ? kYellowFill : const Color(0x55000000),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: active ? kYellowBorder : const Color(0x44FFFFFF),
+          width: 1.2,
+        ),
+      ),
+      child: Icon(
+        icon,
+        color: active ? kYellow : Colors.white,
+        size: 20,
+      ),
+    ),
+  );
+}
