@@ -19,14 +19,16 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 | **Telemetry** | Live watts and RPM polled every 3 s over BLE; stale values auto-clear after 5 s |
 | **Analytics** | Energy consumption (kWh), estimated cost, avg wattage, efficiency vs. traditional fan; Day / Week / Month views with per-fan breakdown |
 | **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service keeps the process alive when swiped from recents |
-| **Data upload** | Anonymised usage summaries uploaded to Cloudflare R2 for AI training (opt-in; injected API key at build time only) |
+| **Data upload** | Anonymised daily usage summaries (gear distribution, mode distribution, hourly usage, kWh, weather, KSEB tariff slab) uploaded to Cloudflare R2 for AI training (opt-in; API key injected at build time only) |
 | **Multi-fan** | Manage multiple fans; live connection status badge with spinning icon; rename, remove, and long-press actions |
 | **Storage** | Fan metadata + last-known state persisted with ObjectBox; usage logs for analytics |
 | **Backup** | Export / import fan list as JSON |
-| **OTA updates** | Self-update via GitHub Releases; manual "Check for Updates" in Settings |
-| **Permissions** | Guided BT permission screen with retry, settings deep-link, demo-mode fallback |
+| **OTA updates** | Automatic on-launch check + manual "Check for Updates" in Settings; downloads arm64 APK from GitHub Releases with live progress bar; hands off to Android system installer |
+| **Service QR** | Generate a time-limited QR code (3-hour countdown) for a Terraton technician to scan with their own copy of the app; regenerate button resets the clock |
+| **Permissions** | Guided BT permission screen with retry, settings deep-link, and demo-mode fallback |
 | **Demo mode** | Full UI walkthrough without a physical fan; triggered from the permission fallback |
 | **User Manual** | In-app manual — 8 expandable sections |
+| **Legal** | Privacy Policy and Terms of Service screens accessible from Settings |
 
 ---
 
@@ -56,22 +58,25 @@ assets/commands.yaml
   UsageLogRepository        ← persists per-session usage segments
         │
         ▼
+  UsageSummaryBuilder       ← aggregates daily logs into a feature vector
+        │
+        ▼
   DataUploadService         ← async upload to Cloudflare Worker (opt-in, key injected at build time)
 ```
 
 ### Startup sequence (`main.dart`)
 
-1. `FlutterError.onError` + `platformDispatcher.onError` — global error handlers wired; `ErrorWidget.builder` overridden for dark-theme error screen
+1. `FlutterError.onError` + `platformDispatcher.onError` — global error handlers; `ErrorWidget.builder` overridden for dark-theme error screen
 2. `CommandLoader.load()` — loads `assets/commands.yaml` into static singleton
 3. `initObjectBox()` — opens ObjectBox store
 4. `_ensureBluetoothOn()` — shows system BT enable dialog if adapter is off (permission errors silently swallowed; BlePermissionScreen handles retry)
-5. `runApp(ProviderScope(TerratorApp()))` — permission check runs inside `SplashScreen` after 2 s delay
+5. `runApp(ProviderScope(TerratorApp()))` — `TerratorApp` (`app.dart`) re-prompts the BT enable dialog whenever the adapter is turned off mid-session; permission check runs inside `SplashScreen` after 2 s delay
 
 ### State management
 
 - **Riverpod 2.x** — `NotifierProvider.autoDispose.family` for per-fan live control state; `FutureProvider` for the saved fan list; `AsyncNotifierProvider` for the user name
 - **Navigation** — GoRouter with typed constants in `AppRoutes`; `nameFan` and `control` routes guard against null `extra` via `redirect:` (never a fallback widget)
-- **Storage** — ObjectBox: `FanDevice` (identity/metadata) + `FanState` (last-known control state) + `UsageLog` (energy telemetry segments)
+- **Storage** — ObjectBox: `FanDevice` (identity/metadata) + `FanState` (last-known control state) + `UsageLog` (energy telemetry segments) + `UsageSummary` (daily feature vector for upload)
 
 ### Nature mode state machine
 
@@ -174,76 +179,108 @@ terraton_fan_app/
 │   ├── icons/                     # PNG mode icons (nature_plant, boost_rocket)
 │   └── logos/                     # terraton-full.png, terraton-mark.png
 ├── lib/
+│   ├── app.dart                   # TerratorApp root widget; re-prompts BT enable on mid-session turn-off
+│   ├── main.dart                  # Entry point: error handlers, CommandLoader, ObjectBox, runApp
 │   ├── core/
 │   │   ├── background/
 │   │   │   └── ble_foreground_service.dart  # MethodChannel wrapper for Android foreground service
 │   │   ├── ble/
-│   │   │   ├── ble_constants.dart         # All UUID constants (only location)
-│   │   │   ├── ble_connection_state.dart  # Enum: disconnected/scanning/connecting/connected
-│   │   │   ├── ble_frame_builder.dart     # Typed facade — returns null for pending commands
-│   │   │   ├── ble_response_parser.dart   # Validates response frames; byte → name mapping
-│   │   │   └── ble_service.dart           # BleServiceImpl: scan/connect/disconnect/write
+│   │   │   ├── ble_constants.dart           # All UUID constants (only location)
+│   │   │   ├── ble_connection_state.dart    # Enum: disconnected/scanning/connecting/connected
+│   │   │   ├── ble_frame_builder.dart       # Typed facade — returns null for pending commands
+│   │   │   ├── ble_response_parser.dart     # Validates response frames; byte → name mapping
+│   │   │   └── ble_service.dart             # BleServiceImpl: scan/connect/disconnect/write
 │   │   ├── commands/
-│   │   │   └── command_loader.dart        # YAML singleton; buildFrame(); statusPoll(); custom()
-│   │   ├── providers.dart                 # All Riverpod providers; ActiveFanStateNotifier
+│   │   │   └── command_loader.dart          # YAML singleton; buildFrame(); statusPoll(); custom()
+│   │   ├── providers.dart                   # All Riverpod providers; ActiveFanStateNotifier
 │   │   ├── storage/
-│   │   │   ├── app_settings.dart          # JSON file: user name, first-launch flag, opt-in prefs
-│   │   │   ├── fan_repository.dart        # ObjectBox CRUD + JSON export/import
-│   │   │   ├── objectbox_store.dart       # Singleton Store init
-│   │   │   └── usage_log_repository.dart  # Usage log read/write for analytics
+│   │   │   ├── app_settings.dart            # JSON file: user name, first-launch flag, opt-in prefs
+│   │   │   ├── fan_repository.dart          # ObjectBox CRUD + JSON export/import
+│   │   │   ├── objectbox_store.dart         # Singleton Store init
+│   │   │   └── usage_log_repository.dart    # Usage log read/write for analytics
+│   │   ├── update/
+│   │   │   └── app_update_service.dart      # OTA check, APK download with progress, system installer handoff
 │   │   └── upload/
-│   │       └── data_upload_service.dart   # Cloudflare Worker upload (opt-in; key injected at build time)
+│   │       ├── data_upload_service.dart     # Cloudflare Worker upload (opt-in; key injected at build time)
+│   │       └── usage_summary_builder.dart   # Aggregates daily UsageLogs into a UsageSummary feature vector
 │   ├── features/
 │   │   ├── analytics/
-│   │   │   └── analytics_screen.dart      # kWh / cost / efficiency / per-fan breakdown
+│   │   │   └── analytics_screen.dart        # kWh / cost / efficiency / per-fan breakdown
 │   │   ├── control/
-│   │   │   ├── circular_speed_dial.dart   # Radial dot-ring speed selector + centre readout
-│   │   │   ├── connection_banner.dart     # ConnectionLostCard overlay (bottom-anchored)
-│   │   │   ├── control_screen.dart        # Main fan control; telemetry timer; BLE notify dispatch
+│   │   │   ├── circular_speed_dial.dart     # Radial dot-ring speed selector + centre readout
+│   │   │   ├── connection_banner.dart       # ConnectionLostCard overlay (bottom-anchored)
+│   │   │   ├── control_screen.dart          # Main fan control; telemetry timer; BLE notify dispatch
 │   │   │   ├── lighting_control_widget.dart
-│   │   │   ├── mode_control_widget.dart   # Nature / Smart / Reverse / Boost buttons
-│   │   │   └── timer_control_widget.dart  # OFF / 2H / 4H / 8H selector
+│   │   │   ├── mode_control_widget.dart     # Nature / Smart / Reverse / Boost buttons
+│   │   │   └── timer_control_widget.dart    # OFF / 2H / 4H / 8H selector
 │   │   ├── home/
-│   │   │   ├── fans_list_screen.dart      # Dark-theme fan list with live status badge and long-press actions
-│   │   │   └── home_screen.dart           # Bottom-nav shell (Analytics / Home / Settings tabs)
+│   │   │   ├── fans_list_screen.dart        # Dark-theme fan list; live status badge; spinning icon; long-press actions
+│   │   │   └── home_screen.dart             # Bottom-nav shell (Analytics / Home / Settings tabs)
+│   │   ├── legal/
+│   │   │   ├── legal_screen.dart            # Reusable scrollable legal screen (shared by PP and ToS)
+│   │   │   ├── privacy_policy_screen.dart   # Privacy Policy content
+│   │   │   └── terms_screen.dart            # Terms of Service content
 │   │   ├── onboarding/
-│   │   │   ├── ble_scan_screen.dart       # BLE scan list; 15 s timeout; stopScan on dispose
-│   │   │   ├── name_fan_screen.dart       # Nickname entry after scan/QR
-│   │   │   ├── profile_setup_screen.dart  # "What should we call you?" — shown on first launch
-│   │   │   └── qr_scan_screen.dart        # Full-screen immersive QR scanner with overlay cutout
+│   │   │   ├── ble_scan_screen.dart         # BLE scan list; 15 s timeout; stopScan on dispose
+│   │   │   ├── name_fan_screen.dart         # Nickname entry after scan/QR
+│   │   │   ├── profile_setup_screen.dart    # "What should we call you?" — shown on first launch
+│   │   │   └── qr_scan_screen.dart          # Full-screen immersive QR scanner with overlay cutout
 │   │   ├── permission/
-│   │   │   └── ble_permission_screen.dart # Permission request; settings deep-link; demo fallback
+│   │   │   └── ble_permission_screen.dart   # Permission request; settings deep-link; demo fallback
 │   │   ├── settings/
-│   │   │   ├── settings_screen.dart       # Profile edit; data export/import; OTA check; service QR
-│   │   │   └── user_manual_screen.dart    # 8-section expandable manual
-│   │   └── splash/
-│   │       └── splash_screen.dart         # 2 s hold; checks permissions; routes to profile/home
+│   │   │   ├── service_qr_modal.dart        # Time-limited service QR (3h countdown + regenerate)
+│   │   │   ├── settings_screen.dart         # Profile edit; data export/import; OTA check; service QR; legal links
+│   │   │   └── user_manual_screen.dart      # 8-section expandable manual
+│   │   ├── splash/
+│   │   │   └── splash_screen.dart           # 2 s hold; checks permissions; routes to profile/home
+│   │   └── update/
+│   │       └── update_dialog.dart           # OTA bottom sheet: idle → downloading (progress bar) → installing → error
 │   ├── models/
-│   │   ├── fan_device.dart                # ObjectBox entity: identity + metadata
-│   │   ├── fan_state.dart                 # ObjectBox entity: last-known control state + copyWith
-│   │   └── usage_log.dart                 # ObjectBox entity: per-session energy segment
+│   │   ├── fan_device.dart                  # ObjectBox entity: identity + metadata
+│   │   ├── fan_state.dart                   # ObjectBox entity: last-known control state + copyWith
+│   │   ├── usage_log.dart                   # ObjectBox entity: per-session energy segment
+│   │   └── usage_summary.dart              # Daily feature vector for AI upload (gear dist, mode dist, weather, KSEB slab)
 │   └── shared/
-│       ├── app_routes.dart                # Route path constants
-│       ├── brand_mark.dart                # Terraton wordmark/icon with pixel-precise PNG crop
-│       ├── fan_icon.dart                  # Static fan vector icon (light-theme)
-│       ├── router.dart                    # GoRouter config + goToOnboarding() bottom sheet
-│       ├── terraton_fan_icon.dart         # Animated spinning fan icon (dark-theme)
-│       └── theme.dart                     # kBg / kCard / kYellow / kText / kSpeedColors / etc.
+│       ├── app_routes.dart                  # Route path constants + kDemoDeviceId
+│       ├── brand_mark.dart                  # Terraton wordmark/icon with pixel-precise PNG crop
+│       ├── fan_icon.dart                    # Static fan vector icon (light-theme)
+│       ├── router.dart                      # GoRouter config + goToOnboarding() bottom sheet
+│       ├── terraton_fan_icon.dart           # Animated spinning fan icon (dark-theme)
+│       └── theme.dart                       # kBg / kCard / kYellow / kText / kSpeedColors / etc.
 ├── android/
 │   └── app/src/main/kotlin/com/terraton/terraton_fan_app/
-│       ├── MainActivity.kt                # MethodChannel handler for bg_service start/update/stop
-│       └── TerraBgService.kt             # Android foreground service; persistent "Fan running" notification
+│       ├── MainActivity.kt                  # MethodChannel handler for bg_service start/update/stop
+│       └── TerraBgService.kt               # Android foreground service; persistent "Fan running" notification
 ├── test/
+│   ├── flutter_test_config.dart             # Global test setup (CommandLoader preload)
+│   ├── generate_icon_test.dart
 │   ├── unit/
 │   │   ├── active_fan_state_notifier_test.dart
+│   │   ├── app_settings_test.dart
 │   │   ├── ble_frame_builder_test.dart
 │   │   ├── ble_response_parser_test.dart
 │   │   ├── command_loader_test.dart
-│   │   └── fan_repository_test.dart
+│   │   ├── fan_device_test.dart
+│   │   ├── fan_repository_test.dart
+│   │   ├── fan_state_test.dart
+│   │   ├── usage_log_repository_test.dart
+│   │   └── usage_log_test.dart
 │   └── widget/
+│       ├── analytics_screen_test.dart
 │       ├── ble_permission_screen_test.dart
-│       └── control_screen_test.dart
-└── objectbox.g.dart                       # Generated — do not edit; run build_runner to regenerate
+│       ├── ble_scan_screen_test.dart
+│       ├── connection_banner_test.dart
+│       ├── control_screen_test.dart
+│       ├── fans_list_screen_test.dart
+│       ├── home_screen_test.dart
+│       ├── mode_control_widget_test.dart
+│       ├── name_fan_screen_test.dart
+│       ├── profile_setup_screen_test.dart
+│       ├── qr_scan_screen_test.dart
+│       ├── settings_screen_test.dart
+│       ├── timer_control_widget_test.dart
+│       └── user_manual_screen_test.dart
+└── objectbox.g.dart                         # Generated — do not edit; run build_runner to regenerate
 ```
 
 ---
@@ -348,6 +385,8 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 
 ## Test Coverage
 
+### Unit tests
+
 | File | What it covers |
 | --- | --- |
 | `test/unit/command_loader_test.dart` | YAML config parsing; `buildFrame()` checksum correctness; `statusPoll()` fixed frame; null handling for pending commands |
@@ -355,10 +394,30 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 | `test/unit/ble_response_parser_test.dart` | Response frame validation (header, packet ID, checksum); `parsePowerState`, `parseSpeed`, `parseModeString`, `parseTimer`, `parseRpm`, `parsePowerWatts` |
 | `test/unit/active_fan_state_notifier_test.dart` | State transitions: power, speed, mode, boost, timer; Nature mode blocks boost; `setActiveMode` / `setBoostActive` invariants |
 | `test/unit/fan_repository_test.dart` | ObjectBox save / load / delete / rename; `importFromJson` validation (version check, field length limits, duplicate skip) |
-| `test/widget/ble_permission_screen_test.dart` | Permission request flow; "Open App Settings" branch; demo-mode fallback |
-| `test/widget/control_screen_test.dart` | BLE connection lifecycle; demo mode; speed dial callbacks; mode/boost button state; telemetry frame dispatch |
+| `test/unit/fan_device_test.dart` | FanDevice default field values |
+| `test/unit/fan_state_test.dart` | FanState.copyWith round-trip; equality and hashCode |
+| `test/unit/app_settings_test.dart` | AppSettings JSON file I/O; user name and first-launch flag persistence |
+| `test/unit/usage_log_test.dart` | UsageLog kWh calculation |
+| `test/unit/usage_log_repository_test.dart` | In-memory repo: add / get / date-range query / delete |
 
-**Not yet covered:** `HomeScreen`, `FansListScreen`, `AnalyticsScreen`, `SplashScreen`, onboarding flow (QR, BLE scan, naming), settings export/import end-to-end.
+### Widget tests
+
+| File | What it covers |
+| --- | --- |
+| `test/widget/control_screen_test.dart` | BLE connection lifecycle; demo mode; speed dial callbacks; mode/boost button state; telemetry frame dispatch |
+| `test/widget/ble_permission_screen_test.dart` | Permission request flow; "Open App Settings" branch; demo-mode fallback |
+| `test/widget/home_screen_test.dart` | IndexedStack bottom-nav shell; tab switching |
+| `test/widget/fans_list_screen_test.dart` | Fan list render; live connection status badge; long-press rename/delete actions |
+| `test/widget/analytics_screen_test.dart` | Day/Week/Month view switching; kWh and cost display with mock usage logs |
+| `test/widget/ble_scan_screen_test.dart` | Scan list render; already-paired badge; timeout behaviour |
+| `test/widget/qr_scan_screen_test.dart` | Full-screen QR scanner overlay render; torch toggle |
+| `test/widget/name_fan_screen_test.dart` | Nickname validation; submit routing |
+| `test/widget/profile_setup_screen_test.dart` | First-launch name input and routing |
+| `test/widget/settings_screen_test.dart` | Profile edit; export/import; OTA check trigger; service QR open |
+| `test/widget/user_manual_screen_test.dart` | Section expand/collapse |
+| `test/widget/mode_control_widget_test.dart` | Nature/Smart/Reverse/Boost button enabled/active states |
+| `test/widget/timer_control_widget_test.dart` | OFF/2H/4H/8H selector state and callback |
+| `test/widget/connection_banner_test.dart` | ConnectionLostCard render and retry callback |
 
 ---
 
@@ -376,14 +435,15 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 | `file_picker` | ^8.1.6 | JSON import |
 | `permission_handler` | ^11.3.1 | Runtime BT + camera permissions |
 | `package_info_plus` | ^8.3.0 | App version in Settings and OTA check |
-| `path_provider` | ^2.1.5 | Temp dir for export file |
+| `path_provider` | ^2.1.5 | Temp dir for APK download and export file |
 | `path` | ^1.9.1 | File path manipulation |
 | `google_fonts` | ^6.2.1 | Manrope + JetBrains Mono |
 | `qr_flutter` | ^4.1.0 | Service-access QR code generation |
-| `http` | ^1.2.2 | Cloudflare upload + OTA version check |
-| `crypto` | ^3.0.3 | SHA-256 payload hash for upload deduplication |
+| `http` | ^1.2.2 | Cloudflare upload + OTA version check + APK download |
+| `crypto` | ^3.0.3 | SHA-256 payload hash for upload deduplication; device ID anonymisation |
 | `connectivity_plus` | ^6.0.3 | Network availability check before upload |
 | `open_file` | ^3.3.2 | Opens downloaded APK in Android system installer |
+| `cupertino_icons` | ^1.0.8 | iOS-style icons (used sparingly) |
 
 ---
 
@@ -403,6 +463,8 @@ All colours, typography, and spacing live in `lib/shared/theme.dart`. Use the na
 | 1 | Analytics — energy, cost, efficiency | ✅ Complete |
 | 1 | In-app User Manual | ✅ Complete |
 | 1 | Background usage tracking + Android foreground service | ✅ Complete |
+| 1 | Service QR for technician access | ✅ Complete |
+| 1 | Privacy Policy + Terms of Service | ✅ Complete |
 | 2 | OTA self-update from GitHub Releases | ✅ Complete |
 | 2 | Lighting control | ⏳ UI complete — awaiting command bytes from Terraton |
 | 2 | AI training data upload (Cloudflare Worker + R2) | ✅ Complete |
