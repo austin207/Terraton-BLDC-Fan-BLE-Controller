@@ -233,11 +233,13 @@ class _FanRowState extends ConsumerState<_FanRow> {
   @override
   Widget build(BuildContext context) {
     // Watch connection state so this row rebuilds when BLE connects/disconnects.
-    final connState   = ref.watch(bleConnectionStateProvider).valueOrNull;
+    final connState    = ref.watch(bleConnectionStateProvider).valueOrNull;
     final connectedMac = ref.read(bleServiceProvider).connectedMacAddress;
-    final isConnected = connState == BleConnectionState.connected &&
+    final isConnected  = connState == BleConnectionState.connected &&
         widget.fan.macAddress.isNotEmpty &&
         connectedMac?.toLowerCase() == widget.fan.macAddress.toLowerCase();
+    final fanState  = ref.watch(activeFanStateProvider(widget.fan.deviceId));
+    final isPowered = isConnected && fanState.isPowered;
 
     return GestureDetector(
       onTap: _tap,
@@ -263,7 +265,11 @@ class _FanRowState extends ConsumerState<_FanRow> {
                 color: kCardHi,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const TerratonFanIcon(size: 26),
+              child: TerratonFanIcon(
+                size: 26,
+                spinning: isPowered,
+                color: isConnected ? kYellow : kTextDim,
+              ),
             ),
             const SizedBox(width: 14),
             // Info

@@ -146,6 +146,26 @@ class BleServiceImpl implements BleService {
   Future<String> connect(String mac) async {
     if (_disposed) throw StateError('BleService disposed');
 
+    // Already connected to the exact same device — skip full GATT setup.
+    if (_currentState == app.BleConnectionState.connected &&
+        _device?.remoteId.str == mac) {
+      return mac;
+    }
+
+    // Switching to a different device — clean up the existing connection first
+    // so we don't leave a dangling GATT handle or a stale _connStateSub.
+    if (_device != null) {
+      await _connStateSub?.cancel();
+      _connStateSub = null;
+      await _notifyValueSub?.cancel();
+      _notifyValueSub = null;
+      try { await _device!.disconnect(); } on Object catch (_) {}
+      _writeChar  = null;
+      _notifyChar = null;
+      _device     = null;
+      _setState(app.BleConnectionState.disconnected);
+    }
+
     // Use the live scan-result device when available — it carries the correct
     // BLE address type. fromId() works on reconnects once Android has cached
     // the address type from a prior successful connection.

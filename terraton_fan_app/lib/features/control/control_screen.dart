@@ -259,7 +259,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
-    if (!_isDemo) unawaited(_ble.disconnect());
     unawaited(BleForegroundService.stop());
     _debug.dispose();
     super.dispose();
