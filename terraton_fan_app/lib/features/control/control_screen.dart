@@ -12,6 +12,7 @@ import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
+import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/features/control/control_registry.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
@@ -554,6 +555,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
   // Cached in initState — ref.read() is forbidden inside dispose().
   late final UsageLogRepository _usageLogRepo;
+  // Cached because fan.model is immutable for the widget's lifetime.
+  late final ApplianceType? _applianceType;
 
   // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
   int _preNatureSpeed = 0;
@@ -561,7 +564,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   @override
   void initState() {
     super.initState();
-    _usageLogRepo = ref.read(usageLogRepositoryProvider);
+    _usageLogRepo    = ref.read(usageLogRepositoryProvider);
+    _applianceType   = ApplianceLoader.typeForModel(widget.fan.model);
     WidgetsBinding.instance.addObserver(this);
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
@@ -634,7 +638,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             .read(activeFanStateProvider(widget.fan.deviceId))
             .lastWatts ?? 0;
         try {
-          ref.read(usageLogRepositoryProvider).addLog(UsageLog(
+          _usageLogRepo.addLog(UsageLog(
             deviceId:    widget.fan.deviceId,
             startTime:   start,
             durationSecs: secs,
@@ -654,10 +658,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
   /// Returns true when the appliance type for this fan declares [control],
   /// OR when the device has no stored model (legacy BLE-paired fan → show all).
-  bool _has(String control) {
-    final type = ApplianceLoader.typeForModel(widget.fan.model);
-    return type == null || type.hasControl(control);
-  }
+  bool _has(String control) =>
+      _applianceType == null || _applianceType.hasControl(control);
 
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
@@ -763,14 +765,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final enabled  = widget.controlsEnabled;
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
-    // Resolve the appliance type once per build. Null → legacy/unknown device
-    // with no model string; show all built-in controls for backward compat.
-    final applianceType = ApplianceLoader.typeForModel(fan.model);
     // Custom (non-built-in) controls declared in appliances.yaml for this type.
-    final customControls = applianceType == null
+    // _applianceType is cached in initState — fan.model is immutable.
+    final customControls = _applianceType == null
         ? const <String>[]
-        : applianceType.controls
-            .where((c) => !ControlRegistry.isBuiltIn(c))
+        : _applianceType.controls
+            .where((String c) => !ControlRegistry.isBuiltIn(c))
             .toList(growable: false);
 
     return Column(
@@ -905,8 +905,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         // Any control type in appliances.yaml that is not built-in is looked
         // up in ControlRegistry and rendered here. Register builders in main.dart.
         for (final controlType in customControls)
-          if (ControlRegistry.get(controlType) != null)
-            ControlRegistry.get(controlType)!(ControlBuildParams(
+          if (ControlRegistry.get(controlType) case final builder?)
+            builder(ControlBuildParams(
               device:    fan,
               fanState:  fanState,
               enabled:   enabled,

@@ -100,11 +100,11 @@ Future<void> _showConnectModal(BuildContext context, String model) async {
     builder: (sheetCtx) => _ConnectModal(
       model: model,
       onScanQr: () {
-        Navigator.of(sheetCtx).pop();
+        if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         if (context.mounted) unawaited(context.push(AppRoutes.scanQr));
       },
       onAutoConnect: () {
-        Navigator.of(sheetCtx).pop();
+        if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         if (context.mounted) unawaited(context.push(AppRoutes.scanBle));
       },
     ),

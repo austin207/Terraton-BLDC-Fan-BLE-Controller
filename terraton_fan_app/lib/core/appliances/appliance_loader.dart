@@ -27,6 +27,7 @@ abstract final class ApplianceLoader {
   /// Loads and parses `assets/appliances.yaml`.
   /// Must be called (and awaited) in `main()` before `runApp()`.
   static Future<void> load() async {
+    if (_categories.isNotEmpty) return; // idempotent — no-op on repeat calls
     final raw = await rootBundle.loadString('assets/appliances.yaml');
     final doc = loadYaml(raw) as YamlMap;
     _categories = (doc['appliances'] as YamlList)

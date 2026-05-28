@@ -7,7 +7,9 @@ import 'package:terraton_fan_app/features/home/appliance_types_screen.dart';
 export 'package:terraton_fan_app/features/home/appliance_types_screen.dart';
 
 /// Legacy alias — prefer [ApplianceTypesScreen] in new code.
+@Deprecated('Use ApplianceTypesScreen from appliance_types_screen.dart')
 typedef FanTypesScreen = ApplianceTypesScreen;
 
 /// Legacy alias — prefer [ApplianceTypeCard] in new code.
+@Deprecated('Use ApplianceTypeCard from appliance_types_screen.dart')
 typedef FanTypeCard = ApplianceTypeCard;

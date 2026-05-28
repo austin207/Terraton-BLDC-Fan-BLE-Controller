@@ -50,7 +50,7 @@ class BleResponseParser {
       final command = bytes[i + 3];
       final dataLen = bytes[i + 4];
       final end = i + 5 + dataLen + 1;
-      if (end > bytes.length) break; // incomplete frame — stop scanning
+      if (end > bytes.length) { i++; continue; } // incomplete frame — skip and keep scanning
       final data     = bytes.sublist(i + 5, i + 5 + dataLen);
       final received = bytes[i + 5 + dataLen];
       int sum = bytes[i] + bytes[i + 1] + bytes[i + 2] + bytes[i + 3] + bytes[i + 4];

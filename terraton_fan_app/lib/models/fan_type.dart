@@ -9,4 +9,5 @@
 import 'package:terraton_fan_app/models/appliance.dart';
 
 /// Legacy alias — prefer [ApplianceType] in new code.
+@Deprecated('Use ApplianceType from appliance.dart')
 typedef FanType = ApplianceType;

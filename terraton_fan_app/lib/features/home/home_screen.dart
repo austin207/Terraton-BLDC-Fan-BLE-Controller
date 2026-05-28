@@ -121,7 +121,7 @@ class _HomeTab extends ConsumerWidget {
         // One tile per appliance category from appliances.yaml.
         // Adding a new category to the YAML file automatically adds a tile here.
         for (final cat in categories) ...[
-          _AppliaceCategoryTile(
+          _ApplianceCategoryTile(
             category: cat,
             pairedCount: allFans
                 .where((f) => cat.types.any((t) => t.matchesModel(f.model)))
@@ -138,20 +138,20 @@ class _HomeTab extends ConsumerWidget {
 
 // ── Appliance category tile ───────────────────────────────────────────────────
 
-class _AppliaceCategoryTile extends StatefulWidget {
+class _ApplianceCategoryTile extends StatefulWidget {
   final ApplianceCategory category;
   final int pairedCount;
 
-  const _AppliaceCategoryTile({
+  const _ApplianceCategoryTile({
     required this.category,
     required this.pairedCount,
   });
 
   @override
-  State<_AppliaceCategoryTile> createState() => _AppliaceCategoryTileState();
+  State<_ApplianceCategoryTile> createState() => _ApplianceCategoryTileState();
 }
 
-class _AppliaceCategoryTileState extends State<_AppliaceCategoryTile> {
+class _ApplianceCategoryTileState extends State<_ApplianceCategoryTile> {
   bool _pressed = false;
 
   @override
