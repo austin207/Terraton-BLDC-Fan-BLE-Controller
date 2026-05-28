@@ -86,12 +86,10 @@ appliances:
   #   pluralLabel: Lights
   #   icon: assets/icons/light.png
   #   types:
-  #     - id: led_light
-  #       displayName: LED Light
-  #       modelPrefix: LT
+  #     - id: led_panel
+  #       displayName: LED Panel
+  #       modelPrefix: LP
   #       icon: assets/icons/light.png
   #       modelCount: 10
   #       controls:
-  #         - power
-  #         - brightness        # custom — register in ControlRegistry
-  #         - color_temperature # custom — register in ControlRegistry
+  #         - lighting
