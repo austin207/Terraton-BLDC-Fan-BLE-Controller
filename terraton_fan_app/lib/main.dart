@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
+import 'package:terraton_fan_app/core/upload/device_ping_service.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/app.dart';
 
@@ -46,6 +47,8 @@ Future<void> main() async {
   // system dialog over a blank screen, violating Android UX guidelines.
   await _ensureBluetoothOn();
 
+  // Fire-and-forget — anonymous heartbeat; tells Cloudflare this device is active.
+  unawaited(DevicePingService.ping());
   // Fire-and-forget — uploads previous days' summaries if user opted in + Wi-Fi.
   unawaited(DataUploadService.tryUpload(UsageLogRepositoryImpl(store)));
 

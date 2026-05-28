@@ -14,6 +14,10 @@ bucket_name = "terraton-usage-data"
 binding = "RATE_LIMIT_KV"
 id      = "fe23694cb21e413f990cb8e2a35ad4e9"
 
+[[kv_namespaces]]
+binding = "DEVICE_KV"
+id      = "92015f472c404c16bd94de7851889a89"
+
 # ── Secret ───────────────────────────────────────────────────────────────────
 # Set via:  wrangler secret put UPLOAD_API_KEY
 # (never put the value in this file — it would be committed to git)

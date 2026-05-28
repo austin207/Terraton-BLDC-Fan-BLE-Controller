@@ -3,6 +3,7 @@
 // Uses path_provider (already a dep) — no new packages needed.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:path_provider/path_provider.dart';
 
 abstract final class AppSettings {
@@ -118,4 +119,22 @@ abstract final class AppSettings {
               ..add(date);
         return {...m, 'uploaded_dates': dates.toList()};
       });
+
+  // ── Anonymous install ID ──────────────────────────────────────────────────
+  // A random 32-char hex string generated once on first launch and stored
+  // permanently. Never leaves the device in plain form — callers hash it
+  // before sending anywhere.
+
+  static Future<String> loadOrCreateInstallId() async {
+    final m = await _read();
+    final existing = m['install_id'] as String?;
+    if (existing != null && existing.length == 32) return existing;
+
+    final rng = Random.secure();
+    final id  = List.generate(16, (_) => rng.nextInt(256))
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await _update((mm) => {...mm, 'install_id': id});
+    return id;
+  }
 }

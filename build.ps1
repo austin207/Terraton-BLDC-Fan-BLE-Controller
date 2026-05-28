@@ -106,7 +106,16 @@ Write-Host "Regenerating ObjectBox / Riverpod code..." -ForegroundColor Cyan
 dart run build_runner build --delete-conflicting-outputs
 if ($LASTEXITCODE -ne 0) { Write-Host "build_runner failed." -ForegroundColor Red; exit 1 }
 
-# ── 3. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
+# ── 3. Run test suite ────────────────────────────────────────────────────────
+Write-Host "Running Flutter test suite..." -ForegroundColor Cyan
+flutter test --no-pub
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Tests failed -- aborting build. Fix failing tests before releasing." -ForegroundColor Red
+    exit 1
+}
+Write-Host "All tests passed." -ForegroundColor Green
+
+# ── 4. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
 Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
 
 flutter build apk --release --split-per-abi `
@@ -128,7 +137,7 @@ if (-not (Test-Path $Arm64)) {
     exit 1
 }
 
-# ── 4. Save timestamped copies locally + write release assets ────────────────
+# ── 5. Save timestamped copies locally + write release assets ────────────────
 $Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
 $Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
 $Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
@@ -158,7 +167,7 @@ $versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}"
 [System.IO.File]::WriteAllText($VersionJsonPath, $versionJsonContent, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
 
-# ── 5. Publish to GitHub Releases (tag: latest) ───────────────────────────────
+# ── 6. Publish to GitHub Releases (tag: latest) ───────────────────────────────
 Write-Host ""
 Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
 Set-Location $ProjectRoot
@@ -197,7 +206,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# ── 6. Commit & push the version bump ────────────────────────────────────────
+# ── 7. Commit & push the version bump ────────────────────────────────────────
 if ($bumpChoice.Trim().ToUpper() -ne 'S') {
     Set-Location $ProjectRoot
     # Only commit if pubspec.yaml actually has uncommitted changes.

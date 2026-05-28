@@ -8,6 +8,7 @@
  *   UPLOAD_API_KEY  — Bearer token injected into the APK at build time
  *   R2              — R2 bucket binding (bucket: terraton-usage-data)
  *   RATE_LIMIT_KV   — KV namespace for per-IP rate limiting
+ *   DEVICE_KV       — KV namespace tracking active device count (no opt-in required)
  */
 
 const MAX_BODY_BYTES    = 10_000; // 10 KB per payload — generous for the schema
@@ -19,9 +20,56 @@ export default {
     const url = new URL(request.url);
 
     // ── Route guard ──────────────────────────────────────────────────────────
-    if (request.method !== 'POST' || url.pathname !== '/upload') {
-      return reply(404, 'Not found');
-    }
+    if (request.method !== 'POST') return reply(404, 'Not found');
+
+    if (url.pathname === '/ping') return handlePing(request, env);
+    if (url.pathname === '/upload') return handleUpload(request, env);
+    return reply(404, 'Not found');
+  },
+};
+
+// ── /ping — anonymous device heartbeat (no auth, no opt-in) ──────────────────
+//
+// Records that a device has the app installed. Called on every app launch.
+// KV key:   device:<hash>
+// KV value: { first_seen, last_seen, app_version, ping_count }
+
+async function handlePing(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return reply(400, 'Invalid JSON');
+  }
+
+  const hash    = body.device_hash;
+  const version = typeof body.app_version === 'string' ? body.app_version : 'unknown';
+
+  if (typeof hash !== 'string' || !/^[0-9a-f]{8,64}$/.test(hash)) {
+    return reply(400, 'Invalid device_hash');
+  }
+
+  const key = `device:${hash}`;
+  const now = new Date().toISOString();
+
+  let record = { first_seen: now, last_seen: now, app_version: version, ping_count: 0 };
+  const existing = await env.DEVICE_KV.get(key, { type: 'json' });
+  if (existing) {
+    record = {
+      first_seen:  existing.first_seen ?? now,
+      last_seen:   now,
+      app_version: version,
+      ping_count:  (existing.ping_count ?? 0) + 1,
+    };
+  }
+
+  await env.DEVICE_KV.put(key, JSON.stringify(record));
+  return reply(200, 'OK');
+}
+
+// ── /upload — daily usage summary (requires Bearer auth + user opt-in) ────────
+
+async function handleUpload(request, env) {
 
     // ── Bearer token auth ────────────────────────────────────────────────────
     const auth = request.headers.get('Authorization') ?? '';
@@ -79,8 +127,7 @@ export default {
     }
 
     return reply(200, 'OK');
-  },
-};
+}
 
 /**
  * Validates the UsageSummary payload shape produced by the Flutter app.
