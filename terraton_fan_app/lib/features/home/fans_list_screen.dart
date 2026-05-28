@@ -173,22 +173,20 @@ class _FanModelSheet extends StatelessWidget {
                 ],
               ),
             ),
-            // Scrollable grid
+            // Scrollable list
             Expanded(
-              child: GridView.builder(
+              child: ListView.builder(
                 controller: controller,
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
                 physics: const BouncingScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 1.55,
-                ),
                 itemCount: models.length,
-                itemBuilder: (_, i) => FanModelCard(
-                  model: models[i],
-                  onTap: () => Navigator.of(context).pop(models[i]),
+                itemBuilder: (_, i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: FanModelCard(
+                    model: models[i],
+                    index: i + 1,
+                    onTap: () => Navigator.of(context).pop(models[i]),
+                  ),
                 ),
               ),
             ),
@@ -199,12 +197,20 @@ class _FanModelSheet extends StatelessWidget {
   }
 }
 
-/// Reusable card for a single fan model number.
+/// Reusable row card for a single fan model number.
+/// Shows a numbered badge on the left, full model ID + status in the centre,
+/// and a forward chevron on the right — consistent with the app's row language.
 class FanModelCard extends StatefulWidget {
   final String model;
+  final int index;
   final VoidCallback onTap;
 
-  const FanModelCard({super.key, required this.model, required this.onTap});
+  const FanModelCard({
+    super.key,
+    required this.model,
+    required this.index,
+    required this.onTap,
+  });
 
   @override
   State<FanModelCard> createState() => _FanModelCardState();
@@ -225,7 +231,8 @@ class _FanModelCardState extends State<FanModelCard> {
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: _pressed ? kCardElev : kCard,
             borderRadius: BorderRadius.circular(16),
@@ -233,27 +240,73 @@ class _FanModelCardState extends State<FanModelCard> {
               color: _pressed ? kYellow.withAlpha(110) : kHairline,
             ),
             boxShadow: _pressed
-                ? [BoxShadow(color: kYellow.withAlpha(30), blurRadius: 16, spreadRadius: -4)]
+                ? [const BoxShadow(color: kYellowGlow, blurRadius: 16, spreadRadius: -6)]
                 : [],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
-              Text(
-                widget.model,
-                style: GoogleFonts.jetBrainsMono(
-                  fontSize: 13, fontWeight: FontWeight.w700,
-                  color: _pressed ? kYellow : kText,
-                  letterSpacing: 0.8,
+              // Number badge — shows the sequential index (01, 02…)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: _pressed ? kYellow.withAlpha(38) : kYellow.withAlpha(18),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _pressed ? kYellow.withAlpha(100) : kYellow.withAlpha(38),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    widget.index.toString().padLeft(2, '0'),
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 14, fontWeight: FontWeight.w700,
+                      color: _pressed ? kYellow : kYellow.withAlpha(180),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Available for pairing',
-                style: GoogleFonts.manrope(
-                  fontSize: 11, color: kTextDim, fontWeight: FontWeight.w500,
+              const SizedBox(width: 14),
+              // Model ID + status
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.model,
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 13, fontWeight: FontWeight.w700,
+                        color: _pressed ? kYellow : kText,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Container(
+                          width: 6, height: 6,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: kGreen,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Available for pairing',
+                          style: GoogleFonts.manrope(
+                            fontSize: 11, color: kTextDim,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14, color: kTextDim,
               ),
             ],
           ),
