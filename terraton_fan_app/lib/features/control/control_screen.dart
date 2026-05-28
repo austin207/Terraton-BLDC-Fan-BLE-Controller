@@ -182,48 +182,55 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
       _debug.value = _debug.value.copyWith(receivedFrame: bytes);
-      final response = BleResponseParser.parse(bytes);
-      if (response == null) return;
+
+      // Hardware sometimes concatenates multiple frames in one notification
+      // (e.g. mode frame + RPM frame). Parse all frames present.
+      final responses = BleResponseParser.parseAll(bytes);
+      if (responses.isEmpty) return;
+
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-      final power = BleResponseParser.parsePowerState(response);
-      if (power != null) {
-        notifier.updatePower(power);
-        if (!_isDemo) {
-          if (power) {
+
+      for (final response in responses) {
+        final power = BleResponseParser.parsePowerState(response);
+        if (power != null) {
+          notifier.updatePower(power);
+          if (!_isDemo) {
+            if (power) {
+              final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+              final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
+              unawaited(BleForegroundService.start(label));
+            } else {
+              unawaited(BleForegroundService.stop());
+            }
+          }
+          continue;
+        }
+        final speed = BleResponseParser.parseSpeed(response);
+        if (speed != null) {
+          notifier.updateSpeed(speed);
+          if (speed > 0) notifier.updatePower(true);
+          continue;
+        }
+        final mode = BleResponseParser.parseModeString(response);
+        if (mode != null) { notifier.updateMode(mode); continue; }
+        final timer = BleResponseParser.parseTimer(response);
+        if (timer != null) { notifier.updateTimer(timer); continue; }
+        final watts = BleResponseParser.parsePowerWatts(response);
+        if (watts != null) {
+          notifier.updateWatts(watts);
+          _lastWattsAt = DateTime.now();
+          if (!_isDemo) {
             final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
-            unawaited(BleForegroundService.start(label));
-          } else {
-            unawaited(BleForegroundService.stop());
+            if (s.isPowered) {
+              final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
+              unawaited(BleForegroundService.update(label));
+            }
           }
+          continue;
         }
-        return;
+        final rpm = BleResponseParser.parseRpm(response);
+        if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
       }
-      final speed = BleResponseParser.parseSpeed(response);
-      if (speed != null) {
-        notifier.updateSpeed(speed);
-        if (speed > 0) notifier.updatePower(true);
-        return;
-      }
-      final mode = BleResponseParser.parseModeString(response);
-      if (mode != null) { notifier.updateMode(mode); return; }
-      final timer = BleResponseParser.parseTimer(response);
-      if (timer != null) { notifier.updateTimer(timer); return; }
-      final watts = BleResponseParser.parsePowerWatts(response);
-      if (watts != null) {
-        notifier.updateWatts(watts);
-        _lastWattsAt = DateTime.now();
-        if (!_isDemo) {
-          final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-          if (s.isPowered) {
-            final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
-            unawaited(BleForegroundService.update(label));
-          }
-        }
-        return;
-      }
-      final rpm = BleResponseParser.parseRpm(response);
-      if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
   }
