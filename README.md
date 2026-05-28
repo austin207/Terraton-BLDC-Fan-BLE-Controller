@@ -326,12 +326,40 @@ flutter run -d emulator-5554   # target a specific emulator by ID
 
 ### Release APK
 
+There are two branches to build from depending on which architecture you want to ship.
+
+#### Stable build (`main`)
+
+The production-ready version with all fan types hardcoded in Dart:
+
 ```powershell
-# From repo root
+git checkout main
+git pull
 .\build.ps1
 ```
 
-Signed APK is saved to `builds/` and published to GitHub Releases automatically. The build script prompts for a **P**atch / **N**ew feature / **J**umbo (major) version bump and increments `pubspec.yaml` accordingly.
+#### Config-driven build (`feature/config-driven-appliances`)
+
+The experimental version where adding a new appliance category only requires editing `assets/appliances.yaml`:
+
+```powershell
+git checkout feature/config-driven-appliances
+git pull
+.\build.ps1
+```
+
+Always `git pull` before building so you compile the latest committed code, not a stale local snapshot.
+
+Once the config-driven branch is approved for production, merge it to `main` and all future builds will use it:
+
+```powershell
+git checkout main
+git merge feature/config-driven-appliances
+git push
+.\build.ps1
+```
+
+The APK is saved to `builds/` and published to GitHub Releases automatically. The build script prompts for a **P**atch / **N**ew feature / **J**umbo (major) version bump and increments `pubspec.yaml` accordingly.
 
 > **API key:** The Cloudflare upload key is read from a gitignored `secrets.env` at build time via `--dart-define=UPLOAD_API_KEY=<secret>`. Debug builds skip the upload silently.
 
