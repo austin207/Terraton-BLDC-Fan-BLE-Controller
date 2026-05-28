@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
@@ -33,6 +34,7 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await CommandLoader.load();
+    await ApplianceLoader.load();
     registerFallbackValue(<int>[]);
     registerFallbackValue(FanState());
     registerFallbackValue(UsageLog(

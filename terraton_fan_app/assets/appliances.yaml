@@ -1,0 +1,97 @@
+# appliances.yaml — single source of truth for appliance categories, types, and controls.
+#
+# Adding a new category:  add an entry under `appliances`.
+# Adding a new type:       add an entry under `types` inside an appliance.
+# Adding a new control:    list the control type string; if it is not a built-in
+#                          (speed | mode | timer | lighting | power), register a
+#                          ControlWidgetBuilder in ControlRegistry before runApp().
+#
+# Built-in control types and what they render in the control screen:
+#   speed    → CircularSpeedDial (6-speed radial dial)
+#   mode     → ModeControlWidget + boost button (nature / reverse / smart / boost)
+#   timer    → TimerControlWidget  (off / 2h / 4h / 8h)
+#   lighting → LightingControlWidget (on/off, warm/neutral/cool, brightness)
+#   power    → reserved for non-fan appliances (simple on/off toggle)
+#
+# modelPrefix  - 2-letter prefix; model IDs are auto-generated as TN-<PREFIX>-01…21
+# modelCount   - number of models to generate (default 21 if omitted)
+
+version: 1
+
+appliances:
+
+  # ── Fans ────────────────────────────────────────────────────────────────────
+
+  - id: fans
+    displayName: Fans
+    pluralLabel: Fans
+    icon: assets/icons/Ceiling fan.png
+
+    types:
+
+      - id: ceiling_fan
+        displayName: Ceiling Fan
+        modelPrefix: CF
+        icon: assets/icons/Ceiling fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+          - lighting
+
+      - id: table_fan
+        displayName: Table Fan
+        modelPrefix: TF
+        icon: assets/icons/Table fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: pedestal_fan
+        displayName: Pedestal Fan
+        modelPrefix: PF
+        icon: assets/icons/Pedestal fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: wall_fan
+        displayName: Wall Fan
+        modelPrefix: WF
+        icon: assets/icons/Wall fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: exhaust_fan
+        displayName: Exhaust Fan
+        modelPrefix: EF
+        icon: assets/icons/Exhaust fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - timer
+
+  # ── Example: add a new category below and the app reflects it automatically ──
+  #
+  # - id: lights
+  #   displayName: Lights
+  #   pluralLabel: Lights
+  #   icon: assets/icons/light.png
+  #   types:
+  #     - id: led_light
+  #       displayName: LED Light
+  #       modelPrefix: LT
+  #       icon: assets/icons/light.png
+  #       modelCount: 10
+  #       controls:
+  #         - power
+  #         - brightness        # custom — register in ControlRegistry
+  #         - color_temperature # custom — register in ControlRegistry

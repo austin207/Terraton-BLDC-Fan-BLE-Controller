@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
@@ -61,6 +62,7 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await CommandLoader.load();
+    await ApplianceLoader.load();
     registerFallbackValue(FanState());
     registerFallbackValue(FanDevice());
   });

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
@@ -43,6 +44,7 @@ Future<void> main() async {
   ]);
 
   await CommandLoader.load();
+  await ApplianceLoader.load();
   await initObjectBox();
   // Permissions are requested contextually by BlePermissionScreen after the
   // splash screen checks status. Requesting here (before any UI) shows the

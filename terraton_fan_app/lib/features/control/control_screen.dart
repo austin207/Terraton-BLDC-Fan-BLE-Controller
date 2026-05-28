@@ -11,7 +11,9 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/features/control/control_registry.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/features/control/connection_banner.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
@@ -643,6 +645,13 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     _segmentMode  = newMode;
   }
 
+  /// Returns true when the appliance type for this fan declares [control],
+  /// OR when the device has no stored model (legacy BLE-paired fan → show all).
+  bool _has(String control) {
+    final type = ApplianceLoader.typeForModel(widget.fan.model);
+    return type == null || type.hasControl(control);
+  }
+
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
     0x04 => '4H',
@@ -747,129 +756,155 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final enabled  = widget.controlsEnabled;
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
+    // Resolve the appliance type once per build. Null → legacy/unknown device
+    // with no model string; show all built-in controls for backward compat.
+    final applianceType = ApplianceLoader.typeForModel(fan.model);
+    // Custom (non-built-in) controls declared in appliances.yaml for this type.
+    final customControls = applianceType == null
+        ? const <String>[]
+        : applianceType.controls
+            .where((c) => !ControlRegistry.isBuiltIn(c))
+            .toList(growable: false);
+
     return Column(
       children: [
 
         // ── Speed dial ──────────────────────────────────────────────────────
-        RepaintBoundary(
-          child: CircularSpeedDial(
-            currentSpeed: fanState.speed,
-            watts: fanState.lastWatts,
-            rpm: fanState.lastRpm,
-            enabled: enabled,
-            isBoost: fanState.isBoost,
-            isNature: fanState.activeMode == 'nature',
-            disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
-            onSpeedSelected: (s) {
-              if (fanState.activeMode == 'smart' && s < 3) return;
-              final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-              if (fanState.isBoost) {
-                notifier.setBoostActive(false);
-                if (fanState.activeMode == 'reverse') {
-                  unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
-                } else if (fanState.activeMode == 'smart') {
-                  unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+        if (_has('speed'))
+          RepaintBoundary(
+            child: CircularSpeedDial(
+              currentSpeed: fanState.speed,
+              watts: fanState.lastWatts,
+              rpm: fanState.lastRpm,
+              enabled: enabled,
+              isBoost: fanState.isBoost,
+              isNature: fanState.activeMode == 'nature',
+              disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
+              onSpeedSelected: (s) {
+                if (fanState.activeMode == 'smart' && s < 3) return;
+                final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+                if (fanState.isBoost) {
+                  notifier.setBoostActive(false);
+                  if (fanState.activeMode == 'reverse') {
+                    unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
+                  } else if (fanState.activeMode == 'smart') {
+                    unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+                  }
                 }
-              }
-              _flushSegment(newGear: s, newMode: fanState.activeMode);
-              notifier.updateSpeed(s);
-              unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
-            },
+                _flushSegment(newGear: s, newMode: fanState.activeMode);
+                notifier.updateSpeed(s);
+                unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
+              },
+            ),
           ),
-        ),
 
-        const SizedBox(height: 12),
+        if (_has('speed')) const SizedBox(height: 12),
 
-        // ── Operating modes ─────────────────────────────────────────────────
-        const _SectionHeader('OPERATING MODES'),
-        const SizedBox(height: 10),
-        ModeControlWidget(
-          activeMode: fanState.activeMode,
-          isBoost: fanState.isBoost,
-          enabled: enabled,
-          onMode: _onMode,
-          onBoost: _onBoost,
-        ),
-
-        const SizedBox(height: 20),
+        // ── Operating modes (includes boost button) ──────────────────────────
+        if (_has('mode')) ...[
+          const _SectionHeader('OPERATING MODES'),
+          const SizedBox(height: 10),
+          ModeControlWidget(
+            activeMode: fanState.activeMode,
+            isBoost: fanState.isBoost,
+            enabled: enabled,
+            onMode: _onMode,
+            onBoost: _onBoost,
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // ── Sleep timer ─────────────────────────────────────────────────────
-        _SectionHeader(
-          'SLEEP TIMER',
-          trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
-              ? Text(
-                  '${_timerLabel(fanState.activeTimerCode)} REMAINING',
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10, color: kYellow,
-                      fontWeight: FontWeight.w700, letterSpacing: 1.6),
-                )
-              : null,
-        ),
-        const SizedBox(height: 10),
-        TimerControlWidget(
-          activeTimerCode: fanState.activeTimerCode,
-          enabled: enabled,
-          onTimer: (a) {
-            final code = switch (a) {
-              '2h' => 0x02,
-              '4h' => 0x04,
-              '8h' => 0x08,
-              _    => 0x00,
-            };
-            ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
-            final frame = switch (a) {
-              '2h' => BleFrameBuilder.timer2h(),
-              '4h' => BleFrameBuilder.timer4h(),
-              '8h' => BleFrameBuilder.timer8h(),
-              _    => BleFrameBuilder.timerOff(),
-            };
-            unawaited(widget.send(frame, label: 'Timer: $a'));
-          },
-        ),
-
-        const SizedBox(height: 20),
+        if (_has('timer')) ...[
+          _SectionHeader(
+            'SLEEP TIMER',
+            trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
+                ? Text(
+                    '${_timerLabel(fanState.activeTimerCode)} REMAINING',
+                    style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10, color: kYellow,
+                        fontWeight: FontWeight.w700, letterSpacing: 1.6),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 10),
+          TimerControlWidget(
+            activeTimerCode: fanState.activeTimerCode,
+            enabled: enabled,
+            onTimer: (a) {
+              final code = switch (a) {
+                '2h' => 0x02,
+                '4h' => 0x04,
+                '8h' => 0x08,
+                _    => 0x00,
+              };
+              ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
+              final frame = switch (a) {
+                '2h' => BleFrameBuilder.timer2h(),
+                '4h' => BleFrameBuilder.timer4h(),
+                '8h' => BleFrameBuilder.timer8h(),
+                _    => BleFrameBuilder.timerOff(),
+              };
+              unawaited(widget.send(frame, label: 'Timer: $a'));
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // ── Mood lighting ───────────────────────────────────────────────────
-        LightingControlWidget(
-          enabled: enabled,
-          isLightOn: _isLightOn,
-          colorType: _colorType,
-          brightnessValue: _brightnessValue,
-          onLightOn: () {
-            setState(() => _isLightOn = true);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
-            unawaited(widget.send(BleFrameBuilder.lightOn(),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onLightOff: () {
-            setState(() => _isLightOn = false);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
-            unawaited(widget.send(BleFrameBuilder.lightOff(),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onColorTypeChanged: (t) {
-            setState(() => _colorType = t);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
-            final byte = switch (t) {
-              'neutral' => 0x80,
-              'cool'    => 0xFF,
-              _         => 0x00,
-            };
-            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onBrightness: (v) {
-            setState(() => _brightnessValue = v);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
-            final byte = (v * 255).round().clamp(0, 255);
-            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-        ),
+        if (_has('lighting'))
+          LightingControlWidget(
+            enabled: enabled,
+            isLightOn: _isLightOn,
+            colorType: _colorType,
+            brightnessValue: _brightnessValue,
+            onLightOn: () {
+              setState(() => _isLightOn = true);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
+              unawaited(widget.send(BleFrameBuilder.lightOn(),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onLightOff: () {
+              setState(() => _isLightOn = false);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
+              unawaited(widget.send(BleFrameBuilder.lightOff(),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onColorTypeChanged: (t) {
+              setState(() => _colorType = t);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
+              final byte = switch (t) {
+                'neutral' => 0x80,
+                'cool'    => 0xFF,
+                _         => 0x00,
+              };
+              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onBrightness: (v) {
+              setState(() => _brightnessValue = v);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
+              final byte = (v * 255).round().clamp(0, 255);
+              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+          ),
+
+        // ── Custom controls from ControlRegistry ──────────────────────────
+        // Any control type in appliances.yaml that is not built-in is looked
+        // up in ControlRegistry and rendered here. Register builders in main.dart.
+        for (final controlType in customControls)
+          if (ControlRegistry.get(controlType) != null)
+            ControlRegistry.get(controlType)!(ControlBuildParams(
+              device:    fan,
+              fanState:  fanState,
+              enabled:   enabled,
+              ref:       ref,
+            )),
 
       ],
     );

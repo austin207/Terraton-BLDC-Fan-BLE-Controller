@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/features/update/update_dialog.dart';
+import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
-import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -80,23 +81,25 @@ class _HomeTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final fansAsync = ref.watch(savedFansProvider);
-    final fanCount  = fansAsync.when(data: (f) => f.length, loading: () => 0, error: (_, __) => 0);
-    final nameAsync = ref.watch(userNameProvider);
-    final userName  = nameAsync.valueOrNull ?? '';
+    final savedAsync = ref.watch(savedFansProvider);
+    final allFans    = savedAsync.valueOrNull ?? const [];
+    final nameAsync  = ref.watch(userNameProvider);
+    final userName   = nameAsync.valueOrNull ?? '';
 
-    final hour   = DateTime.now().hour;
-    final greet  = hour < 5 ? 'Sleep well' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    final hour  = DateTime.now().hour;
+    final greet = hour < 5 ? 'Sleep well'
+                : hour < 12 ? 'Good morning'
+                : hour < 17 ? 'Good afternoon'
+                : 'Good evening';
+
+    final categories = ApplianceLoader.categories;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
       children: [
-        // Tiny brand mark row
         const SizedBox(height: 8),
-        // Brand wordmark header — matches home.jsx BrandMark height=22
         const BrandMark(height: 40),
 
-        // Greeting
         const SizedBox(height: 20),
         Text(
           '$greet,',
@@ -115,17 +118,115 @@ class _HomeTab extends ConsumerWidget {
 
         const SizedBox(height: 24),
 
-        // Fans tile — fan icon spins when fans are paired
-        _DeviceTile(
-          iconWidget: TerratonFanIcon(size: 28, spinning: fanCount > 0),
-          title: 'Fans',
-          subtitle: '$fanCount paired',
-          onTap: () => unawaited(context.push(AppRoutes.fanTypes)),
-        ),
+        // One tile per appliance category from appliances.yaml.
+        // Adding a new category to the YAML file automatically adds a tile here.
+        for (final cat in categories) ...[
+          _AppliaceCategoryTile(
+            category: cat,
+            pairedCount: allFans
+                .where((f) => cat.types.any((t) => t.matchesModel(f.model)))
+                .length,
+          ),
+          const SizedBox(height: 14),
+        ],
 
-        const SizedBox(height: 14),
         const _UsageCard(),
       ],
+    );
+  }
+}
+
+// ── Appliance category tile ───────────────────────────────────────────────────
+
+class _AppliaceCategoryTile extends StatefulWidget {
+  final ApplianceCategory category;
+  final int pairedCount;
+
+  const _AppliaceCategoryTile({
+    required this.category,
+    required this.pairedCount,
+  });
+
+  @override
+  State<_AppliaceCategoryTile> createState() => _AppliaceCategoryTileState();
+}
+
+class _AppliaceCategoryTileState extends State<_AppliaceCategoryTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => unawaited(
+        context.push(AppRoutes.applianceTypes, extra: widget.category),
+      ),
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              kYellow.withAlpha(_pressed ? 40 : 25),
+              kYellow.withAlpha(_pressed ? 10 : 5),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: kYellow.withAlpha(76)),
+          boxShadow: [
+            BoxShadow(
+              color: kYellow.withAlpha(_pressed ? 20 : 40),
+              blurRadius: 30,
+              spreadRadius: -4,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: kYellow.withAlpha(38),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: kYellow.withAlpha(76)),
+              ),
+              child: Center(
+                child: Image.asset(
+                  widget.category.iconPath,
+                  width: 28, height: 28,
+                  color: kYellow,
+                  colorBlendMode: BlendMode.srcIn,
+                ),
+              ),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.category.displayName,
+                    style: GoogleFonts.manrope(
+                      fontSize: 18, fontWeight: FontWeight.w700,
+                      color: kText, letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${widget.pairedCount} paired',
+                    style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -199,92 +300,6 @@ class _UsageCard extends StatelessWidget {
                 )),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Device category tile ──────────────────────────────────────────────────────
-
-class _DeviceTile extends StatefulWidget {
-  final Widget iconWidget;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _DeviceTile({
-    required this.iconWidget,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  State<_DeviceTile> createState() => _DeviceTileState();
-}
-
-class _DeviceTileState extends State<_DeviceTile> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              kYellow.withAlpha(_pressed ? 40 : 25),
-              kYellow.withAlpha(_pressed ? 10 : 5),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: kYellow.withAlpha(76)),
-          boxShadow: [
-            BoxShadow(
-              color: kYellow.withAlpha(_pressed ? 20 : 40),
-              blurRadius: 30,
-              spreadRadius: -4,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56, height: 56,
-              decoration: BoxDecoration(
-                color: kYellow.withAlpha(38),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: kYellow.withAlpha(76)),
-              ),
-              child: Center(child: widget.iconWidget),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.title,
-                      style: GoogleFonts.manrope(
-                        fontSize: 18, fontWeight: FontWeight.w700,
-                        color: kText, letterSpacing: -0.2,
-                      )),
-                  const SizedBox(height: 4),
-                  Text(widget.subtitle,
-                      style: GoogleFonts.manrope(fontSize: 12, color: kTextMut)),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
-          ],
-        ),
       ),
     );
   }

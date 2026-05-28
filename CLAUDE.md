@@ -14,26 +14,44 @@ The app writes framed packets to the Write Characteristic; the fan responds on t
 
 ---
 
+## RTK Usage
+
+RTK is installed at `~/.local/bin/rtk.exe`. The bash auto-rewrite hook does not fire on native Windows, so **always prefix commands explicitly** with `rtk` when running in the Bash tool:
+
+| Instead of | Use |
+|---|---|
+| `flutter test ...` | `rtk flutter test ...` |
+| `flutter analyze ...` | `rtk flutter analyze ...` |
+| `git status` | `rtk git status` |
+| `git diff` | `rtk git diff` |
+| `git log` | `rtk git log` |
+| `git add / commit / push` | `rtk git add` / `rtk git commit` / `rtk git push` |
+| `dart run build_runner ...` | `rtk dart run build_runner ...` |
+
+Use `rtk gain` to check cumulative token savings.
+
+---
+
 ## Commands
 
 All Flutter commands run from `terraton_fan_app/`.
 
 ```powershell
 # Analyze
-flutter analyze --no-fatal-infos
+rtk flutter analyze --no-fatal-infos
 
 # Run all tests
-flutter test
+rtk flutter test
 
 # Single test file
-flutter test test/unit/ble_frame_builder_test.dart
-flutter test test/widget/control_screen_test.dart
+rtk flutter test test/unit/ble_frame_builder_test.dart
+rtk flutter test test/widget/control_screen_test.dart
 
 # Build — saves to builds/ and publishes to GitHub Releases (run from repo root)
 .\build.ps1
 
 # Regenerate ObjectBox & Riverpod code (run after editing models or providers)
-dart run build_runner build --delete-conflicting-outputs
+rtk dart run build_runner build --delete-conflicting-outputs
 ```
 
 ---

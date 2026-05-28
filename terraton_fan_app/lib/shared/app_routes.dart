@@ -5,6 +5,9 @@ abstract final class AppRoutes {
   static const splash             = '/splash';
   static const profileSetup       = '/profile-setup';
   static const home               = '/';
+  /// Config-driven appliance-type picker. Expects [ApplianceCategory] as GoRouter extra.
+  static const applianceTypes     = '/appliance-types';
+  /// Legacy path — redirects to [applianceTypes] for backward compat.
   static const fanTypes           = '/fan-types';
   static const fans               = '/fans';
   static const permissionRequired = '/permission-required';
