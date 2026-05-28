@@ -281,26 +281,6 @@ class _FanModelCardState extends State<FanModelCard> {
                         letterSpacing: 0.6,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Container(
-                          width: 6, height: 6,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: kGreen,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Available for pairing',
-                          style: GoogleFonts.manrope(
-                            fontSize: 11, color: kTextDim,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -701,7 +681,7 @@ class _FanRowState extends ConsumerState<_FanRow> {
   @override
   Widget build(BuildContext context) {
     final connState    = ref.watch(bleConnectionStateProvider).valueOrNull;
-    final connectedMac = ref.read(bleServiceProvider).connectedMacAddress;
+    final connectedMac = ref.watch(bleServiceProvider).connectedMacAddress;
     final isConnected  = connState == BleConnectionState.connected &&
         widget.fan.macAddress.isNotEmpty &&
         connectedMac?.toLowerCase() == widget.fan.macAddress.toLowerCase();

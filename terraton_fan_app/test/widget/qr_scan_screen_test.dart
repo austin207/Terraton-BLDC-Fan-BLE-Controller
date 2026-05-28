@@ -48,18 +48,18 @@ void main() {
   });
 
   group('QrScanScreen — rendering', () {
-    testWidgets('shows "Scan Fan QR" title', (tester) async {
+    testWidgets('shows "Scan Fan QR Code" title', (tester) async {
       await tester.pumpWidget(_buildScreen(repo));
       await tester.pump();
 
-      expect(find.text('Scan Fan QR'), findsOneWidget);
+      expect(find.text('Scan Fan QR Code'), findsOneWidget);
     });
 
-    testWidgets('shows brand mark', (tester) async {
+    testWidgets('shows camera placeholder when permission denied', (tester) async {
       await tester.pumpWidget(_buildScreen(repo));
       await tester.pump();
 
-      expect(find.byType(Image), findsOneWidget);
+      expect(find.text('Camera access required'), findsOneWidget);
     });
   });
 }

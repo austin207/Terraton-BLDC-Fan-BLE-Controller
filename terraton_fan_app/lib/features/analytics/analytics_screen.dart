@@ -396,7 +396,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                             const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'^\d*\.?\d*')),
+                              RegExp(r'^\d*\.?\d*$')),
                         ],
                         textAlign: TextAlign.center,
                         style: kMonoStyle(size: 14, weight: FontWeight.w700),

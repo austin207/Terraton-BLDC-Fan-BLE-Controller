@@ -9,14 +9,17 @@ import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
+import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/control_screen.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
+import 'package:terraton_fan_app/models/usage_log.dart';
 
-class _MockBle  extends Mock implements BleService {}
-class _MockRepo extends Mock implements FanRepository {}
+class _MockBle            extends Mock implements BleService {}
+class _MockRepo           extends Mock implements FanRepository {}
+class _MockUsageLogRepo   extends Mock implements UsageLogRepository {}
 
 FanDevice _testFan() => FanDevice()
   ..deviceId   = 'TT-001'
@@ -32,18 +35,29 @@ void main() {
     await CommandLoader.load();
     registerFallbackValue(<int>[]);
     registerFallbackValue(FanState());
+    registerFallbackValue(UsageLog(
+      deviceId: '', startTime: DateTime(0), durationSecs: 0, gear: 0, watts: 0,
+    ));
   });
 
-  late _MockBle  mockBle;
-  late _MockRepo mockRepo;
+  late _MockBle          mockBle;
+  late _MockRepo         mockRepo;
+  late _MockUsageLogRepo mockUsageLogRepo;
   late StreamController<BleConnectionState> stateCtrl;
   late StreamController<List<int>>          notifyCtrl;
 
   setUp(() {
-    mockBle    = _MockBle();
-    mockRepo   = _MockRepo();
+    mockBle          = _MockBle();
+    mockRepo         = _MockRepo();
+    mockUsageLogRepo = _MockUsageLogRepo();
     stateCtrl  = StreamController<BleConnectionState>.broadcast();
     notifyCtrl = StreamController<List<int>>.broadcast();
+
+    when(() => mockUsageLogRepo.addLog(any())).thenReturn(null);
+    when(() => mockUsageLogRepo.getLogsInRange(any(), any())).thenReturn([]);
+    when(() => mockUsageLogRepo.getLogsForDevice(any(), any(), any())).thenReturn([]);
+    when(() => mockUsageLogRepo.allDeviceIds()).thenReturn([]);
+    when(() => mockUsageLogRepo.pruneBefore(any())).thenReturn(null);
 
     when(() => mockBle.connectionStateStream)
         .thenAnswer((_) => stateCtrl.stream);
@@ -80,6 +94,7 @@ void main() {
         overrides: [
           bleServiceProvider.overrideWithValue(mockBle),
           fanRepositoryProvider.overrideWithValue(mockRepo),
+          usageLogRepositoryProvider.overrideWithValue(mockUsageLogRepo),
         ],
         child: MaterialApp(home: ControlScreen(fan: _testFan())),
       );

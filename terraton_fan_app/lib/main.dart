@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
@@ -15,6 +16,7 @@ import 'package:terraton_fan_app/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   FlutterError.onError = FlutterError.presentError;
   WidgetsBinding.instance.platformDispatcher.onError = (Object error, StackTrace stack) {

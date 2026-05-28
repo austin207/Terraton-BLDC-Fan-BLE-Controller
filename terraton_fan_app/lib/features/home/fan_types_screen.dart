@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/models/fan_type.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
-import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class FanTypesScreen extends StatelessWidget {
@@ -134,10 +133,11 @@ class _FanTypeCardState extends State<FanTypeCard> {
                     ),
                   ),
                   child: Center(
-                    child: TerratonFanIcon(
-                      size: 30,
-                      spinning: _pressed,
+                    child: Image.asset(
+                      widget.fanType.iconPath,
+                      width: 32, height: 32,
                       color: _pressed ? kYellow : kTextMut,
+                      colorBlendMode: BlendMode.srcIn,
                     ),
                   ),
                 ),
