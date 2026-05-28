@@ -5,6 +5,7 @@ abstract final class AppRoutes {
   static const splash             = '/splash';
   static const profileSetup       = '/profile-setup';
   static const home               = '/';
+  static const fanTypes           = '/fan-types';
   static const fans               = '/fans';
   static const permissionRequired = '/permission-required';
   static const scanQr             = '/scan/qr';

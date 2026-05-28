@@ -120,7 +120,7 @@ class _HomeTab extends ConsumerWidget {
           iconWidget: TerratonFanIcon(size: 28, spinning: fanCount > 0),
           title: 'Fans',
           subtitle: '$fanCount paired',
-          onTap: () => unawaited(context.push(AppRoutes.fans)),
+          onTap: () => unawaited(context.push(AppRoutes.fanTypes)),
         ),
 
         const SizedBox(height: 14),
