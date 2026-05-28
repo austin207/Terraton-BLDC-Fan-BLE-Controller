@@ -1,7 +1,7 @@
 name: terraton_fan_app
 description: "Terraton BLDC Fan BLE Controller"
 publish_to: 'none'
-version: 1.11.2+15
+version: 1.11.3+16
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
