@@ -560,6 +560,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
   // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
   int _preNatureSpeed = 0;
+  // Speed saved when Reverse mode activates — restored when Reverse is toggled off.
+  int _preReverseSpeed = 0;
 
   @override
   void initState() {
@@ -573,6 +575,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (s.activeMode == 'nature') {
       // Default to 3 when speed is 0 (e.g. screen re-opened before first telemetry).
       _preNatureSpeed = s.speed > 0 ? s.speed : 3;
+    }
+    if (s.activeMode == 'reverse') {
+      _preReverseSpeed = s.speed > 0 ? s.speed : 1;
     }
     // Restore lighting UI state from last persisted values.
     _colorType       = s.lastLightColorType;
@@ -675,13 +680,22 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
     // Tapping the already-active mode toggles it off.
     if (fanState.activeMode == m) {
+      if (m == 'reverse') {
+        // The reverse command is a hardware toggle: sending it a second time
+        // exits reverse and returns the motor to forward rotation.
+        // Restore the speed that was active before reverse was enabled.
+        final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
+        _flushSegment(newGear: restore, newMode: null);
+        notifier.setActiveMode(null);
+        if (restore > 0) notifier.updateSpeed(restore);
+        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (toggle)'));
+        if (restore > 0) {
+          unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
+        }
+        return;
+      }
       _flushSegment(newGear: fanState.speed, newMode: null);
       notifier.setActiveMode(null);
-      if (m == 'reverse') {
-        // A speed command alone does not exit reverse on this hardware — the
-        // direction register (0x21) must be explicitly cleared first.
-        unawaited(widget.send(BleFrameBuilder.setNormal(), label: 'Mode: normal'));
-      }
       if (fanState.speed > 0) {
         unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
             label: 'Speed ${fanState.speed}'));
@@ -701,6 +715,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
     if (fanState.activeMode == 'nature') {
       final restore = (m == 'smart' && _preNatureSpeed < 3) ? 3 : _preNatureSpeed;
+      if (m == 'reverse') _preReverseSpeed = restore > 0 ? restore : fanState.speed;
       notifier.setActiveMode(m);
       if (restore > 0) notifier.updateSpeed(restore);
       _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
@@ -718,6 +733,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     }
 
     // Normal activation (Smart/Reverse, not from Nature).
+    if (m == 'reverse') _preReverseSpeed = fanState.speed;
     if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
       notifier.updateSpeed(3);
       unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));

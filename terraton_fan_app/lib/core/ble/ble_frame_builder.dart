@@ -10,7 +10,6 @@ class BleFrameBuilder {
   static List<int>? powerOn()             => CommandLoader.power('on');
   static List<int>? powerOff()            => CommandLoader.power('off');
   static List<int>? setSpeed(int step)    => CommandLoader.speed(step);
-  static List<int>? setNormal()           => CommandLoader.mode('normal');
   static List<int>? setBoost()            => CommandLoader.mode('boost');
   static List<int>? setNature()           => CommandLoader.mode('nature');
   static List<int>? setReverse()          => CommandLoader.mode('reverse');

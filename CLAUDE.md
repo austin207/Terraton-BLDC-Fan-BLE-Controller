@@ -113,7 +113,6 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 | Speed 1–6 | `55 AA 06 04 01 0N checksum` |
 | Boost | `55 AA 06 21 01 01 28` |
 | Nature | `55 AA 06 21 01 02 29` |
-| Normal (exit mode) | `55 AA 06 21 01 00 27` |
 | Reverse | `55 AA 06 21 01 03 2A` |
 | Smart | `55 AA 06 21 01 04 2B` |
 | Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 28/2A/2C/30` |
