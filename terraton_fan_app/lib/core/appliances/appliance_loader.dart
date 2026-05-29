@@ -69,14 +69,4 @@ abstract final class ApplianceLoader {
     return null;
   }
 
-  /// Returns the [ApplianceCategory] that owns the type matching [model].
-  static ApplianceCategory? categoryForModel(String model) {
-    if (model.isEmpty) return null;
-    for (final cat in _categories) {
-      for (final t in cat.types) {
-        if (model.toUpperCase().startsWith('TN-${t.modelPrefix}-')) return cat;
-      }
-    }
-    return null;
-  }
 }

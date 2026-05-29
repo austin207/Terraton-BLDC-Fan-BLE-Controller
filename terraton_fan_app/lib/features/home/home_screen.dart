@@ -156,14 +156,17 @@ class _ApplianceCategoryTileState extends State<_ApplianceCategoryTile> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => unawaited(
-        context.push(AppRoutes.applianceTypes, extra: widget.category),
-      ),
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedContainer(
+    return Semantics(
+      button: true,
+      label: '${widget.category.displayName}, ${widget.pairedCount} paired',
+      child: GestureDetector(
+        onTap: () => unawaited(
+          context.push(AppRoutes.applianceTypes, extra: widget.category),
+        ),
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
@@ -227,6 +230,7 @@ class _ApplianceCategoryTileState extends State<_ApplianceCategoryTile> {
           ],
         ),
       ),
+    ),
     );
   }
 }
