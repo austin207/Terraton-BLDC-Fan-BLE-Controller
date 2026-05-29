@@ -60,6 +60,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   bool _connecting = false;
   bool _showDisconnectAlert = false;
+  // Set to true when the reverse toggle-off command is sent so the immediate
+  // mode=0x03 echo from the hardware (or demo handler) is not re-applied to
+  // state. Cleared on the first intercepted reverse echo.
+  bool _suppressReverseEcho = false;
 
   // Debug state isolated in a ValueNotifier so only _DebugCard rebuilds on
   // each BLE notification — not the entire ControlScreen.
@@ -213,7 +217,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           continue;
         }
         final mode = BleResponseParser.parseModeString(response);
-        if (mode != null) { notifier.updateMode(mode); continue; }
+        if (mode != null) {
+          if (_suppressReverseEcho && mode == 'reverse') {
+            _suppressReverseEcho = false;
+          } else {
+            notifier.updateMode(mode);
+          }
+          continue;
+        }
         final timer = BleResponseParser.parseTimer(response);
         if (timer != null) { notifier.updateTimer(timer); continue; }
         final watts = BleResponseParser.parsePowerWatts(response);
@@ -289,13 +300,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     } else if (cmd == CommandLoader.responseCommand('speed')) {
       notifier.updateSpeed(data);
     } else if (cmd == CommandLoader.responseCommand('mode')) {
-      notifier.updateMode(switch (data) {
+      final modeStr = switch (data) {
         0x01 => 'boost',
         0x02 => 'nature',
         0x03 => 'reverse',
         0x04 => 'smart',
-        _    => null,
-      });
+        _    => null as String?,
+      };
+      // Consume the suppress flag when we see the expected reverse echo.
+      if (_suppressReverseEcho && modeStr == 'reverse') {
+        _suppressReverseEcho = false;
+      } else {
+        notifier.updateMode(modeStr);
+      }
     } else if (cmd == CommandLoader.responseCommand('timer')) {
       notifier.updateTimer(data);
     }
@@ -310,6 +327,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
+    // Reverse toggle-off sends setReverse() to flip direction back to forward.
+    // The hardware (and demo handler) echo mode=0x03 as an ACK — suppress it
+    // once so it does not re-activate the reverse UI state.
+    if (label == 'Mode: forward (toggle)') _suppressReverseEcho = true;
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
