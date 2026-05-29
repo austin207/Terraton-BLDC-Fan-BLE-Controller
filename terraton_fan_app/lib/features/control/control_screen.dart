@@ -677,6 +677,11 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (fanState.activeMode == m) {
       _flushSegment(newGear: fanState.speed, newMode: null);
       notifier.setActiveMode(null);
+      if (m == 'reverse') {
+        // A speed command alone does not exit reverse on this hardware — the
+        // direction register (0x21) must be explicitly cleared first.
+        unawaited(widget.send(BleFrameBuilder.setNormal(), label: 'Mode: normal'));
+      }
       if (fanState.speed > 0) {
         unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
             label: 'Speed ${fanState.speed}'));
@@ -782,7 +787,10 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             child: CircularSpeedDial(
               currentSpeed: fanState.speed,
               watts: fanState.lastWatts,
-              rpm: fanState.lastRpm,
+              // Negate RPM in reverse so the dial shows e.g. "−236 RPM".
+              rpm: fanState.activeMode == 'reverse' && fanState.lastRpm != null
+                  ? -(fanState.lastRpm!)
+                  : fanState.lastRpm,
               enabled: enabled,
               isBoost: fanState.isBoost,
               isNature: fanState.activeMode == 'nature',

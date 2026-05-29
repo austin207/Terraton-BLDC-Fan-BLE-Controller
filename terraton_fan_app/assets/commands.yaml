@@ -38,6 +38,7 @@ commands:
   modes:
     command: 0x21
     actions:
+      normal:  [0x00]  # exit all operating modes — return to normal forward rotation
       boost:   [0x01]
       nature:  [0x02]
       reverse: [0x03]
