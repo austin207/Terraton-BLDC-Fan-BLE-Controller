@@ -214,6 +214,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         if (speed != null) {
           notifier.updateSpeed(speed);
           if (speed > 0) notifier.updatePower(true);
+          // A speed response while boost is active means the hardware exited
+          // boost (e.g. remote changed speed). Clear the boost UI flag.
+          if (ref.read(activeFanStateProvider(widget.fan.deviceId)).isBoost) {
+            notifier.setBoostActive(false);
+          }
           continue;
         }
         final mode = BleResponseParser.parseModeString(response);
