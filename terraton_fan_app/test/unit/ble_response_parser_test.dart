@@ -149,4 +149,40 @@ void main() {
       expect(BleResponseParser.parseModeString(r!), isNull);
     });
   });
+
+  group('BleResponseParser.parseTimer — hardware byte-swap quirk', () {
+    // Hardware firmware quirk: remote timer OFF arrives as raw 0x02 (not 0x00),
+    // and remote timer 2H arrives as raw 0x00 (not 0x02).
+    // parseTimer corrects this so updateTimer() receives the canonical codes.
+    // Timer 4H (0x04) and 8H (0x08) are correct and pass through unchanged.
+
+    test('raw 0x02 → canonical 0x00 (OFF)', () {
+      // Frame: 55 AA 07 22 01 02 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x02)&0xFF = 0x2B
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x02, 0x2B]);
+      expect(BleResponseParser.parseTimer(r!), 0x00);
+    });
+
+    test('raw 0x00 → canonical 0x02 (2H)', () {
+      // Frame: 55 AA 07 22 01 00 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x00)&0xFF = 0x29
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29]);
+      expect(BleResponseParser.parseTimer(r!), 0x02);
+    });
+
+    test('raw 0x04 → canonical 0x04 (4H, unchanged)', () {
+      // Frame: 55 AA 07 22 01 04 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x04)&0xFF = 0x2D
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x04, 0x2D]);
+      expect(BleResponseParser.parseTimer(r!), 0x04);
+    });
+
+    test('raw 0x08 → canonical 0x08 (8H, unchanged)', () {
+      // Frame: 55 AA 07 22 01 08 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x08)&0xFF = 0x31
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x08, 0x31]);
+      expect(BleResponseParser.parseTimer(r!), 0x08);
+    });
+
+    test('wrong command byte → null', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]);
+      expect(BleResponseParser.parseTimer(r!), isNull);
+    });
+  });
 }

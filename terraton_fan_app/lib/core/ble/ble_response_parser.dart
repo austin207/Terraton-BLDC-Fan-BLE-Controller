@@ -91,7 +91,18 @@ class BleResponseParser {
 
   static int? parseTimer(FanResponse r) {
     final cmd = CommandLoader.responseCommand('timer');
-    return r.command == cmd && r.data.isNotEmpty ? r.data[0] : null;
+    if (r.command != cmd || r.data.isEmpty) return null;
+    final raw = r.data[0];
+    // Hardware firmware quirk: timer OFF and 2H notification bytes are swapped
+    // relative to the command bytes we send.
+    // Remote/status Timer OFF  arrives as 0x02  → map to 0x00 (OFF).
+    // Remote/status Timer 2H   arrives as 0x00  → map to 0x02 (2H).
+    // Timer 4H (0x04) and 8H (0x08) are correct.
+    return switch (raw) {
+      0x00 => 0x02,
+      0x02 => 0x00,
+      _    => raw,
+    };
   }
 
   // Converts mode response byte to mode name string.

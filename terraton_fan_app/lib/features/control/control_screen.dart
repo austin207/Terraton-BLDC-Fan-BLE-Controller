@@ -231,7 +231,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           continue;
         }
         final timer = BleResponseParser.parseTimer(response);
-        if (timer != null) { notifier.updateTimer(timer); continue; }
+        if (timer != null) {
+          // TEMP DEBUG — remove after hardware verification of timer byte-swap fix.
+          debugPrint('[Timer] raw=0x${response.data.isNotEmpty ? response.data[0].toRadixString(16).padLeft(2, "0") : "??"} → canonical=0x${timer.toRadixString(16).padLeft(2, "0")} → ${timer == 0 ? "OFF" : "${timer ~/ 2}H"}');
+          notifier.updateTimer(timer);
+          continue;
+        }
         final watts = BleResponseParser.parsePowerWatts(response);
         if (watts != null) {
           notifier.updateWatts(watts);
