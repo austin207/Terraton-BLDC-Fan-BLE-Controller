@@ -196,6 +196,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
       for (final response in responses) {
+        // TEMP DEBUG — remove after remote timer sync is confirmed.
+        // Logs every BLE command byte so we can see what the remote sends for 2H.
+        debugPrint('[BLE RX] cmd=0x${response.command.toRadixString(16).padLeft(2, "0")} data=[${response.data.map((b) => "0x${b.toRadixString(16).padLeft(2, "0")}").join(", ")}]');
+
         final power = BleResponseParser.parsePowerState(response);
         if (power != null) {
           notifier.updatePower(power);
@@ -232,8 +236,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         }
         final timer = BleResponseParser.parseTimer(response);
         if (timer != null) {
-          // TEMP DEBUG — remove after hardware verification of timer byte-swap fix.
-          debugPrint('[Timer] raw=0x${response.data.isNotEmpty ? response.data[0].toRadixString(16).padLeft(2, "0") : "??"} → canonical=0x${timer.toRadixString(16).padLeft(2, "0")} → ${timer == 0 ? "OFF" : "${timer ~/ 2}H"}');
+          // TEMP DEBUG — remove after remote timer sync is confirmed.
+          debugPrint('[Timer] data=0x${timer.toRadixString(16).padLeft(2, "0")} → ${timer == 0 ? "OFF" : "${timer ~/ 2}H"}');
           notifier.updateTimer(timer);
           continue;
         }
