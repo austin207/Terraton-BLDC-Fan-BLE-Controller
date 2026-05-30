@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:terraton_fan_app/features/control/connection_banner.dart';
 
-Widget _card({VoidCallback? onRetry, String? connectStatus}) =>
+Widget _card({VoidCallback? onRetry, String? connectStatus, String? subtitle}) =>
     MaterialApp(
       home: Scaffold(
         body: ConnectionLostCard(
           onRetry: onRetry ?? () {},
           connectStatus: connectStatus,
+          subtitle: subtitle,
         ),
       ),
     );
@@ -69,6 +70,21 @@ void main() {
       await tester.pumpWidget(_card(onRetry: () => called = true));
       await tester.tap(find.text('Reconnect'));
       expect(called, isTrue);
+    });
+  });
+
+  group('ConnectionLostCard — subtitle override', () {
+    testWidgets('default subtitle shows "within range" message', (tester) async {
+      await tester.pumpWidget(_card());
+      expect(find.textContaining('within range'), findsOneWidget);
+    });
+
+    testWidgets('custom subtitle overrides the default', (tester) async {
+      await tester.pumpWidget(_card(
+        subtitle: 'This fan appears to be connected to another device.',
+      ));
+      expect(find.textContaining('another device'), findsOneWidget);
+      expect(find.textContaining('within range'), findsNothing);
     });
   });
 }

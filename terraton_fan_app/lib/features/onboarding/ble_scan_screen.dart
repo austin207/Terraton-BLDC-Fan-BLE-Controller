@@ -98,9 +98,11 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final savedMacs = {
+    // Build a mac → FanDevice map so already-paired fans can navigate directly
+    // to the control screen when tapped (rather than being non-tappable).
+    final savedFansMap = {
       for (final f in ref.watch(savedFansProvider).value ?? const <FanDevice>[])
-        if (f.macAddress.isNotEmpty) f.macAddress,
+        if (f.macAddress.isNotEmpty) f.macAddress: f,
     };
 
     return Scaffold(
@@ -175,7 +177,9 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                   Text('No fans found.',
                       style: GoogleFonts.manrope(fontSize: 17, fontWeight: FontWeight.w700, color: kText)),
                   const SizedBox(height: 6),
-                  Text('Make sure your fan is powered on and within range.',
+                  Text(
+                      'Make sure your fan is powered on and within range. '
+                      'If another device is connected to the fan, ask them to disconnect first.',
                       style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
                       textAlign: TextAlign.center),
                   const SizedBox(height: 28),
@@ -221,20 +225,27 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                 itemCount: _results.length,
                 itemBuilder: (_, i) {
                   final fan = _results[i];
-                  final alreadyAdded = savedMacs.contains(fan.macAddress);
+                  final existingFan = savedFansMap[fan.macAddress];
+                  final alreadyAdded = existingFan != null;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _FanResultRow(
                       fan: fan,
                       alreadyAdded: alreadyAdded,
-                      onTap: alreadyAdded ? null : () {
-                        final device = FanDevice()
-                          ..deviceId   = fan.macAddress
-                          ..macAddress = fan.macAddress
-                          ..nickname   = ''
-                          ..addedAt    = DateTime.now();
-                        unawaited(context.push(AppRoutes.nameFan, extra: device));
-                      },
+                      // Already-paired: go straight to control screen so Phone 2
+                      // can reconnect without re-pairing (Fix 1 / Fix 4).
+                      onTap: alreadyAdded
+                          ? () => unawaited(
+                              context.push(AppRoutes.control, extra: existingFan))
+                          : () {
+                              final device = FanDevice()
+                                ..deviceId   = fan.macAddress
+                                ..macAddress = fan.macAddress
+                                ..nickname   = ''
+                                ..addedAt    = DateTime.now();
+                              unawaited(
+                                  context.push(AppRoutes.nameFan, extra: device));
+                            },
                     ),
                   );
                 },
@@ -331,73 +342,72 @@ class _FanResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: alreadyAdded ? 0.5 : 1.0,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: kCard,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: kHairline),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: kCardHi, borderRadius: BorderRadius.circular(14),
-                ),
-                child: const TerratonFanIcon(size: 24),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: kHairline),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                color: kCardHi, borderRadius: BorderRadius.circular(14),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: const TerratonFanIcon(size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(fan.name,
+                      style: GoogleFonts.manrope(
+                        fontSize: 15, fontWeight: FontWeight.w700, color: kText,
+                      )),
+                  const SizedBox(height: 3),
+                  Text(fan.macAddress,
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10, color: kTextMut, letterSpacing: 0.6,
+                      )),
+                ],
+              ),
+            ),
+            if (alreadyAdded)
+              // Already paired — show "Reconnect" so the user knows tapping
+              // will go directly to the control screen (not re-pair).
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: kCardHi, borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('Reconnect',
+                    style: GoogleFonts.manrope(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: kYellow,
+                    )),
+              )
+            else
+              Semantics(
+                label: 'Signal: ${_rssiLabel(fan.rssi)}',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(fan.name,
-                        style: GoogleFonts.manrope(
-                          fontSize: 15, fontWeight: FontWeight.w700, color: kText,
-                        )),
-                    const SizedBox(height: 3),
-                    Text(fan.macAddress,
+                    Icon(Icons.signal_cellular_alt_rounded,
+                        size: 16, color: _rssiColor(fan.rssi)),
+                    const SizedBox(width: 4),
+                    Text('${fan.rssi} dBm',
                         style: GoogleFonts.jetBrainsMono(
-                          fontSize: 10, color: kTextMut, letterSpacing: 0.6,
+                          fontSize: 10, color: kTextMut,
                         )),
                   ],
                 ),
               ),
-              if (alreadyAdded)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: kCardHi, borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('Added',
-                      style: GoogleFonts.manrope(
-                        fontSize: 11, fontWeight: FontWeight.w600, color: kTextMut,
-                      )),
-                )
-              else
-                Semantics(
-                  label: 'Signal: ${_rssiLabel(fan.rssi)}',
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.signal_cellular_alt_rounded,
-                          size: 16, color: _rssiColor(fan.rssi)),
-                      const SizedBox(width: 4),
-                      Text('${fan.rssi} dBm',
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 10, color: kTextMut,
-                          )),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

@@ -480,6 +480,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               child: ConnectionLostCard(
                 onRetry: _connect,
                 connectStatus: _isDemo ? null : _ble.connectStatus,
+                subtitle: !_isDemo && _ble.connectStatus.contains('in use by another device')
+                    ? 'This fan appears to be connected to another device. '
+                      'Ask the other user to disconnect, then try again.'
+                    : null,
               ),
             ),
           if (_showDisconnectAlert)
