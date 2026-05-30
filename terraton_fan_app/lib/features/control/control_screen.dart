@@ -196,10 +196,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
       for (final response in responses) {
-        // TEMP DEBUG — remove after remote timer sync is confirmed.
-        // Logs every BLE command byte so we can see what the remote sends for 2H.
-        debugPrint('[BLE RX] cmd=0x${response.command.toRadixString(16).padLeft(2, "0")} data=[${response.data.map((b) => "0x${b.toRadixString(16).padLeft(2, "0")}").join(", ")}]');
-
         final power = BleResponseParser.parsePowerState(response);
         if (power != null) {
           notifier.updatePower(power);
@@ -229,6 +225,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         if (mode != null) {
           if (_suppressReverseEcho && mode == 'reverse') {
             _suppressReverseEcho = false;
+          } else if (mode == 'reverse' &&
+                     ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
+            // Hardware toggle model: byte 0x03 is sent for both enter-reverse and
+            // exit-reverse. The suppress flag is clear here, so this notification
+            // came from an external source (remote). Current state already shows
+            // reverse → this must be an exit → clear the mode.
+            notifier.setActiveMode(null);
           } else {
             notifier.updateMode(mode);
           }
@@ -236,8 +239,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         }
         final timer = BleResponseParser.parseTimer(response);
         if (timer != null) {
-          // TEMP DEBUG — remove after remote timer sync is confirmed.
-          debugPrint('[Timer] data=0x${timer.toRadixString(16).padLeft(2, "0")} → ${timer == 0 ? "OFF" : "${timer ~/ 2}H"}');
           notifier.updateTimer(timer);
           continue;
         }
@@ -341,10 +342,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
-    // Reverse toggle-off sends setReverse() to flip direction back to forward.
-    // The hardware (and demo handler) echo mode=0x03 as an ACK — suppress it
-    // once so it does not re-activate the reverse UI state.
-    if (label == 'Mode: forward (toggle)') _suppressReverseEcho = true;
+    // Hardware sends 0x03 for both enter-reverse and exit-reverse (toggle model).
+    // Suppress the echo for every app-originated Reverse command so the echo
+    // does not conflict with the optimistic state update that already ran.
+    // Remote-originated 0x03 notifications arrive with the flag clear and are
+    // handled by the toggle-detection logic in _subscribeNotify.
+    if (label == 'Mode: reverse' || label == 'Mode: forward (toggle)') {
+      _suppressReverseEcho = true;
+    }
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
