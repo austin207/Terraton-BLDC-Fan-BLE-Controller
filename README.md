@@ -164,7 +164,7 @@ Manually verified against hardware — request and response byte sequences confi
 | Timer 8 h | `55 AA 06 22 01 08 30` | `55 AA 07 22 01 08 31` |
 | Query power (watts) | `55 AA 06 23 01 00 29` | `55 AA 07 23 01 WW cs` — `WW` = watts byte |
 | Query speed (RPM) | `55 AA 06 24 01 00 2A` | `55 AA 07 24 02 HH LL cs` — RPM = `(HH << 8) \| LL` |
-| Status poll | `55 AA 00 00 01 00 01` *(non-standard fixed frame)* | Triggers watts + RPM frames above |
+| Status poll | `55 AA 00 00 01 00 00` *(non-standard fixed frame)* | Triggers watts + RPM frames above |
 | Lighting ON/OFF/colour temp | *Pending — command bytes not yet provided by Terraton* | *Pending* |
 
 ---

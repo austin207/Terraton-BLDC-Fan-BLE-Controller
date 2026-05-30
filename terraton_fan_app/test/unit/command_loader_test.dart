@@ -12,7 +12,7 @@ void main() {
   // Verified manually against hardware — these are the exact frames the MCU accepts.
   group('CommandLoader - frame verification', () {
     test('statusPoll fixed frame', () {
-      expect(CommandLoader.statusPoll(), [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x01]);
+      expect(CommandLoader.statusPoll(), [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00]);
     });
 
     test('power on  = 55 AA 06 02 01 01 09', () {

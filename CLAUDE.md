@@ -95,7 +95,7 @@ assets/commands.yaml
 **Request frame:** `[0x55, 0xAA, 0x06, <cmd>, <len>, ...data, <checksum>]`
 **Response frame:** same but byte[2] is `0x07`.
 **Checksum:** `(0x55 + 0xAA + packetId + cmd + dataLen + Σdata) & 0xFF` — includes the full header.
-**Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 01]` — do NOT pass through `buildFrame()`.
+**Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 00]` — do NOT pass through `buildFrame()`.
 
 **BLE UUIDs (defined only in `ble_constants.dart`):**
 - Scan filter: `00001827-0000-1000-8000-00805f9b34fb` (BLE Mesh Proxy)
