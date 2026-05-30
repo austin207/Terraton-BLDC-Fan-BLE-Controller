@@ -60,10 +60,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
 
   bool _connecting = false;
   bool _showDisconnectAlert = false;
-  // Set to true when the reverse toggle-off command is sent so the immediate
-  // mode=0x03 echo from the hardware (or demo handler) is not re-applied to
-  // state. Cleared on the first intercepted reverse echo.
-  bool _suppressReverseEcho = false;
 
   // Debug state isolated in a ValueNotifier so only _DebugCard rebuilds on
   // each BLE notification — not the entire ControlScreen.
@@ -223,14 +219,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         }
         final mode = BleResponseParser.parseModeString(response);
         if (mode != null) {
-          if (_suppressReverseEcho && mode == 'reverse') {
-            _suppressReverseEcho = false;
-          } else if (mode == 'reverse' &&
+          if (mode == 'reverse' &&
                      ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
-            // Hardware toggle model: byte 0x03 is sent for both enter-reverse and
-            // exit-reverse. The suppress flag is clear here, so this notification
-            // came from an external source (remote). Current state already shows
-            // reverse → this must be an exit → clear the mode.
+            // Hardware toggle model: 0x03 means "reverse active". When the remote
+            // sends 0x03 while we are already in reverse, this is an exit toggle.
             notifier.setActiveMode(null);
           } else {
             notifier.updateMode(mode);
@@ -322,9 +314,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         0x04 => 'smart',
         _    => null as String?,
       };
-      // Consume the suppress flag when we see the expected reverse echo.
-      if (_suppressReverseEcho && modeStr == 'reverse') {
-        _suppressReverseEcho = false;
+      if (modeStr == 'reverse' &&
+          ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
+        notifier.setActiveMode(null);
       } else {
         notifier.updateMode(modeStr);
       }
@@ -342,14 +334,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
-    // Hardware sends 0x03 for both enter-reverse and exit-reverse (toggle model).
-    // Suppress the echo for every app-originated Reverse command so the echo
-    // does not conflict with the optimistic state update that already ran.
-    // Remote-originated 0x03 notifications arrive with the flag clear and are
-    // handled by the toggle-detection logic in _subscribeNotify.
-    if (label == 'Mode: reverse' || label == 'Mode: forward (toggle)') {
-      _suppressReverseEcho = true;
-    }
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
@@ -725,12 +709,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     // Tapping the already-active mode toggles it off.
     if (fanState.activeMode == m) {
       if (m == 'reverse') {
-        // The reverse command is a hardware toggle: sending it a second time
-        // exits reverse and returns the motor to forward rotation.
-        // Restore the speed that was active before reverse was enabled.
+        // Hardware toggle: second Reverse command exits reverse mode.
+        // No optimistic setActiveMode(null) — the BLE echo (0x03) will arrive
+        // and the toggle-detection in _subscribeNotify clears the mode.
+        // Speed is restored optimistically because the speed command is separate.
         final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
         _flushSegment(newGear: restore, newMode: null);
-        notifier.setActiveMode(null);
         if (restore > 0) notifier.updateSpeed(restore);
         unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (toggle)'));
         if (restore > 0) {
@@ -760,7 +744,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (fanState.activeMode == 'nature') {
       final restore = (m == 'smart' && _preNatureSpeed < 3) ? 3 : _preNatureSpeed;
       if (m == 'reverse') _preReverseSpeed = restore > 0 ? restore : fanState.speed;
-      notifier.setActiveMode(m);
+      // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
+      if (m != 'reverse') notifier.setActiveMode(m);
       if (restore > 0) notifier.updateSpeed(restore);
       _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
       // Mode frame first so the hardware exits Nature before receiving the speed command.
@@ -783,7 +768,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
     }
     _flushSegment(newGear: fanState.speed, newMode: m);
-    notifier.setActiveMode(m);
+    // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
+    if (m != 'reverse') notifier.setActiveMode(m);
     final frame = switch (m) {
       'reverse' => BleFrameBuilder.setReverse(),
       'smart'   => BleFrameBuilder.setSmart(),
