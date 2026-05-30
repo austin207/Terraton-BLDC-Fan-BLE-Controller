@@ -9,10 +9,9 @@ void main() {
     await CommandLoader.load();
   });
 
-  // Status poll is a fixed non-standard frame — checksum is NOT derived from buildFrame().
-  // Checksum uses include-header formula: (0x55+0xAA+0x00+0x00+0x01+0x00) & 0xFF = 0x00.
+  // Status poll is a fixed non-standard frame — hardware-verified last byte is 0x01.
   test('statusPoll', () =>
-      expect(BleFrameBuilder.statusPoll(), [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00]));
+      expect(BleFrameBuilder.statusPoll(), [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x01]));
 
   // All frames below: checksum = (sum of ALL bytes before checksum) & 0xFF
   test('powerOn',  () =>
