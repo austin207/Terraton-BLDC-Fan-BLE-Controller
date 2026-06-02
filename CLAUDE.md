@@ -224,7 +224,18 @@ Polls every 3 seconds after connect via a single `statusPoll()` frame (non-stand
 - `0x23` → watts
 - `0x24` → RPM
 
-Only polls when `fanState.isPowered == true`. Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** 2 frames when OFF (`0x23` watts + `0x24` RPM, both 0), 4 frames when ON (`0x23` watts + `0x24` RPM + `0x02` power + `0x04` speed). Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+
+### App lifecycle: disconnect on background, reconnect on resume (`control_screen.dart`)
+
+`_ControlScreenState` is a `WidgetsBindingObserver`. `didChangeAppLifecycleState`:
+- **`paused`** (screen off OR app backgrounded — home button, app switch): cancel the telemetry timer, `BleForegroundService.stop()`, then `_ble.disconnect()`. Releasing the single GATT connection frees the fan for another phone. The foreground notification is stopped so it can't linger showing stale telemetry.
+- **`resumed`**: if `_ble.currentState != connected`, call `_connect()`. Because the BLE60 allows only one connection, `connect()` fails gracefully with an `'in use by another device'` status (GATT 133, see `ble_service.dart`) when another phone holds the fan — so resume **never steals** an active connection. The connect attempt *is* the "is another phone using it?" check; there is no separate probe (the fan stops advertising when connected elsewhere, and scan-before-connect is forbidden).
+- `inactive` / `hidden` / `detached`: no-op.
+
+Demo mode (`_isDemo`) skips all of the above. Observer is registered in `initState` and removed first thing in `dispose`.
+
+**Note:** this is independent of Cloudflare usage upload — that runs at app startup in `main.dart` (`DevicePingService.ping()` + `DataUploadService.tryUpload()`), gated by opt-in + Wi-Fi + once-per-day. Dropping the BLE link on background does not affect uploads.
 
 ### Permission handling (`lib/features/permission/ble_permission_screen.dart`)
 

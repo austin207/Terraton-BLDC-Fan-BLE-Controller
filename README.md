@@ -18,7 +18,8 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 | **Mood Lighting** | ON/OFF toggle + warm↔cool colour temperature slider *(bytes pending from Terraton)* |
 | **Telemetry** | Live watts and RPM polled every 3 s over BLE; stale values auto-clear after 5 s |
 | **Analytics** | Energy consumption (kWh), estimated cost, avg wattage, efficiency vs. traditional fan; Day / Week / Month views with per-fan breakdown |
-| **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service keeps the process alive when swiped from recents |
+| **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service shows a persistent "Fan running" notification while connected |
+| **Connection lifecycle** | BLE disconnects when the app is backgrounded / screen sleeps (frees the fan for another phone) and auto-reconnects on resume; never steals a connection already held by another phone (BLE60 is single-connection) |
 | **Data upload** | Anonymised daily usage summaries (gear distribution, mode distribution, hourly usage, kWh, weather, KSEB tariff slab) uploaded to Cloudflare R2 for AI training (opt-in; API key injected at build time only) |
 | **Multi-fan** | Manage multiple fans; live connection status badge with spinning icon; rename, remove, and long-press actions |
 | **Storage** | Fan metadata + last-known state persisted with ObjectBox; usage logs for analytics |
@@ -209,7 +210,7 @@ terraton_fan_app/
 │   │   ├── control/
 │   │   │   ├── circular_speed_dial.dart     # Radial dot-ring speed selector + centre readout
 │   │   │   ├── connection_banner.dart       # ConnectionLostCard overlay (bottom-anchored)
-│   │   │   ├── control_screen.dart          # Main fan control; telemetry timer; BLE notify dispatch
+│   │   │   ├── control_screen.dart          # Main fan control; telemetry timer; BLE notify dispatch; lifecycle disconnect/reconnect
 │   │   │   ├── lighting_control_widget.dart
 │   │   │   ├── mode_control_widget.dart     # Nature / Smart / Reverse / Boost buttons
 │   │   │   └── timer_control_widget.dart    # OFF / 2H / 4H / 8H selector

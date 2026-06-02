@@ -44,7 +44,8 @@ class ControlScreen extends ConsumerStatefulWidget {
   ConsumerState<ControlScreen> createState() => _ControlScreenState();
 }
 
-class _ControlScreenState extends ConsumerState<ControlScreen> {
+class _ControlScreenState extends ConsumerState<ControlScreen>
+    with WidgetsBindingObserver {
   Timer? _telemetryTimer;
   Timer? _expiryTimer;
   Timer? _expiryOnceTimer;
@@ -71,6 +72,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
+    WidgetsBinding.instance.addObserver(this);
     _resolvedMac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
     if (!_isDemo) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
@@ -271,9 +273,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _lastRpmAt = null;
       }
 
-      final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
-      if (!fanState.isPowered) return;
-
+      // Poll regardless of power state — fan returns 2 frames (watts + RPM)
+      // when OFF and 4 frames (power + speed + watts + RPM) when ON.
       try {
         await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;
@@ -284,7 +285,37 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isDemo) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+        // Screen off / app backgrounded: release the single GATT connection so
+        // another phone can use the fan. Stop the foreground notification too —
+        // it would otherwise stay up showing stale telemetry. (Cloudflare usage
+        // upload is independent: it runs at app startup in main.dart, gated by
+        // opt-in + Wi-Fi + once-per-day, so dropping the link here doesn't
+        // affect it.)
+        _telemetryTimer?.cancel();
+        unawaited(BleForegroundService.stop());
+        unawaited(_ble.disconnect());
+      case AppLifecycleState.resumed:
+        // Re-establish the link unless we're already connected. connect() fails
+        // gracefully with an 'in use by another device' status (GATT 133) when
+        // another phone holds the fan — the BLE60 allows only one connection —
+        // so this never steals an active connection from someone else.
+        if (_ble.currentState != BleConnectionState.connected) {
+          unawaited(_connect());
+        }
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _connecting = false;
     _telemetryTimer?.cancel();
     _expiryTimer?.cancel();
