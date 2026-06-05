@@ -685,11 +685,17 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   }
 
   /// Flush the current open segment directly (no ref — safe for dispose).
+  /// Uses the same running-average logic as [_flushSegment] so the final
+  /// segment (app backgrounded / disposed while running) is averaged like
+  /// every other one, not recorded at a single point-in-time watt value.
   void _flushOnClose() {
     final start = _segmentStart;
     if (start == null || _segmentGear <= 0) return;
     final secs = DateTime.now().difference(start).inSeconds;
     if (secs <= 0) return;
+    final avgWatts = _segmentWattsCount > 0
+        ? (_segmentWattsSum / _segmentWattsCount).round()
+        : _lastKnownWatts;
     final avgRpm = _segmentRpmCount > 0
         ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
     try {
@@ -698,7 +704,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         startTime:    start,
         durationSecs: secs,
         gear:         _segmentGear,
-        watts:        _lastKnownWatts,
+        watts:        avgWatts,
         rpm:          avgRpm,
         mode:         _segmentMode,
       ));
@@ -872,7 +878,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
     // Accumulate every BLE poll response that arrives while a segment is open.
-    // ref.listen fires on state changes (3 s poll cadence) — no side-effect risk.
+    // ref.listen fires on state changes — no side-effect risk. NOTE: one poll
+    // cycle delivers two frames (0x23 watts, then 0x24 RPM) as two separate
+    // notifier mutations, so this fires ~twice per 3 s cadence and each reading
+    // is counted ~twice. The average is unaffected (sum and count inflate
+    // symmetrically); only treat _segment*Count as a weight, never as a poll
+    // count.
     ref.listen(activeFanStateProvider(fan.deviceId), (_, next) {
       if (_segmentGear > 0) {
         if (next.lastWatts != null && next.lastWatts! > 0) {

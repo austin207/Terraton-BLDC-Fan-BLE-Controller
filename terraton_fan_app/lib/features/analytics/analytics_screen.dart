@@ -514,6 +514,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
+                        // Headline efficiency KPI: ratio of the two aggregates
+                        // (avg RPM ÷ avg W), NOT a time-weighted average of
+                        // per-segment RPM/W. Intentional — it reads as "airflow
+                        // delivered per watt drawn" over the whole period.
                         Text(
                           (_avgRpmV > 0 && _avgWattsV > 0)
                               ? (_avgRpmV / _avgWattsV).toStringAsFixed(1)
