@@ -11,6 +11,7 @@ class UsageSummary {
   final int sessions;
   final double totalKwh;
   final double avgWatts;
+  final double avgRpm;
 
   // Weather for the day (Open-Meteo, central Kerala coords).
   // -1.0 when the fetch failed — model training pipeline treats as missing.
@@ -33,6 +34,7 @@ class UsageSummary {
     required this.sessions,
     required this.totalKwh,
     required this.avgWatts,
+    required this.avgRpm,
     required this.tempMaxC,
     required this.tempMinC,
     required this.humidityPct,
@@ -53,6 +55,7 @@ class UsageSummary {
     'sessions':         sessions,
     'total_kwh':        totalKwh,
     'avg_watts':        avgWatts,
+    'avg_rpm':          avgRpm,
     'temp_max_c':       tempMaxC,
     'temp_min_c':       tempMinC,
     'humidity_pct':     humidityPct,
