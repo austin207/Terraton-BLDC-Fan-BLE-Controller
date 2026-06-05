@@ -124,26 +124,17 @@ class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(20),
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                kYellow.withAlpha(_pressed ? 40 : 25),
-                kYellow.withAlpha(_pressed ? 10 : 5),
-              ],
-            ),
+            color: _pressed ? kCardElev : kCard,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: kYellow.withAlpha(76)),
-            boxShadow: [
-              BoxShadow(
-                color: kYellow.withAlpha(_pressed ? 20 : 40),
-                blurRadius: 28,
-                spreadRadius: -4,
-              ),
-            ],
+            border: Border.all(
+              color: _pressed ? kYellow.withAlpha(110) : kHairline,
+            ),
+            boxShadow: _pressed
+                ? const [BoxShadow(color: kYellowGlow, blurRadius: 16, spreadRadius: -6)]
+                : const [],
           ),
           child: Row(
             children: [
@@ -192,7 +183,7 @@ class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
+              const Icon(Icons.chevron_right_rounded, color: kTextMut, size: 22),
             ],
           ),
         ),
