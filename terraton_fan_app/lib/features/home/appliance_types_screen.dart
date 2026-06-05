@@ -42,7 +42,7 @@ class ApplianceTypesScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'CHOOSE A CATEGORY',
+              'CHOOSE A TYPE',
               style: GoogleFonts.jetBrainsMono(
                 fontSize: 10, fontWeight: FontWeight.w700,
                 color: kTextMut, letterSpacing: 2.2,
@@ -50,17 +50,15 @@ class ApplianceTypesScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: GridView.builder(
+              child: ListView.separated(
                 physics: const BouncingScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.05,
-                ),
                 itemCount: types.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 14),
                 itemBuilder: (_, i) => ApplianceTypeCard(
                   applianceType: types[i],
+                  subtitle: (cat?.comingSoon ?? false)
+                      ? 'Coming soon'
+                      : '${types[i].modelCount} models',
                   // Non-fan categories aren't supported yet → show Coming Soon
                   // instead of dropping the user into the fan pairing flow.
                   onTap: () => unawaited(
@@ -78,16 +76,19 @@ class ApplianceTypesScreen extends StatelessWidget {
   }
 }
 
-/// Card for one [ApplianceType] in the 2-column grid.
-/// Animates scale and glow on press; tints the icon yellow when pressed.
+/// Full-width rectangular row for one [ApplianceType], styled to match the
+/// home-screen category tiles (icon on the left, name + subtitle, chevron).
+/// Animates the yellow gradient and glow on press.
 class ApplianceTypeCard extends StatefulWidget {
   final ApplianceType applianceType;
+  final String? subtitle;
   final VoidCallback onTap;
 
   const ApplianceTypeCard({
     super.key,
     required this.applianceType,
     required this.onTap,
+    this.subtitle,
   });
 
   @override
@@ -113,78 +114,86 @@ class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
 
   @override
   Widget build(BuildContext context) {
+    final type = widget.applianceType;
     return Semantics(
       button: true,
-      label: widget.applianceType.displayName,
+      label: type.displayName,
       child: GestureDetector(
         onTap: widget.onTap,
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.95 : 1.0,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            decoration: BoxDecoration(
-              color: _pressed ? kCardElev : kCard,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _pressed ? kYellow.withAlpha(110) : kHairline,
-              ),
-              boxShadow: _pressed
-                  ? [const BoxShadow(color: kYellowGlow, blurRadius: 20, spreadRadius: -4)]
-                  : [],
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 60, height: 60,
-                  decoration: BoxDecoration(
-                    color: _pressed
-                        ? kYellow.withAlpha(38)
-                        : kYellow.withAlpha(20),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: _pressed
-                          ? kYellow.withAlpha(100)
-                          : kYellow.withAlpha(40),
-                    ),
-                  ),
-                  child: Center(
-                    child: Image.asset(
-                      widget.applianceType.iconPath,
-                      width: 32, height: 32,
-                      color: _pressed ? kYellow : kTextMut,
-                      colorBlendMode: BlendMode.srcIn,
-                      errorBuilder: (_, __, ___) => Icon(
-                        _fallbackIcon(widget.applianceType.id),
-                        size: 28,
-                        color: _pressed ? kYellow : kTextMut,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    widget.applianceType.displayName,
-                    style: GoogleFonts.manrope(
-                      fontSize: 13, fontWeight: FontWeight.w700,
-                      color: _pressed ? kText : kTextMut,
-                      letterSpacing: -0.2,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                kYellow.withAlpha(_pressed ? 40 : 25),
+                kYellow.withAlpha(_pressed ? 10 : 5),
               ],
             ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kYellow.withAlpha(76)),
+            boxShadow: [
+              BoxShadow(
+                color: kYellow.withAlpha(_pressed ? 20 : 40),
+                blurRadius: 28,
+                spreadRadius: -4,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52, height: 52,
+                decoration: BoxDecoration(
+                  color: kYellow.withAlpha(38),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: kYellow.withAlpha(76)),
+                ),
+                child: Center(
+                  child: Image.asset(
+                    type.iconPath,
+                    width: 26, height: 26,
+                    color: kYellow,
+                    colorBlendMode: BlendMode.srcIn,
+                    errorBuilder: (_, __, ___) => Icon(
+                      _fallbackIcon(type.id), size: 24, color: kYellow,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type.displayName,
+                      style: GoogleFonts.manrope(
+                        fontSize: 17, fontWeight: FontWeight.w700,
+                        color: kText, letterSpacing: -0.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (widget.subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.subtitle!,
+                        style: GoogleFonts.manrope(
+                          fontSize: 12, color: kTextMut,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: kYellow, size: 22),
+            ],
           ),
         ),
       ),
