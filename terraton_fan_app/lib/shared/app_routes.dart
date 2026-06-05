@@ -10,6 +10,8 @@ abstract final class AppRoutes {
   /// Legacy path — redirects to [applianceTypes] for backward compat.
   static const fanTypes           = '/fan-types';
   static const fans               = '/fans';
+  /// Placeholder for not-yet-supported appliance types. Expects [ApplianceType] as GoRouter extra.
+  static const comingSoon         = '/coming-soon';
   static const permissionRequired = '/permission-required';
   static const scanQr             = '/scan/qr';
   static const scanBle            = '/scan/ble';

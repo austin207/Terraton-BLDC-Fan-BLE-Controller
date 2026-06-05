@@ -61,8 +61,12 @@ class ApplianceTypesScreen extends StatelessWidget {
                 itemCount: types.length,
                 itemBuilder: (_, i) => ApplianceTypeCard(
                   applianceType: types[i],
+                  // Non-fan categories aren't supported yet → show Coming Soon
+                  // instead of dropping the user into the fan pairing flow.
                   onTap: () => unawaited(
-                    context.push(AppRoutes.fans, extra: types[i]),
+                    (cat?.comingSoon ?? false)
+                        ? context.push(AppRoutes.comingSoon, extra: types[i])
+                        : context.push(AppRoutes.fans, extra: types[i]),
                   ),
                 ),
               ),

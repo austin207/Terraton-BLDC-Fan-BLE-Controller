@@ -85,6 +85,7 @@ appliances:
     displayName: Water Filtration
     pluralLabel: Water Filters
     icon: assets/icons/water_filtration.png   # icon pending — add PNG to assets/icons/
+    comingSoon: true                          # types route to the Coming Soon page, not pairing
 
     types:
 
@@ -110,6 +111,7 @@ appliances:
     displayName: Air Purification
     pluralLabel: Air Purifiers
     icon: assets/icons/air_purification.png   # icon pending
+    comingSoon: true                          # types route to the Coming Soon page, not pairing
 
     types:
 
@@ -135,6 +137,7 @@ appliances:
     displayName: Energy / Storage
     pluralLabel: Energy Devices
     icon: assets/icons/energy_storage.png     # icon pending
+    comingSoon: true                          # types route to the Coming Soon page, not pairing
 
     types:
 

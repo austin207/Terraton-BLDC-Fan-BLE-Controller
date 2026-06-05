@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/features/splash/splash_screen.dart';
 import 'package:terraton_fan_app/features/home/home_screen.dart';
 import 'package:terraton_fan_app/features/home/appliance_types_screen.dart';
 import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
+import 'package:terraton_fan_app/features/coming_soon/coming_soon_screen.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/features/onboarding/profile_setup_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
@@ -57,6 +58,14 @@ final appRouter = GoRouter(
       path: AppRoutes.fans,
       builder: (_, state) => FansListScreen(
         fanType: state.extra is ApplianceType
+            ? state.extra! as ApplianceType
+            : null,
+      ),
+    ),
+    GoRoute(
+      path: AppRoutes.comingSoon,
+      builder: (_, state) => ComingSoonScreen(
+        applianceType: state.extra is ApplianceType
             ? state.extra! as ApplianceType
             : null,
       ),

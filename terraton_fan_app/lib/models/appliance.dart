@@ -12,12 +12,17 @@ class ApplianceCategory {
   final String iconPath;
   final List<ApplianceType> types;
 
+  /// When true, this category's types are not yet supported: selecting a type
+  /// shows the Coming Soon page instead of the pairing / fan-list flow.
+  final bool comingSoon;
+
   const ApplianceCategory({
     required this.id,
     required this.displayName,
     required this.pluralLabel,
     required this.iconPath,
     required this.types,
+    this.comingSoon = false,
   });
 
   factory ApplianceCategory.fromYaml(Map<Object?, Object?> yaml) {
@@ -27,6 +32,7 @@ class ApplianceCategory {
       displayName: displayName,
       pluralLabel: yaml['pluralLabel'] as String? ?? '${displayName}s',
       iconPath:    yaml['icon']        as String,
+      comingSoon:  yaml['comingSoon']  as bool? ?? false,
       types: (yaml['types'] as List<Object?>? ?? const [])
           .cast<Map<Object?, Object?>>()
           .map(ApplianceType.fromYaml)
