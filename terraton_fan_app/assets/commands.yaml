@@ -1,17 +1,26 @@
 # assets/commands.yaml
-# BLE command definitions for Terraton BLDC Fan Controller.
+# BLE command definitions for all Terraton appliances.
 # Phase 1: bundled as an asset. Update by releasing a new app version.
 # Phase 2 (approved, not yet built): hosted remotely; app fetches on launch
 # and updates local cache when version is bumped. No app update needed.
+#
 # Set command or data to null for pending/unimplemented commands.
-# New command sections added here are automatically available in the app.
+# CommandLoader.buildFrame() returns null for any null command/data — no crash.
+# CommandLoader.custom(['section', 'commands', 'action'], data) works for any section.
 
 version: "1.0"
+
+# ── Shared protocol ─────────────────────────────────────────────────────────────
+# All Terraton appliances using the BLE60 UART bridge share this framing.
 
 protocol:
   header: [0x55, 0xAA]
   request_packet_id: 0x06
   response_packet_id: 0x07
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 1. FAN / COOLING  (ceiling fan — active, hardware-verified)
+# ══════════════════════════════════════════════════════════════════════════════════
 
 # Special case: status poll uses a fixed non-standard frame
 status_poll:
@@ -40,7 +49,7 @@ commands:
     actions:
       boost:   [0x01]
       nature:  [0x02]
-      reverse: [0x03]  # hardware toggle: first call enters reverse, second call exits reverse
+      reverse: [0x03]  # hardware toggle: first call enters reverse, second exits
       smart:   [0x04]
 
   timers:
@@ -60,7 +69,7 @@ commands:
       data: [0x00]
 
   # Lighting commands pending from Terraton.
-  # Set command and data values when received. No code changes needed.
+  # Fill in command and data when received. No Dart code changes needed.
   lighting:
     on:
       command: null
@@ -80,3 +89,259 @@ response_commands:
   timer:        0x22
   power_watts:  0x23
   running_rpm:  0x24
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 2. WATER FILTRATION — RO Filter  (commands pending from Terraton)
+# Access via CommandLoader.custom(['water_ro', 'commands', ...], data)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+water_ro:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+    filter_mode:
+      command: null
+      actions:
+        standard: null
+        fast:     null
+        eco:      null
+
+  queries:
+    tds:
+      command: null
+      data: null
+    flow_rate:
+      command: null
+      data: null
+    purity_level:
+      command: null
+      data: null
+    filter_life:
+      command: null
+      data: null
+
+  response_commands:
+    power:        null
+    filter_mode:  null
+    tds:          null
+    flow_rate:    null
+    purity_level: null
+    filter_life:  null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 3. WATER FILTRATION — UF / UV Filter  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+water_uf_uv:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+    uv_intensity:
+      command: null
+      actions:
+        low:    null
+        medium: null
+        high:   null
+
+  queries:
+    water_quality:
+      command: null
+      data: null
+    filter_life:
+      command: null
+      data: null
+
+  response_commands:
+    power:         null
+    uv_intensity:  null
+    water_quality: null
+    filter_life:   null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 4. AIR PURIFICATION — AQM Monitor  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+air_aqm:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+
+  queries:
+    aqi:
+      command: null
+      data: null
+    pm25:
+      command: null
+      data: null
+    co2:
+      command: null
+      data: null
+    temperature:
+      command: null
+      data: null
+
+  response_commands:
+    power:       null
+    aqi:         null
+    pm25:        null
+    co2:         null
+    temperature: null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 5. AIR PURIFICATION — Air Purifier  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+air_purifier:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+    fan_speed:
+      command: null
+      actions:
+        low:    null
+        medium: null
+        high:   null
+    mode:
+      command: null
+      actions:
+        auto:  null
+        sleep: null
+        turbo: null
+
+  queries:
+    aqi:
+      command: null
+      data: null
+    filter_life:
+      command: null
+      data: null
+
+  response_commands:
+    power:       null
+    fan_speed:   null
+    mode:        null
+    aqi:         null
+    filter_life: null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 6. ENERGY / STORAGE — Solar  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+energy_solar:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+    mode:
+      command: null
+      actions:
+        normal: null
+        eco:    null
+
+  queries:
+    power_output:
+      command: null
+      data: null
+    voltage:
+      command: null
+      data: null
+    current:
+      command: null
+      data: null
+    temperature:
+      command: null
+      data: null
+
+  response_commands:
+    power:        null
+    mode:         null
+    power_output: null
+    voltage:      null
+    current:      null
+    temperature:  null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 7. ENERGY / STORAGE — Battery Storage  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+energy_battery:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+    mode:
+      command: null
+      actions:
+        normal: null
+        eco:    null
+        backup: null
+
+  queries:
+    soc:
+      command: null
+      data: null
+    charge_rate:
+      command: null
+      data: null
+    temperature:
+      command: null
+      data: null
+
+  response_commands:
+    power:       null
+    mode:        null
+    soc:         null
+    charge_rate: null
+    temperature: null
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 8. ENERGY / STORAGE — Power Conversion  (commands pending from Terraton)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+energy_power_conversion:
+
+  commands:
+    power:
+      command: null
+      actions:
+        on:  null
+        off: null
+
+  queries:
+    power_output:
+      command: null
+      data: null
+    efficiency:
+      command: null
+      data: null
+    temperature:
+      command: null
+      data: null
+
+  response_commands:
+    power:        null
+    power_output: null
+    efficiency:   null
+    temperature:  null

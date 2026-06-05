@@ -79,6 +79,89 @@ appliances:
           - speed
           - timer
 
+  # ── Water Filtration ────────────────────────────────────────────────────────
+
+  - id: water_filtration
+    displayName: Water Filtration
+    pluralLabel: Water Filters
+    icon: assets/icons/water_filtration.png   # icon pending — add PNG to assets/icons/
+
+    types:
+
+      - id: ro_filter
+        displayName: RO Filter
+        modelPrefix: RO
+        icon: assets/icons/ro_filter.png      # icon pending
+        modelCount: 10
+        controls:
+          - water_quality
+
+      - id: uf_uv_filter
+        displayName: UF / UV Filter
+        modelPrefix: UV
+        icon: assets/icons/uf_uv_filter.png   # icon pending
+        modelCount: 10
+        controls:
+          - water_quality
+
+  # ── Air Purification ─────────────────────────────────────────────────────────
+
+  - id: air_purification
+    displayName: Air Purification
+    pluralLabel: Air Purifiers
+    icon: assets/icons/air_purification.png   # icon pending
+
+    types:
+
+      - id: aqm_monitor
+        displayName: AQM Monitor
+        modelPrefix: AQ
+        icon: assets/icons/aqm_monitor.png    # icon pending
+        modelCount: 10
+        controls:
+          - air_quality
+
+      - id: air_purifier
+        displayName: Air Purifier
+        modelPrefix: AP
+        icon: assets/icons/air_purifier.png   # icon pending
+        modelCount: 10
+        controls:
+          - air_quality
+
+  # ── Energy / Storage ─────────────────────────────────────────────────────────
+
+  - id: energy_storage
+    displayName: Energy / Storage
+    pluralLabel: Energy Devices
+    icon: assets/icons/energy_storage.png     # icon pending
+
+    types:
+
+      - id: solar
+        displayName: Solar
+        modelPrefix: SL
+        icon: assets/icons/solar.png          # icon pending
+        modelCount: 10
+        controls:
+          - energy_metrics
+
+      - id: battery_storage
+        displayName: Battery Storage
+        modelPrefix: BA
+        icon: assets/icons/battery_storage.png  # icon pending
+        modelCount: 10
+        controls:
+          - energy_metrics
+
+      - id: power_conversion
+        displayName: Power Conversion
+        modelPrefix: PC
+        icon: assets/icons/power_conversion.png  # icon pending
+        modelCount: 10
+        controls:
+          - energy_metrics
+
   # ── Example: add a new category below and the app reflects it automatically ──
   #
   # - id: lights

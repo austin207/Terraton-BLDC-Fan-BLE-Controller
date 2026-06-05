@@ -224,7 +224,7 @@ Polls every 3 seconds after connect via a single `statusPoll()` frame (non-stand
 - `0x23` → watts
 - `0x24` → RPM
 
-Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** 2 frames when OFF (`0x23` watts + `0x24` RPM, both 0), 4 frames when ON (`0x23` watts + `0x24` RPM + `0x02` power + `0x04` speed). Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** always 2 frames — `0x23` watts + `0x24` RPM. Power state (`0x02`) and speed (`0x04`) are NOT included in poll responses (firmware limitation; firmware developer has been notified). Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
 
 ### App lifecycle: disconnect on background, reconnect on resume (`control_screen.dart`)
 

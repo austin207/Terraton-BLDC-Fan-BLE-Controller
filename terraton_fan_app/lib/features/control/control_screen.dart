@@ -273,8 +273,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _lastRpmAt = null;
       }
 
-      // Poll regardless of power state — fan returns 2 frames (watts + RPM)
-      // when OFF and 4 frames (power + speed + watts + RPM) when ON.
+      // Poll regardless of power state — fan always returns 2 frames (watts + RPM).
+      // Power state and speed are not included in poll responses (firmware limitation;
+      // firmware developer has been notified to add them).
       try {
         await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;

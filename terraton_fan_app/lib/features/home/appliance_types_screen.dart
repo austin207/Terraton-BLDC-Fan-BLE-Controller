@@ -93,6 +93,20 @@ class ApplianceTypeCard extends StatefulWidget {
 class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
   bool _pressed = false;
 
+  static IconData _fallbackIcon(String typeId) {
+    if (typeId.contains('ro') || typeId.contains('uv') || typeId.contains('water')) {
+      return Icons.water_drop_outlined;
+    }
+    if (typeId.contains('air') || typeId.contains('aqm')) {
+      return Icons.air_outlined;
+    }
+    if (typeId.contains('solar') || typeId.contains('battery') ||
+        typeId.contains('energy') || typeId.contains('power')) {
+      return Icons.bolt_outlined;
+    }
+    return Icons.devices_other_outlined;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -142,6 +156,11 @@ class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
                       width: 32, height: 32,
                       color: _pressed ? kYellow : kTextMut,
                       colorBlendMode: BlendMode.srcIn,
+                      errorBuilder: (_, __, ___) => Icon(
+                        _fallbackIcon(widget.applianceType.id),
+                        size: 28,
+                        color: _pressed ? kYellow : kTextMut,
+                      ),
                     ),
                   ),
                 ),

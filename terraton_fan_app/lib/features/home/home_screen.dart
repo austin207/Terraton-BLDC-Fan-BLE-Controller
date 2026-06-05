@@ -203,6 +203,10 @@ class _ApplianceCategoryTileState extends State<_ApplianceCategoryTile> {
                   width: 28, height: 28,
                   color: kYellow,
                   colorBlendMode: BlendMode.srcIn,
+                  errorBuilder: (_, __, ___) => Icon(
+                    _fallbackIcon(widget.category.id),
+                    size: 26, color: kYellow,
+                  ),
                 ),
               ),
             ),
@@ -233,6 +237,13 @@ class _ApplianceCategoryTileState extends State<_ApplianceCategoryTile> {
     ),
     );
   }
+
+  static IconData _fallbackIcon(String categoryId) => switch (categoryId) {
+    'water_filtration' => Icons.water_drop_outlined,
+    'air_purification' => Icons.air_outlined,
+    'energy_storage'   => Icons.bolt_outlined,
+    _                  => Icons.devices_other_outlined,
+  };
 }
 
 // ── Today's usage card (mock — Phase 2: wire to real energy data) ─────────────

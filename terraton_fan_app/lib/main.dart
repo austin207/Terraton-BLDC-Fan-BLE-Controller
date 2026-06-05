@@ -12,6 +12,10 @@ import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
 import 'package:terraton_fan_app/core/upload/device_ping_service.dart';
+import 'package:terraton_fan_app/features/control/control_registry.dart';
+import 'package:terraton_fan_app/features/control/water_filtration_control.dart';
+import 'package:terraton_fan_app/features/control/air_purification_control.dart';
+import 'package:terraton_fan_app/features/control/energy_storage_control.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/app.dart';
 
@@ -45,6 +49,13 @@ Future<void> main() async {
 
   await CommandLoader.load();
   await ApplianceLoader.load();
+
+  // Register non-fan appliance control widgets.
+  // Each string must match a control type declared in appliances.yaml.
+  ControlRegistry.register('water_quality',  buildWaterFiltrationControl);
+  ControlRegistry.register('air_quality',    buildAirPurificationControl);
+  ControlRegistry.register('energy_metrics', buildEnergyStorageControl);
+
   await initObjectBox();
   // Permissions are requested contextually by BlePermissionScreen after the
   // splash screen checks status. Requesting here (before any UI) shows the
