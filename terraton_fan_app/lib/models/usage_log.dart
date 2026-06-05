@@ -20,8 +20,11 @@ class UsageLog {
   /// Speed gear 1–6; 0 = fan was off during this segment.
   int gear = 0;
 
-  /// Watt reading from BLE; 0 = no reading received yet.
+  /// Average watt reading across the segment; 0 = no poll response received.
   int watts = 0;
+
+  /// Average RPM across the segment; 0 = no poll response received.
+  int rpm = 0;
 
   /// Active mode: 'smart' | 'reverse' | 'nature' | 'boost' | null (normal).
   String? mode;
@@ -33,6 +36,7 @@ class UsageLog {
     required this.durationSecs,
     required this.gear,
     required this.watts,
+    this.rpm = 0,
     this.mode,
   });
 

@@ -34,6 +34,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   double                 _totalKwh   = 0.0;
   double                 _prevKwh    = 0.0;
   int                    _avgWattsV  = 0;
+  int                    _avgRpmV    = 0;
   int                    _effPct     = 0;
   Map<String, double>    _fanMap     = const {};
 
@@ -68,6 +69,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       _totalKwh    = _sumKwh(_curLogs);
       _prevKwh     = _sumKwh(_prevLogs);
       _avgWattsV   = _avgWatts(_curLogs);
+      _avgRpmV     = _avgRpm(_curLogs);
       _effPct      = _efficiency(_curLogs);
       final map    = <String, double>{};
       for (final l in _curLogs) {
@@ -134,6 +136,15 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final terrWh = active.fold(0.0, (s, l) => s + l.watts * l.durationSecs / 3600.0);
     final tradWh = _traditionalWatts * totalSecs / 3600.0;
     return ((tradWh - terrWh) / tradWh * 100).round().clamp(0, 100);
+  }
+
+  int _avgRpm(List<UsageLog> logs) {
+    final active = logs.where((l) => l.rpm > 0 && l.gear > 0).toList();
+    if (active.isEmpty) return 0;
+    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
+    if (totalSecs == 0) return 0;
+    return (active.fold(0.0, (s, l) => s + l.rpm * l.durationSecs) / totalSecs)
+        .round();
   }
 
   String _efficiencyLabel(int pct) {
@@ -451,6 +462,73 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     ? '${((_traditionalWatts - _avgWattsV) / _traditionalWatts * 100).round()}% lower than a typical ${_traditionalWatts.round()}W fan'
                     : 'No usage data yet',
                 style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── RPM / performance ──────────────────────────────────────────────
+        _DarkCard(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SmallIconLabel(
+                        icon: Icons.rotate_right_outlined,
+                        label: 'AVG RPM',
+                        iconColor: kYellow),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(_avgRpmV > 0 ? '$_avgRpmV' : '--',
+                            style: kMonoStyle(size: 36,
+                                weight: FontWeight.w600,
+                                letterSpacing: -0.5)),
+                        const SizedBox(width: 6),
+                        Text('RPM',
+                            style: kMonoStyle(size: 12, color: kTextMut)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Container(width: 1, height: 56, color: kHairline),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SmallIconLabel(
+                        icon: Icons.auto_graph_outlined,
+                        label: 'PERFORMANCE',
+                        iconColor: kYellow),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          (_avgRpmV > 0 && _avgWattsV > 0)
+                              ? (_avgRpmV / _avgWattsV).toStringAsFixed(1)
+                              : '--',
+                          style: kMonoStyle(size: 36,
+                              weight: FontWeight.w600,
+                              letterSpacing: -0.5),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('RPM/W',
+                            style: kMonoStyle(size: 10, color: kTextMut)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

@@ -178,7 +178,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 7745722999259312107),
     name: 'UsageLog',
-    lastPropertyId: const obx_int.IdUid(7, 1714395182981438629),
+    lastPropertyId: const obx_int.IdUid(8, 4350952620612556560),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -221,6 +221,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(7, 1714395182981438629),
         name: 'mode',
         type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(8, 4350952620612556560),
+        name: 'rpm',
+        type: 6,
         flags: 0,
       ),
     ],
@@ -462,7 +468,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final modeOffset = object.mode == null
             ? null
             : fbb.writeString(object.mode!);
-        fbb.startTable(8);
+        fbb.startTable(9);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.startTime.millisecondsSinceEpoch);
@@ -470,6 +476,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(4, object.gear);
         fbb.addInt64(5, object.watts);
         fbb.addOffset(6, modeOffset);
+        fbb.addInt64(7, object.rpm);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -506,6 +513,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
           14,
           0,
         );
+        final rpmParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          18,
+          0,
+        );
         final modeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 16);
@@ -516,6 +529,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           durationSecs: durationSecsParam,
           gear: gearParam,
           watts: wattsParam,
+          rpm: rpmParam,
           mode: modeParam,
         );
 
@@ -678,5 +692,10 @@ class UsageLog_ {
   /// See [UsageLog.mode].
   static final mode = obx.QueryStringProperty<UsageLog>(
     _entities[2].properties[6],
+  );
+
+  /// See [UsageLog.rpm].
+  static final rpm = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[7],
   );
 }

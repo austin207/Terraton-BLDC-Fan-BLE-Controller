@@ -613,6 +613,16 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   int   _segmentGear = 0;
   String? _segmentMode;
 
+  // Running accumulators: sum all BLE poll responses during a segment, then
+  // divide at flush time. Avoids the "watts=0 if polled before first response"
+  // problem that made kWh=0 for every log and broke analytics + Cloudflare.
+  int _segmentWattsSum   = 0;
+  int _segmentWattsCount = 0;
+  int _segmentRpmSum     = 0;
+  int _segmentRpmCount   = 0;
+  // Last observed non-zero value — used by _flushOnClose() where ref is unavailable.
+  int _lastKnownWatts    = 0;
+
   // Cached in initState — ref.read() is forbidden inside dispose().
   late final UsageLogRepository _usageLogRepo;
   // Cached because fan.model is immutable for the widget's lifetime.
@@ -680,42 +690,55 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (start == null || _segmentGear <= 0) return;
     final secs = DateTime.now().difference(start).inSeconds;
     if (secs <= 0) return;
+    final avgRpm = _segmentRpmCount > 0
+        ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
     try {
       _usageLogRepo.addLog(UsageLog(
         deviceId:     widget.fan.deviceId,
         startTime:    start,
         durationSecs: secs,
         gear:         _segmentGear,
-        watts:        0, // watts unavailable in dispose; duration/gear matter most
+        watts:        _lastKnownWatts,
+        rpm:          avgRpm,
         mode:         _segmentMode,
       ));
     } on Object catch (_) {}
   }
 
-  /// Flush the completed segment to ObjectBox, then start a new one.
-  /// Watts are read from the live fan state at flush time.
+  /// Flush the completed segment to ObjectBox then start a new one.
+  /// Uses the running avg of all poll responses received during the segment,
+  /// falling back to the last known non-zero watt value when no readings
+  /// arrived yet (e.g. speed changed immediately after connect).
   void _flushSegment({required int newGear, required String? newMode}) {
     final start = _segmentStart;
     if (start != null && _segmentGear > 0) {
       final secs = DateTime.now().difference(start).inSeconds;
       if (secs > 0) {
-        final watts = ref
-            .read(activeFanStateProvider(widget.fan.deviceId))
-            .lastWatts ?? 0;
+        final avgWatts = _segmentWattsCount > 0
+            ? (_segmentWattsSum / _segmentWattsCount).round()
+            : _lastKnownWatts;
+        final avgRpm = _segmentRpmCount > 0
+            ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
         try {
           _usageLogRepo.addLog(UsageLog(
-            deviceId:    widget.fan.deviceId,
-            startTime:   start,
+            deviceId:     widget.fan.deviceId,
+            startTime:    start,
             durationSecs: secs,
-            gear:        _segmentGear,
-            watts:       watts,
-            mode:        _segmentMode,
+            gear:         _segmentGear,
+            watts:        avgWatts,
+            rpm:          avgRpm,
+            mode:         _segmentMode,
           ));
         } on Object catch (_) {
           // Store teardown or disk-full; segment is lost but app must not crash.
         }
       }
     }
+    // Reset accumulators for the new segment.
+    _segmentWattsSum   = 0;
+    _segmentWattsCount = 0;
+    _segmentRpmSum     = 0;
+    _segmentRpmCount   = 0;
     _segmentStart = DateTime.now();
     _segmentGear  = newGear;
     _segmentMode  = newMode;
@@ -847,6 +870,22 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final fan      = widget.fan;
     final enabled  = widget.controlsEnabled;
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
+
+    // Accumulate every BLE poll response that arrives while a segment is open.
+    // ref.listen fires on state changes (3 s poll cadence) — no side-effect risk.
+    ref.listen(activeFanStateProvider(fan.deviceId), (_, next) {
+      if (_segmentGear > 0) {
+        if (next.lastWatts != null && next.lastWatts! > 0) {
+          _segmentWattsSum   += next.lastWatts!;
+          _segmentWattsCount++;
+          _lastKnownWatts = next.lastWatts!;
+        }
+        if (next.lastRpm != null && next.lastRpm! > 0) {
+          _segmentRpmSum   += next.lastRpm!;
+          _segmentRpmCount++;
+        }
+      }
+    });
 
     // Custom (non-built-in) controls declared in appliances.yaml for this type.
     // _applianceType is cached in initState — fan.model is immutable.
