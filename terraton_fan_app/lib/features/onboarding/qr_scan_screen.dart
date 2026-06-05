@@ -181,10 +181,12 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 
   @override
   Widget build(BuildContext context) {
-    final mq          = MediaQuery.of(context);
-    final screenSize  = mq.size;
-    final topPad      = mq.padding.top;
-    final bottomPad   = mq.padding.bottom;
+    // Use the granular selectors so this only rebuilds on size/padding changes,
+    // not on every MediaQuery change (text scale, brightness, etc.).
+    final screenSize  = MediaQuery.sizeOf(context);
+    final padding     = MediaQuery.paddingOf(context);
+    final topPad      = padding.top;
+    final bottomPad   = padding.bottom;
 
     // Frame sits centered in the space between the top bar and the bottom panel.
     const topBarH      = 64.0;

@@ -13,6 +13,7 @@
 
 const MAX_BODY_BYTES    = 10_000; // 10 KB per payload — generous for the schema
 const RATE_LIMIT        = 20;     // max uploads per IP per window
+const PING_RATE_LIMIT   = 60;     // max pings per IP per window (one per launch)
 const RATE_WINDOW_SECS  = 3_600;  // 1-hour rolling window
 
 export default {
@@ -35,6 +36,17 @@ export default {
 // KV value: { first_seen, last_seen, app_version, ping_count }
 
 async function handlePing(request, env) {
+  // IP rate limit — /ping is unauthenticated, so without this an attacker could
+  // spam arbitrary device_hash values and amplify KV writes (storage + billing).
+  const ip    = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const rlKey = `rlp:${ip}`;
+  const prev  = await env.RATE_LIMIT_KV.get(rlKey);
+  const count = prev ? parseInt(prev, 10) : 0;
+  if (count >= PING_RATE_LIMIT) return reply(429, 'Too many requests');
+  await env.RATE_LIMIT_KV.put(rlKey, String(count + 1), {
+    expirationTtl: RATE_WINDOW_SECS,
+  });
+
   let body;
   try {
     body = await request.json();

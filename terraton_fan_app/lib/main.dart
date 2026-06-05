@@ -62,10 +62,20 @@ Future<void> main() async {
   // system dialog over a blank screen, violating Android UX guidelines.
   await _ensureBluetoothOn();
 
+  // Bound ObjectBox growth: drop usage logs older than a year. A full year
+  // covers every analytics window (Day/Week/Month) and the rolling-30-day kWh
+  // estimate, while uploads happen next-day so nothing un-uploaded is lost.
+  final usageLogRepo = UsageLogRepositoryImpl(store);
+  try {
+    usageLogRepo.pruneBefore(DateTime.now().subtract(const Duration(days: 365)));
+  } on Object catch (_) {
+    // Prune is best-effort housekeeping; never block startup on it.
+  }
+
   // Fire-and-forget — anonymous heartbeat; tells Cloudflare this device is active.
   unawaited(DevicePingService.ping());
   // Fire-and-forget — uploads previous days' summaries if user opted in + Wi-Fi.
-  unawaited(DataUploadService.tryUpload(UsageLogRepositoryImpl(store)));
+  unawaited(DataUploadService.tryUpload(usageLogRepo));
 
   runApp(const ProviderScope(child: TerratorApp()));
 }

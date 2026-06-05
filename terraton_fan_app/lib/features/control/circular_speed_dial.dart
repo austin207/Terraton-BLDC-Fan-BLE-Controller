@@ -386,8 +386,6 @@ class _CenterReadout extends StatelessWidget {
     required this.enabled,
   });
 
-  static const _kNatureGreen = Color(0xFF22C55E);
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -403,7 +401,7 @@ class _CenterReadout extends StatelessWidget {
           Image.asset(
             'assets/icons/nature_plant.png',
             width: 60, height: 60,
-            color: _kNatureGreen,
+            color: kNatureGreen,
             colorBlendMode: BlendMode.srcIn,
           ),
         ] else if (boost) ...[

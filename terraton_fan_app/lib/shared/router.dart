@@ -45,10 +45,13 @@ final appRouter = GoRouter(
             : null,
       ),
     ),
-    // Legacy /fan-types path — redirects to /appliance-types keeping any extra.
+    // Legacy /fan-types path — redirects to /appliance-types. Note: a string
+    // redirect cannot carry GoRouter `extra`, so the category falls back to null
+    // (ApplianceTypesScreen handles a null category gracefully). Callers that
+    // need a specific category must push /appliance-types directly with `extra`.
     GoRoute(
       path: AppRoutes.fanTypes,
-      redirect: (_, state) => AppRoutes.applianceTypes,
+      redirect: (_, __) => AppRoutes.applianceTypes,
     ),
     GoRoute(
       path: AppRoutes.fans,

@@ -1106,7 +1106,7 @@ class _BluetoothIndicatorState extends State<_BluetoothIndicator>
           Icons.bluetooth_rounded,
           size: 20,
           color: widget.isConnected
-              ? Color.lerp(const Color(0xFF409CFF), const Color(0x1A409CFF), _blinkCtrl.value)!
+              ? Color.lerp(kBluetoothBlue, kBluetoothBlueFaint, _blinkCtrl.value)!
               : widget.isConnecting
                   ? kYellowSoft
                   : kTextMut,
@@ -1169,18 +1169,18 @@ class _PowerButton extends StatelessWidget {
     } else if (isPowered) {
       rim       = kPowerOn;
       iconColor = kPowerOn;
-      bgColor   = const Color(0x1A3FD37A);
+      bgColor   = kPowerOnFill;
       shadows   = const [
-        BoxShadow(color: Color(0x8C3FD37A), blurRadius: 14),
-        BoxShadow(color: Color(0x4D3FD37A), blurRadius: 28),
+        BoxShadow(color: kPowerOnGlow1, blurRadius: 14),
+        BoxShadow(color: kPowerOnGlow2, blurRadius: 28),
       ];
     } else {
       rim       = kPowerOff;
       iconColor = kPowerOff;
-      bgColor   = const Color(0x14E5484D);
+      bgColor   = kPowerOffFill;
       shadows   = const [
-        BoxShadow(color: Color(0x4DE5484D), blurRadius: 10),
-        BoxShadow(color: Color(0x26E5484D), blurRadius: 22),
+        BoxShadow(color: kPowerOffGlow1, blurRadius: 10),
+        BoxShadow(color: kPowerOffGlow2, blurRadius: 22),
       ];
     }
 

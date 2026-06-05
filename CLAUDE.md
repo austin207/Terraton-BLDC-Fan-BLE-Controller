@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Product Overview
 
-Android Flutter app that controls a Terraton BLDC ceiling fan over BLE v5.2 via an Amp'ed RF BLE60 module. Fully offline — no backend, no cloud, no HTTP in Phase 1.
+Android Flutter app that controls a Terraton BLDC ceiling fan over BLE v5.2 via an Amp'ed RF BLE60 module. Fan control is fully offline over BLE — no network is required to operate a fan. The only HTTP calls are to a Cloudflare Worker and are non-essential: an anonymous launch ping, an opt-in once-per-day usage upload (Wi-Fi only), and the OTA update check.
 
 ```text
 Flutter App --BLE v5.2--> BLE60 Module --UART1--> Fan MCU --> BLDC Motor
@@ -261,7 +261,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 - ObjectBox only for fan data (no Hive, no Isar, no SharedPreferences)
 - Android only — no iOS build
 - Single active BLE connection — one fan at a time
-- No backend, no HTTP — Phase 1 is fully offline
+- Fan control is fully offline over BLE — never gate fan operation on network. The only HTTP is the anonymous launch ping (`DevicePingService`), the opt-in daily usage upload (`DataUploadService`, Wi-Fi only), and the OTA update check (`AppUpdateService`) — all to a Cloudflare Worker, all non-essential
 - Design tokens (`kYellow`, `kBg`, `kCard`, `kText`, etc.) from `lib/shared/theme.dart` — no hardcoded hex colours in widget files
 
 ---
