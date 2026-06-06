@@ -219,7 +219,7 @@ class _TempBtn extends StatelessWidget {
             color: isActive ? color : kCardElev,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isActive ? color.withAlpha(200) : const Color(0xFF2A2A2A),
+              color: isActive ? color.withAlpha(200) : kLightSwatchOff,
             ),
             boxShadow: isActive
                 ? [BoxShadow(color: color.withAlpha(136), blurRadius: 20, spreadRadius: -4)]

@@ -102,14 +102,28 @@ abstract final class DataUploadService {
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return null;
-      final body  = jsonDecode(res.body) as Map<String, dynamic>;
-      final daily = body['daily'] as Map<String, dynamic>;
-      final maxList = daily['temperature_2m_max'] as List;
-      if (maxList.isEmpty) return null;
+      // Validate each shape before reading — a malformed response would otherwise
+      // throw a TypeError (an Error, not an Exception) that `on Exception` misses.
+      final body = jsonDecode(res.body);
+      if (body is! Map<String, dynamic>) return null;
+      final daily = body['daily'];
+      if (daily is! Map<String, dynamic>) return null;
+      final maxList = daily['temperature_2m_max'];
+      final minList = daily['temperature_2m_min'];
+      final humList = daily['relative_humidity_2m_mean'];
+      if (maxList is! List || maxList.isEmpty ||
+          minList is! List || minList.isEmpty ||
+          humList is! List || humList.isEmpty) {
+        return null;
+      }
+      final tMax = maxList.first;
+      final tMin = minList.first;
+      final hum  = humList.first;
+      if (tMax is! num || tMin is! num || hum is! num) return null;
       return _WeatherData(
-        tempMax:  (maxList.first as num).toDouble(),
-        tempMin:  ((daily['temperature_2m_min']           as List).first as num).toDouble(),
-        humidity: ((daily['relative_humidity_2m_mean']    as List).first as num).toDouble(),
+        tempMax:  tMax.toDouble(),
+        tempMin:  tMin.toDouble(),
+        humidity: hum.toDouble(),
       );
     } on Exception {
       return null;

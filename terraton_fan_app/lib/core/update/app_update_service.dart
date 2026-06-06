@@ -53,9 +53,20 @@ abstract final class AppUpdateService {
             bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
         ? bytes.sublist(3)
         : bytes;
-    final body        = jsonDecode(utf8.decode(trimmed)) as Map<String, dynamic>;
-    final remoteBuild = (body['build_number'] as num).toInt();
-    final remoteVersion = body['version'] as String;
+    // Validate the decoded shape before casting — a malformed version.json would
+    // otherwise throw a TypeError, which `on Exception` in checkForUpdate does
+    // NOT catch (TypeError is an Error, not an Exception).
+    final decoded = jsonDecode(utf8.decode(trimmed));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('version.json is not a JSON object');
+    }
+    final remoteBuildRaw   = decoded['build_number'];
+    final remoteVersionRaw = decoded['version'];
+    if (remoteBuildRaw is! num || remoteVersionRaw is! String) {
+      throw const FormatException('version.json missing build_number/version');
+    }
+    final remoteBuild   = remoteBuildRaw.toInt();
+    final remoteVersion = remoteVersionRaw;
 
     if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
     return remoteBuild > localBuild

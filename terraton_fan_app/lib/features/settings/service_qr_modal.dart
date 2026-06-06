@@ -92,24 +92,30 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
       onTap: () => Navigator.of(context).pop(),
       child: Material(
         color: Colors.transparent,
-        child: Center(
-          child: GestureDetector(
-            onTap: () {},
-            child: Container(
-              margin: const EdgeInsets.all(22),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [kCardElev, kSurface],
+        // SafeArea + scroll so a tall card never overflows the screen edges on
+        // shorter phones; it stays centred when it fits.
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              child: GestureDetector(
+                onTap: () {},
+                child: Container(
+                  margin: const EdgeInsets.all(22),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      colors: [kCardElev, kSurface],
+                    ),
+                    borderRadius: BorderRadius.circular(26),
+                    border: Border.all(color: kHairlineStrong),
+                    boxShadow: const [BoxShadow(color: kModalShadow, blurRadius: 80)],
+                  ),
+                  child: _selectedFan == null
+                      ? _buildFanPicker()
+                      : _buildQrView(),
                 ),
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(color: kHairlineStrong),
-                boxShadow: const [BoxShadow(color: kModalShadow, blurRadius: 80)],
               ),
-              child: _selectedFan == null
-                  ? _buildFanPicker()
-                  : _buildQrView(),
             ),
           ),
         ),

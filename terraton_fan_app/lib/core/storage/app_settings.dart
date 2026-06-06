@@ -16,7 +16,10 @@ abstract final class AppSettings {
     try {
       final f = await _file();
       if (!await f.exists()) return {};
-      return jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      // Type-check before casting: a corrupted file that decodes to non-object
+      // JSON would otherwise throw a TypeError (an Error) past `on Exception`.
+      final decoded = jsonDecode(await f.readAsString());
+      return decoded is Map<String, dynamic> ? decoded : {};
     } on Exception {
       return {};
     }

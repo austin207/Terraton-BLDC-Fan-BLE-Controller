@@ -253,14 +253,14 @@ class _DialPainter extends CustomPainter {
       Paint()
         ..shader = const RadialGradient(
           center: Alignment(0, -0.4),
-          colors: [Color(0xFF1F1F1F), Color(0xFF0A0A0A)],
+          colors: [kDialCoreTop, kDialCoreBot],
         ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r - 16))
         ..style = PaintingStyle.fill,
     );
     canvas.drawCircle(
       Offset(cx, cy), r - 16,
       Paint()
-        ..color = const Color(0x0AFFFFFF)
+        ..color = kGridLine
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
@@ -316,7 +316,7 @@ class _DialPainter extends CustomPainter {
       // Tick (short radial mark inside ring)
       final tickOuter = _polar(cx, cy, r - 10, ang);
       final tickInner = _polar(cx, cy, r - 18, ang);
-      final tickColor = st == _DotState.selected ? kYellow : const Color(0x38FFFFFF);
+      final tickColor = st == _DotState.selected ? kYellow : kDialTick;
       canvas.drawLine(
         tickInner, tickOuter,
         Paint()
@@ -328,7 +328,7 @@ class _DialPainter extends CustomPainter {
       // Dot on the ring — selected: bright yellow glow; off: dark fill covers arc
       final dotPos = _polar(cx, cy, r, ang);
       final dotFill   = st == _DotState.selected ? kYellow : kCardElev;
-      final dotStroke = st == _DotState.selected ? kYellow : const Color(0x38FFFFFF);
+      final dotStroke = st == _DotState.selected ? kYellow : kDialTick;
 
       // Bloom/glow for selected dot
       if (st == _DotState.selected) {

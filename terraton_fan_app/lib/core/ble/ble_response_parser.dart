@@ -1,6 +1,8 @@
 // lib/core/ble/ble_response_parser.dart
-// All protocol byte constants (header, packet IDs, command bytes) are read from
-// assets/commands.yaml via CommandLoader — no values hardcoded here.
+// All protocol byte constants (frame header, packet IDs, command bytes) are read
+// from assets/commands.yaml via CommandLoader. The only literals here are the
+// mode-byte → name mappings in parseModeString (response data semantics, not
+// command bytes), kept inline because they're the inverse of modes.actions.
 
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 

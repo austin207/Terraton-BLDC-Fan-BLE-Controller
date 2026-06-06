@@ -1,16 +1,19 @@
 # terraton_fan_app
 
-A new Flutter project.
+Flutter application package for the Terraton BLDC Fan BLE Controller.
 
-## Getting Started
+This is the app module. For project overview, architecture, BLE protocol, build
+instructions, and test coverage, see the documentation at the repository root:
 
-This project is a starting point for a Flutter application.
+- [Root README](../README.md)
+- [docs/](../docs/) — architecture, BLE protocol, build & release, testing, structure, features
 
-A few resources to get you started if this is your first Flutter project:
+## Common commands
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```powershell
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter run
+flutter analyze --no-fatal-infos
+flutter test
+```

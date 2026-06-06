@@ -84,7 +84,15 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     if (raw == null) return;
 
     try {
-      final json = jsonDecode(raw) as Map<String, dynamic>;
+      // Untrusted external input — validate the decoded TYPE before casting.
+      // Valid-but-non-object JSON (e.g. "[1,2]", "5", "\"x\"") decodes without a
+      // FormatException, so `as Map` would throw an uncaught TypeError.
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        _showInvalidSnack();
+        return;
+      }
+      final json = decoded;
 
       // ── Service access token ──────────────────────────────────────────────
       if (json['type'] == 'service_access') {

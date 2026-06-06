@@ -199,4 +199,38 @@ void main() {
       expect(find.text('UNITS USED'),  findsOneWidget);
     });
   });
+
+  group('AnalyticsScreen — month range dropdown', () {
+    testWidgets('dropdown is hidden on Day/Week and shown on Month', (tester) async {
+      await tester.pumpWidget(_buildScreen());
+      await tester.pumpAndSettle();
+
+      // Default range is Week — no month-range pill.
+      expect(find.text('1 Month'), findsNothing);
+
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+
+      // Compact pill defaults to "1 Month".
+      expect(find.text('1 Month'), findsOneWidget);
+    });
+
+    testWidgets('selecting "3 Months" updates the pill without crashing',
+        (tester) async {
+      await tester.pumpWidget(_buildScreen());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Month'));
+      await tester.pumpAndSettle();
+
+      // Open the dropdown menu and pick 3 Months.
+      await tester.tap(find.byType(DropdownButton<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('3 Months').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('3 Months'), findsOneWidget);
+      expect(find.text('1 Month'), findsNothing);
+    });
+  });
 }

@@ -48,6 +48,12 @@ abstract class BleService {
   String?                        get connectedMacAddress;
 }
 
+// CATCH CONVENTION: methods here use `on Object catch` (not `on Exception`) at
+// every flutter_blue_plus / platform-channel boundary on purpose. A flaky BLE
+// stack can surface platform errors of any type, and a fan must never crash the
+// app because the radio hiccuped — connection failures are reported through
+// connectionStateStream + connectStatus instead. Genuine programming bugs are
+// still backstopped by the global handlers in main.dart.
 class BleServiceImpl implements BleService {
   BluetoothDevice?          _device;
   BluetoothCharacteristic?  _writeChar;

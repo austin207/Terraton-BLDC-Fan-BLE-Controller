@@ -1165,8 +1165,8 @@ class _PowerButton extends StatelessWidget {
     final List<BoxShadow> shadows;
 
     if (!isConnected) {
-      rim       = const Color(0x47FFFFFF);
-      iconColor = const Color(0x8CFFFFFF);
+      rim       = kDisabledRim;
+      iconColor = kDisabledIcon;
       bgColor   = kCard;
       shadows   = const [BoxShadow(color: kHairline, blurRadius: 8)];
     } else if (isPowered) {
@@ -1241,7 +1241,7 @@ class _DisconnectAlertOverlay extends StatelessWidget {
                 color: kSurface,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: kHairlineStrong),
-                boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 80)],
+                boxShadow: const [BoxShadow(color: kModalShadowSoft, blurRadius: 80)],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

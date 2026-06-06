@@ -231,7 +231,9 @@ class SettingsScreen extends ConsumerWidget {
   void _showServiceQr(BuildContext context, List<FanDevice> fans) {
     unawaited(showDialog<void>(
       context: context,
-      barrierColor: Colors.black.withAlpha(168),
+      // Near-opaque scrim — the tall QR card otherwise lets the bright settings
+      // content bleed through above and below it.
+      barrierColor: Colors.black.withAlpha(235),
       builder: (_) => ServiceQrModal(fans: fans),
     ));
   }

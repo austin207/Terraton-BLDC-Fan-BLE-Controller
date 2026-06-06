@@ -43,7 +43,23 @@ const kYellowFaint = Color(0x03FFEC00); // 1 % yellow — gradient terminal fade
 const kYellowDim   = Color(0x0FFFEC00); // 6 % yellow — spread shadow tint
 
 // ── Overlay ───────────────────────────────────────────────────────────────────
-const kModalShadow = Color(0xB3000000); // 70 % black — modal drop shadow
+const kModalShadow     = Color(0xB3000000); // 70 % black — modal drop shadow
+const kModalShadowSoft = Color(0x99000000); // 60 % black — lighter modal drop shadow
+
+// ── Neutral white overlays (chart / dial accents) ─────────────────────────────
+const kGridLine = Color(0x0AFFFFFF); //  4 % white — chart gridlines / dial track
+const kDialTick = Color(0x38FFFFFF); // 22 % white — unselected dial ticks & dots
+
+// ── Speed dial core gradient ──────────────────────────────────────────────────
+const kDialCoreTop = Color(0xFF1F1F1F);
+const kDialCoreBot = Color(0xFF0A0A0A);
+
+// ── Disabled control affordances ──────────────────────────────────────────────
+const kDisabledRim  = Color(0x47FFFFFF); // 28 % white — disabled power-button rim
+const kDisabledIcon = Color(0x8CFFFFFF); // 55 % white — disabled icon glyph
+
+// ── Lighting colour swatch ────────────────────────────────────────────────────
+const kLightSwatchOff = Color(0xFF2A2A2A); // inactive lighting colour swatch
 
 // ── Comparison arrows (analytics — lower energy is better) ───────────────────
 const kCompareGood = Color(0xFF22C55E); // green — lower vs previous period
