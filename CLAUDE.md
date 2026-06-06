@@ -224,7 +224,7 @@ Polls every 3 seconds after connect via a single `statusPoll()` frame (non-stand
 - `0x23` → watts
 - `0x24` → RPM
 
-Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** always 2 frames — `0x23` watts + `0x24` RPM. Power state (`0x02`) and speed (`0x04`) are NOT included in poll responses (firmware limitation; firmware developer has been notified). Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** normally 2 frames — `0x23` watts + `0x24` RPM. **Exception:** the very first status poll after the fan is connected to mains power AND turned on via the app returns **4 frames** — `0x02` (power state), `0x04` (speed), `0x23` (watts), `0x24` (RPM) — so the fan can restore any state that reset during the power-off period. Subsequent polls in the same session return 2 frames. The response handler in `_subscribeNotify` already dispatches all four frame types; no special casing needed. Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
 
 ### App lifecycle: disconnect on background, reconnect on resume (`control_screen.dart`)
 

@@ -273,9 +273,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _lastRpmAt = null;
       }
 
-      // Poll regardless of power state — fan always returns 2 frames (watts + RPM).
-      // Power state and speed are not included in poll responses (firmware limitation;
-      // firmware developer has been notified to add them).
+      // Normally returns 2 frames (0x23 watts + 0x24 RPM).
+      // Exception: the FIRST poll after the fan is freshly powered on returns 4 frames —
+      // 0x02 (power), 0x04 (speed), 0x23 (watts), 0x24 (RPM) — so the fan can restore
+      // state that may reset when disconnected from mains. _subscribeNotify dispatches
+      // all four frame types; no special casing needed here.
       try {
         await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;
@@ -878,11 +880,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
     // Accumulate every BLE poll response that arrives while a segment is open.
-    // ref.listen fires on state changes — no side-effect risk. NOTE: one poll
-    // cycle delivers two frames (0x23 watts, then 0x24 RPM) as two separate
-    // notifier mutations, so this fires ~twice per 3 s cadence and each reading
-    // is counted ~twice. The average is unaffected (sum and count inflate
-    // symmetrically); only treat _segment*Count as a weight, never as a poll
+    // ref.listen fires on state changes — no side-effect risk. NOTE: normal polls
+    // deliver two frames (0x23 watts, 0x24 RPM) as separate notifier mutations,
+    // so this fires ~twice per 3 s cadence. The first poll after a fresh power-on
+    // delivers four frames and fires up to four times; the average is still
+    // unaffected (sum and count inflate symmetrically). Only treat _segment*Count
+    // as a weight, never as a poll
     // count.
     ref.listen(activeFanStateProvider(fan.deviceId), (_, next) {
       if (_segmentGear > 0) {
