@@ -44,12 +44,6 @@ class CommandLoader {
     return _toIntList(p['header']) ?? const [0x55, 0xAA];
   }
 
-  /// Packet ID that identifies a request frame (0x06).
-  static int get requestPacketId {
-    final p = _safeGet(['protocol']);
-    return (p?['request_packet_id'] as int?) ?? 0x06;
-  }
-
   /// Packet ID that identifies a response frame (0x07).
   static int get responsePacketId {
     final p = _safeGet(['protocol']);
