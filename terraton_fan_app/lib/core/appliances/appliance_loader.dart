@@ -13,6 +13,7 @@
 import 'package:flutter/services.dart';
 import 'package:yaml/yaml.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
+import 'package:terraton_fan_app/shared/app_config.dart';
 
 abstract final class ApplianceLoader {
   static List<ApplianceCategory> _categories = const [];
@@ -24,11 +25,14 @@ abstract final class ApplianceLoader {
   static List<ApplianceType> get allTypes =>
       [for (final c in _categories) ...c.types];
 
-  /// Loads and parses `assets/appliances.yaml`.
+  /// Loads and parses the appropriate appliances YAML for the current variant.
   /// Must be called (and awaited) in `main()` before `runApp()`.
   static Future<void> load() async {
     if (_categories.isNotEmpty) return; // idempotent — no-op on repeat calls
-    final raw = await rootBundle.loadString('assets/appliances.yaml');
+    final asset = kIsClientVariant
+        ? 'assets/appliances_client.yaml'
+        : 'assets/appliances.yaml';
+    final raw = await rootBundle.loadString(asset);
     final doc = loadYaml(raw) as YamlMap;
     _categories = (doc['appliances'] as YamlList)
         .cast<YamlMap>()

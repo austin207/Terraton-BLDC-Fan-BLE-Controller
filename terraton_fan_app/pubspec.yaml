@@ -65,6 +65,7 @@ flutter:
   assets:
     - assets/commands.yaml
     - assets/appliances.yaml
+    - assets/appliances_client.yaml
     - assets/icon/
     - assets/icons/
     - assets/logos/

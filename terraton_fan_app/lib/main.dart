@@ -16,6 +16,7 @@ import 'package:terraton_fan_app/features/control/control_registry.dart';
 import 'package:terraton_fan_app/features/control/water_filtration_control.dart';
 import 'package:terraton_fan_app/features/control/air_purification_control.dart';
 import 'package:terraton_fan_app/features/control/energy_storage_control.dart';
+import 'package:terraton_fan_app/shared/app_config.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/app.dart';
 
@@ -50,11 +51,13 @@ Future<void> main() async {
   await CommandLoader.load();
   await ApplianceLoader.load();
 
-  // Register non-fan appliance control widgets.
-  // Each string must match a control type declared in appliances.yaml.
-  ControlRegistry.register('water_quality',  buildWaterFiltrationControl);
-  ControlRegistry.register('air_quality',    buildAirPurificationControl);
-  ControlRegistry.register('energy_metrics', buildEnergyStorageControl);
+  // Register non-fan appliance control widgets (tester variant only).
+  // Skipped for client variant — those categories are not in appliances_client.yaml.
+  if (!kIsClientVariant) {
+    ControlRegistry.register('water_quality',  buildWaterFiltrationControl);
+    ControlRegistry.register('air_quality',    buildAirPurificationControl);
+    ControlRegistry.register('energy_metrics', buildEnergyStorageControl);
+  }
 
   await initObjectBox();
   // Permissions are requested contextually by BlePermissionScreen after the

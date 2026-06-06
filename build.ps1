@@ -43,6 +43,19 @@ Write-Host ""
 $bumpChoice = Read-Host "Bump type [P/N/J/S]"
 if ([string]::IsNullOrEmpty($bumpChoice)) { $bumpChoice = 'P' }
 
+# ── Variant selection ────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "Which variant(s) to build?" -ForegroundColor Yellow
+Write-Host "  [T]ester  — all features + OTA updates (for your client's testing)" -ForegroundColor DarkGray
+Write-Host "  [C]lient  — fans only, no OTA updates  (for end users)"             -ForegroundColor DarkGray
+Write-Host "  [B]oth    — build Tester and Client     (default)"                  -ForegroundColor DarkGray
+Write-Host ""
+$variantChoice = Read-Host "Variant [T/C/B]"
+if ([string]::IsNullOrEmpty($variantChoice)) { $variantChoice = 'B' }
+$variantChoice = $variantChoice.Trim().ToUpper()
+$buildTester = $variantChoice -eq 'T' -or $variantChoice -eq 'B'
+$buildClient = $variantChoice -eq 'C' -or $variantChoice -eq 'B'
+
 switch ($bumpChoice.Trim().ToUpper()) {
     'P' { $vPat++;                          $vBld++ }
     'N' { $vMin++; $vPat = 0;              $vBld++ }
@@ -118,76 +131,92 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "All tests passed." -ForegroundColor Green
 
-# ── 4. Build (split per ABI — ~20 MB each instead of ~80 MB fat APK) ─────────
-Write-Host "Building Terraton Fan APKs (split-per-abi)..." -ForegroundColor Cyan
+# ── 4. Build variant(s) (split per ABI — ~20 MB each instead of ~80 MB fat APK)
+$ApkDir = Join-Path $AppDir "build\app\outputs\flutter-apk"
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
-flutter build apk --release --split-per-abi `
-    --dart-define="UPLOAD_API_KEY=$UploadApiKey"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Build failed." -ForegroundColor Red
-    exit 1
-}
-
-# arm64-v8a covers all modern Android phones and is the primary download.
-# arm7 and x86_64 are also uploaded for older devices and emulators.
-$ApkDir  = Join-Path $AppDir "build\app\outputs\flutter-apk"
-$Arm64   = Join-Path $ApkDir "app-arm64-v8a-release.apk"
-$Arm7    = Join-Path $ApkDir "app-armeabi-v7a-release.apk"
-$X86     = Join-Path $ApkDir "app-x86_64-release.apk"
-
-if (-not (Test-Path $Arm64)) {
-    Write-Host "arm64 APK not found at: $Arm64" -ForegroundColor Red
-    exit 1
-}
-
-# ── 5. Save timestamped copies locally + write release assets ────────────────
-$Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
-$Arm64Name  = "terraton-fan-arm64-$Timestamp.apk"
-$Arm7Name   = "terraton-fan-arm7-$Timestamp.apk"
-$X86Name    = "terraton-fan-x86_64-$Timestamp.apk"
-$Arm64Local = Join-Path $BuildsDir $Arm64Name
-$Arm7Local  = Join-Path $BuildsDir $Arm7Name
-$X86Local   = Join-Path $BuildsDir $X86Name
-
-Copy-Item $Arm64 $Arm64Local
-Write-Host "Saved arm64 : $Arm64Local" -ForegroundColor Green
-if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Local;  Write-Host "Saved arm7  : $Arm7Local"  -ForegroundColor Green }
-if (Test-Path $X86)   { Copy-Item $X86  $X86Local;   Write-Host "Saved x86_64: $X86Local"   -ForegroundColor Green }
-
-# Fixed-name copies for stable OTA download URLs (app_update_service.dart expects these names)
+# These fixed-name copies are what GitHub Releases serves for OTA downloads.
+# Only the tester variant uses them; client variant doesn't do OTA.
 $Arm64Release = Join-Path $BuildsDir "terraton-fan-arm64.apk"
 $Arm7Release  = Join-Path $BuildsDir "terraton-fan-arm7.apk"
 $X86Release   = Join-Path $BuildsDir "terraton-fan-x86_64.apk"
-Copy-Item $Arm64 $Arm64Release
-if (Test-Path $Arm7)  { Copy-Item $Arm7 $Arm7Release  }
-if (Test-Path $X86)   { Copy-Item $X86  $X86Release   }
 
-# Write version.json for OTA version check (version already set by bump prompt)
-# IMPORTANT: use WriteAllText with UTF8Encoding(false) — Set-Content -Encoding utf8 in
-# PowerShell 5.1 adds a BOM which breaks jsonDecode() in the app.
-$VersionJsonPath = Join-Path $BuildsDir "version.json"
-$versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}"
-[System.IO.File]::WriteAllText($VersionJsonPath, $versionJsonContent, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
+if ($buildTester) {
+    Write-Host ""
+    Write-Host "Building TESTER variant (all features + OTA)..." -ForegroundColor Cyan
+    flutter build apk --release --split-per-abi `
+        --dart-define="UPLOAD_API_KEY=$UploadApiKey" `
+        --dart-define="APP_VARIANT=tester"
+    if ($LASTEXITCODE -ne 0) { Write-Host "Tester build failed." -ForegroundColor Red; exit 1 }
 
-# ── 6. Publish to GitHub Releases (tag: latest) ───────────────────────────────
-Write-Host ""
-Write-Host "Publishing to GitHub Releases..." -ForegroundColor Cyan
-Set-Location $ProjectRoot
+    $Arm64 = Join-Path $ApkDir "app-arm64-v8a-release.apk"
+    $Arm7  = Join-Path $ApkDir "app-armeabi-v7a-release.apk"
+    $X86   = Join-Path $ApkDir "app-x86_64-release.apk"
+    if (-not (Test-Path $Arm64)) { Write-Host "arm64 APK not found at: $Arm64" -ForegroundColor Red; exit 1 }
 
-# Delete existing 'latest' release and tag so we can replace it cleanly
-gh release delete $ReleaseTag --repo $Repo --yes 2>$null
-git tag -d $ReleaseTag 2>$null
-git push origin --delete $ReleaseTag 2>$null
+    Copy-Item $Arm64 (Join-Path $BuildsDir "terraton-tester-arm64-$Timestamp.apk")
+    Write-Host "Saved tester arm64" -ForegroundColor Green
+    if (Test-Path $Arm7) { Copy-Item $Arm7 (Join-Path $BuildsDir "terraton-tester-arm7-$Timestamp.apk");  Write-Host "Saved tester arm7"   -ForegroundColor Green }
+    if (Test-Path $X86)  { Copy-Item $X86  (Join-Path $BuildsDir "terraton-tester-x86_64-$Timestamp.apk"); Write-Host "Saved tester x86_64" -ForegroundColor Green }
 
-# Collect release assets: fixed-name APKs + version.json (OTA update relies on these)
-$Assets = @($Arm64Release, $VersionJsonPath)
-if (Test-Path $Arm7Release) { $Assets += $Arm7Release }
-if (Test-Path $X86Release)  { $Assets += $X86Release  }
+    # Fixed-name copies for OTA download URLs (app_update_service.dart expects these).
+    Copy-Item $Arm64 $Arm64Release
+    if (Test-Path $Arm7) { Copy-Item $Arm7 $Arm7Release }
+    if (Test-Path $X86)  { Copy-Item $X86  $X86Release  }
+}
 
-$BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
-$Notes = @"
-**v$NewVersion** - built $BuildDate
+if ($buildClient) {
+    Write-Host ""
+    Write-Host "Building CLIENT variant (fans only, no OTA)..." -ForegroundColor Cyan
+    flutter build apk --release --split-per-abi `
+        --dart-define="UPLOAD_API_KEY=$UploadApiKey" `
+        --dart-define="APP_VARIANT=client"
+    if ($LASTEXITCODE -ne 0) { Write-Host "Client build failed." -ForegroundColor Red; exit 1 }
+
+    $Arm64 = Join-Path $ApkDir "app-arm64-v8a-release.apk"
+    $Arm7  = Join-Path $ApkDir "app-armeabi-v7a-release.apk"
+    $X86   = Join-Path $ApkDir "app-x86_64-release.apk"
+    if (-not (Test-Path $Arm64)) { Write-Host "arm64 APK not found at: $Arm64" -ForegroundColor Red; exit 1 }
+
+    Copy-Item $Arm64 (Join-Path $BuildsDir "terraton-client-arm64-$Timestamp.apk")
+    Write-Host "Saved client arm64" -ForegroundColor Green
+    if (Test-Path $Arm7) { Copy-Item $Arm7 (Join-Path $BuildsDir "terraton-client-arm7-$Timestamp.apk");  Write-Host "Saved client arm7"   -ForegroundColor Green }
+    if (Test-Path $X86)  { Copy-Item $X86  (Join-Path $BuildsDir "terraton-client-x86_64-$Timestamp.apk"); Write-Host "Saved client x86_64" -ForegroundColor Green }
+}
+
+if (-not $buildTester -and -not $buildClient) {
+    Write-Host "No variant selected — nothing to build." -ForegroundColor Yellow
+    exit 0
+}
+
+# ── 6. Publish tester variant to GitHub Releases (OTA update source) ──────────
+# Client variant is distributed directly (share the APK); it has no OTA check.
+if ($buildTester) {
+    # Write version.json for OTA version check.
+    # IMPORTANT: use WriteAllText with UTF8Encoding(false) — Set-Content -Encoding utf8 in
+    # PowerShell 5.1 adds a BOM which breaks jsonDecode() in the app.
+    $VersionJsonPath = Join-Path $BuildsDir "version.json"
+    $versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}"
+    [System.IO.File]::WriteAllText($VersionJsonPath, $versionJsonContent, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
+
+    Write-Host ""
+    Write-Host "Publishing TESTER variant to GitHub Releases..." -ForegroundColor Cyan
+    Set-Location $ProjectRoot
+
+    # Delete existing 'latest' release and tag so we can replace it cleanly
+    gh release delete $ReleaseTag --repo $Repo --yes 2>$null
+    git tag -d $ReleaseTag 2>$null
+    git push origin --delete $ReleaseTag 2>$null
+
+    # Collect release assets: fixed-name APKs + version.json (OTA update relies on these)
+    $Assets = @($Arm64Release, $VersionJsonPath)
+    if (Test-Path $Arm7Release) { $Assets += $Arm7Release }
+    if (Test-Path $X86Release)  { $Assets += $X86Release  }
+
+    $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $Notes = @"
+**v$NewVersion** - built $BuildDate  |  **Tester variant** (all features + OTA updates)
 
 Both QR scan and Bluetooth scan onboarding are included in every APK.
 
@@ -196,17 +225,24 @@ Both QR scan and Bluetooth scan onboarding are included in every APK.
 | terraton-fan-arm64.apk | arm64-v8a | All modern Android phones (recommended) |
 | terraton-fan-arm7.apk  | armeabi-v7a | Older 32-bit Android phones |
 | terraton-fan-x86_64.apk | x86_64 | Android emulators |
+
+> **Client variant** (fans only, no OTA) is built locally as `terraton-client-arm64-*.apk` in the `builds/` folder. Share it directly with end users.
 "@
 
-gh release create $ReleaseTag @Assets `
-    --repo $Repo `
-    --title "v$NewVersion ($BuildDate)" `
-    --notes $Notes `
-    --latest
+    gh release create $ReleaseTag @Assets `
+        --repo $Repo `
+        --title "v$NewVersion ($BuildDate) [tester]" `
+        --notes $Notes `
+        --latest
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "GitHub release upload failed." -ForegroundColor Red
-    exit 1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "GitHub release upload failed." -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host ""
+    Write-Host "Skipping GitHub release (tester variant not built)." -ForegroundColor DarkGray
+    Write-Host "Client APKs are in builds/ — share terraton-client-arm64-*.apk directly." -ForegroundColor Cyan
 }
 
 # ── 7. Commit & push the version bump ────────────────────────────────────────
@@ -237,4 +273,12 @@ if (Test-Path $odExe) {
 
 Write-Host ""
 Write-Host "Done!  v$NewVersion" -ForegroundColor Green
-Write-Host "Recommended download (arm64): https://github.com/$Repo/releases/latest/download/terraton-fan-arm64.apk" -ForegroundColor Cyan
+if ($buildTester) {
+    Write-Host "Tester APK (OTA-enabled):   https://github.com/$Repo/releases/latest/download/terraton-fan-arm64.apk" -ForegroundColor Cyan
+}
+if ($buildClient) {
+    $clientApk = Get-ChildItem (Join-Path $BuildsDir "terraton-client-arm64-*.apk") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($clientApk) {
+        Write-Host "Client APK (share directly): $($clientApk.FullName)" -ForegroundColor Cyan
+    }
+}

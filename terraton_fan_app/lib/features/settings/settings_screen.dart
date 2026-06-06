@@ -13,6 +13,7 @@ import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
 import 'package:terraton_fan_app/features/update/update_dialog.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/shared/app_config.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/features/settings/service_qr_modal.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
@@ -125,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
             divider: true,
           ),
-          const _UpdateCheckTile(divider: true),
+          if (!kIsClientVariant) const _UpdateCheckTile(divider: true),
           const _SettingRow(
             iconBg: kCardHi,
             iconColor: kText,

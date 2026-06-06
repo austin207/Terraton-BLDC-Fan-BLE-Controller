@@ -1,0 +1,70 @@
+# appliances_client.yaml — client-variant appliance config (fans only).
+#
+# This file is loaded instead of appliances.yaml when the app is built with
+# --dart-define=APP_VARIANT=client.
+#
+# Water filtration, air purification, and energy storage are intentionally
+# excluded — they are tester-only features until hardware is validated.
+
+version: 1
+
+appliances:
+
+  # ── Fans ────────────────────────────────────────────────────────────────────
+
+  - id: fans
+    displayName: Fans
+    pluralLabel: Fans
+    icon: assets/icons/Ceiling fan.png
+
+    types:
+
+      - id: ceiling_fan
+        displayName: Ceiling Fan
+        modelPrefix: CF
+        icon: assets/icons/Ceiling fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+          - lighting
+
+      - id: table_fan
+        displayName: Table Fan
+        modelPrefix: TF
+        icon: assets/icons/Table fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: pedestal_fan
+        displayName: Pedestal Fan
+        modelPrefix: PF
+        icon: assets/icons/Pedestal fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: wall_fan
+        displayName: Wall Fan
+        modelPrefix: WF
+        icon: assets/icons/Wall fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - mode
+          - timer
+
+      - id: exhaust_fan
+        displayName: Exhaust Fan
+        modelPrefix: EF
+        icon: assets/icons/Exhaust fan.png
+        modelCount: 21
+        controls:
+          - speed
+          - timer

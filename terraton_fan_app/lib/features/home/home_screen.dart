@@ -11,6 +11,7 @@ import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
 import 'package:terraton_fan_app/features/settings/settings_screen.dart';
 import 'package:terraton_fan_app/features/update/update_dialog.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
+import 'package:terraton_fan_app/shared/app_config.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -28,10 +29,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Check for OTA update once when the home shell is first mounted.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => unawaited(_checkForUpdate()),
-    );
+    // OTA update check — tester variant only; client variant ships without updates.
+    if (!kIsClientVariant) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_checkForUpdate()),
+      );
+    }
   }
 
   Future<void> _checkForUpdate() async {
