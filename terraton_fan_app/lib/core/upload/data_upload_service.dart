@@ -1,6 +1,7 @@
 // lib/core/upload/data_upload_service.dart
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
@@ -91,22 +92,16 @@ abstract final class DataUploadService {
 
   // ── Weather ───────────────────────────────────────────────────────────────────
 
-  static Future<_WeatherData?> _fetchWeather(String dateStr) async {
+  /// Parses an Open-Meteo daily-forecast JSON response body.
+  ///
+  /// Returns a `{'tempMax', 'tempMin', 'humidity'}` map on success, or null for
+  /// any malformed/missing field.  Exposed for unit testing.
+  @visibleForTesting
+  static Map<String, double>? parseWeatherBody(String body) {
     try {
-      final uri = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$_lat&longitude=$_lon'
-        '&daily=temperature_2m_max,temperature_2m_min,relative_humidity_2m_mean'
-        '&start_date=$dateStr&end_date=$dateStr'
-        '&timezone=Asia%2FKolkata',
-      );
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
-      if (res.statusCode != 200) return null;
-      // Validate each shape before reading — a malformed response would otherwise
-      // throw a TypeError (an Error, not an Exception) that `on Exception` misses.
-      final body = jsonDecode(res.body);
-      if (body is! Map<String, dynamic>) return null;
-      final daily = body['daily'];
+      final decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) return null;
+      final daily = decoded['daily'];
       if (daily is! Map<String, dynamic>) return null;
       final maxList = daily['temperature_2m_max'];
       final minList = daily['temperature_2m_min'];
@@ -120,10 +115,33 @@ abstract final class DataUploadService {
       final tMin = minList.first;
       final hum  = humList.first;
       if (tMax is! num || tMin is! num || hum is! num) return null;
+      return {
+        'tempMax':  tMax.toDouble(),
+        'tempMin':  tMin.toDouble(),
+        'humidity': hum.toDouble(),
+      };
+    } on Exception {
+      return null;
+    }
+  }
+
+  static Future<_WeatherData?> _fetchWeather(String dateStr) async {
+    try {
+      final uri = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$_lat&longitude=$_lon'
+        '&daily=temperature_2m_max,temperature_2m_min,relative_humidity_2m_mean'
+        '&start_date=$dateStr&end_date=$dateStr'
+        '&timezone=Asia%2FKolkata',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final parsed = parseWeatherBody(res.body);
+      if (parsed == null) return null;
       return _WeatherData(
-        tempMax:  tMax.toDouble(),
-        tempMin:  tMin.toDouble(),
-        humidity: hum.toDouble(),
+        tempMax:  parsed['tempMax']!,
+        tempMin:  parsed['tempMin']!,
+        humidity: parsed['humidity']!,
       );
     } on Exception {
       return null;
@@ -132,7 +150,13 @@ abstract final class DataUploadService {
 
   // ── Tariff helpers ────────────────────────────────────────────────────────────
 
-  // Rolling 30-day kWh for one device, ending on (and including) [upToDate].
+  /// Rolling 30-day kWh for one device, ending on (and including) [upToDate].
+  /// Exposed for unit testing.
+  @visibleForTesting
+  static double rollingMonthlyKwh(
+      String deviceId, DateTime upToDate, List<UsageLog> allLogs) =>
+      _rollingMonthlyKwh(deviceId, upToDate, allLogs);
+
   static double _rollingMonthlyKwh(
     String deviceId,
     DateTime upToDate,

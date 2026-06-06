@@ -28,6 +28,42 @@ abstract final class AppUpdateService {
   static const _apkUrl =
       'https://github.com/$_repo/releases/download/latest/terraton-fan-arm64.apk';
 
+  /// Parses a raw `version.json` byte response into [UpdateInfo].
+  ///
+  /// Strips the UTF-8 BOM that PowerShell 5.1 writes, validates the JSON shape,
+  /// and returns null when [localBuild] is already up to date.
+  /// Throws [FormatException] for any malformed input.
+  ///
+  /// Exposed for unit testing; prefer [checkForUpdate] in production code.
+  @visibleForTesting
+  static UpdateInfo? parseVersionResponse(
+      Uint8List bytes, int localBuild, String localVersion) {
+    final trimmed = (bytes.length >= 3 &&
+            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        ? bytes.sublist(3)
+        : bytes;
+    // Validate shape before casting — a non-object JSON value would throw a
+    // TypeError (an Error), which `on Exception` in checkForUpdate does NOT catch.
+    final decoded = jsonDecode(utf8.decode(trimmed));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('version.json is not a JSON object');
+    }
+    final remoteBuildRaw   = decoded['build_number'];
+    final remoteVersionRaw = decoded['version'];
+    if (remoteBuildRaw is! num || remoteVersionRaw is! String) {
+      throw const FormatException('version.json missing build_number/version');
+    }
+    final remoteBuild = remoteBuildRaw.toInt();
+    if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
+    return remoteBuild > localBuild
+        ? UpdateInfo(
+            version: remoteVersionRaw,
+            buildNumber: remoteBuild,
+            localVersion: localVersion,
+          )
+        : null;
+  }
+
   /// Core check — throws on network/HTTP/parse failure; returns null if up to date.
   static Future<UpdateInfo?> _doCheck() async {
     final pkgInfo    = await PackageInfo.fromPlatform();
@@ -46,36 +82,8 @@ abstract final class AppUpdateService {
 
     // GitHub serves release assets as application/octet-stream — Dart's http
     // package defaults to Latin-1 for that content type, so res.body is wrong.
-    // Decode bodyBytes as UTF-8 explicitly and strip the UTF-8 BOM (0xEF BB BF)
-    // that PowerShell 5.1 Set-Content writes by default.
-    final bytes   = res.bodyBytes;
-    final trimmed = (bytes.length >= 3 &&
-            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-        ? bytes.sublist(3)
-        : bytes;
-    // Validate the decoded shape before casting — a malformed version.json would
-    // otherwise throw a TypeError, which `on Exception` in checkForUpdate does
-    // NOT catch (TypeError is an Error, not an Exception).
-    final decoded = jsonDecode(utf8.decode(trimmed));
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('version.json is not a JSON object');
-    }
-    final remoteBuildRaw   = decoded['build_number'];
-    final remoteVersionRaw = decoded['version'];
-    if (remoteBuildRaw is! num || remoteVersionRaw is! String) {
-      throw const FormatException('version.json missing build_number/version');
-    }
-    final remoteBuild   = remoteBuildRaw.toInt();
-    final remoteVersion = remoteVersionRaw;
-
-    if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
-    return remoteBuild > localBuild
-        ? UpdateInfo(
-            version: remoteVersion,
-            buildNumber: remoteBuild,
-            localVersion: pkgInfo.version,
-          )
-        : null;
+    // Decode bodyBytes as UTF-8 explicitly.
+    return parseVersionResponse(res.bodyBytes, localBuild, pkgInfo.version);
   }
 
   /// Returns [UpdateInfo] if remote build_number > installed build, else null.

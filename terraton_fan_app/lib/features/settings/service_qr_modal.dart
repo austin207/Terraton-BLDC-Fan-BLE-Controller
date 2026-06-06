@@ -19,6 +19,19 @@ class ServiceQrModal extends StatefulWidget {
 
   @override
   State<ServiceQrModal> createState() => _ServiceQrModalState();
+
+  /// Encodes a service-access QR payload for [fan] expiring at [expiresAt].
+  /// Exposed for unit testing; production code should use the modal directly.
+  @visibleForTesting
+  static String computeQrPayload(FanDevice fan, DateTime expiresAt) =>
+      jsonEncode({
+        'type':         'service_access',
+        'version':      1,
+        'fan_mac':      fan.macAddress,
+        'fan_nickname': fan.nickname,
+        'model':        fan.model,
+        'expires_at':   expiresAt.millisecondsSinceEpoch ~/ 1000,
+      });
 }
 
 class _ServiceQrModalState extends State<ServiceQrModal> {
@@ -48,7 +61,7 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
     setState(() {
       _selectedFan = fan;
       _remaining   = _ttlSecs;
-      _qrData      = _computeQrData(fan, _expiresAt!);
+      _qrData      = ServiceQrModal.computeQrPayload(fan, _expiresAt!);
     });
     _startTimer();
   }
@@ -68,7 +81,7 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
     setState(() {
       _expiresAt = newExpiry;
       _remaining = _ttlSecs;
-      _qrData    = _computeQrData(_selectedFan!, newExpiry);
+      _qrData    = ServiceQrModal.computeQrPayload(_selectedFan!, newExpiry);
     });
     _startTimer();
   }
@@ -76,15 +89,6 @@ class _ServiceQrModalState extends State<ServiceQrModal> {
   String get _hh => (_remaining ~/ 3600).toString().padLeft(2, '0');
   String get _mm => ((_remaining % 3600) ~/ 60).toString().padLeft(2, '0');
   String get _ss => (_remaining % 60).toString().padLeft(2, '0');
-
-  static String _computeQrData(FanDevice fan, DateTime expiresAt) => jsonEncode({
-    'type':         'service_access',
-    'version':      1,
-    'fan_mac':      fan.macAddress,
-    'fan_nickname': fan.nickname,
-    'model':        fan.model,
-    'expires_at':   expiresAt.millisecondsSinceEpoch ~/ 1000,
-  });
 
   @override
   Widget build(BuildContext context) {
