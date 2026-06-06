@@ -46,9 +46,9 @@ if ([string]::IsNullOrEmpty($bumpChoice)) { $bumpChoice = 'P' }
 # ── Variant selection ────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Which variant(s) to build?" -ForegroundColor Yellow
-Write-Host "  [T]ester  — all features + OTA updates (for your client's testing)" -ForegroundColor DarkGray
-Write-Host "  [C]lient  — fans only, no OTA updates  (for end users)"             -ForegroundColor DarkGray
-Write-Host "  [B]oth    — build Tester and Client     (default)"                  -ForegroundColor DarkGray
+Write-Host "  [T]ester  - all features + OTA updates (for your client's testing)" -ForegroundColor DarkGray
+Write-Host "  [C]lient  - fans only, no OTA updates  (for end users)"             -ForegroundColor DarkGray
+Write-Host "  [B]oth    - build Tester and Client     (default)"                  -ForegroundColor DarkGray
 Write-Host ""
 $variantChoice = Read-Host "Variant [T/C/B]"
 if ([string]::IsNullOrEmpty($variantChoice)) { $variantChoice = 'B' }
@@ -242,7 +242,7 @@ Both QR scan and Bluetooth scan onboarding are included in every APK.
 } else {
     Write-Host ""
     Write-Host "Skipping GitHub release (tester variant not built)." -ForegroundColor DarkGray
-    Write-Host "Client APKs are in builds/ — share terraton-client-arm64-*.apk directly." -ForegroundColor Cyan
+    Write-Host "Client APKs are in builds/ - share terraton-client-arm64-*.apk directly." -ForegroundColor Cyan
 }
 
 # ── 7. Commit & push the version bump ────────────────────────────────────────
