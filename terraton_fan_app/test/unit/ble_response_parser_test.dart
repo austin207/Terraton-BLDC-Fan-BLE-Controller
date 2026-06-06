@@ -20,8 +20,11 @@ void main() {
       expect(BleResponseParser.parse([0x00, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]), isNull);
     });
 
-    test('returns null for wrong packet id', () {
-      expect(BleResponseParser.parse([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]), isNull);
+    test('returns null for unrecognised packet id (e.g. 0x08)', () {
+      // parse() is strict — only accepts response format (0x07).
+      // parseAll() additionally accepts 0x06 for remote-echo handling.
+      // (0x55+0xAA+0x08+0x02+0x01+0x01) & 0xFF = 0x0B
+      expect(BleResponseParser.parse([0x55, 0xAA, 0x08, 0x02, 0x01, 0x01, 0x0B]), isNull);
     });
 
     test('returns null for bad checksum', () {
@@ -109,6 +112,31 @@ void main() {
 
     test('garbage bytes — returns empty list', () {
       expect(BleResponseParser.parseAll([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]), isEmpty);
+    });
+
+    test('request-format (0x06) frame parsed — remote speed echo', () {
+      // When the physical remote changes speed the MCU echoes with packet ID 0x06.
+      // Speed 3 request echo: 55 AA 06 04 01 03 0D
+      // checksum = (0x55+0xAA+0x06+0x04+0x01+0x03) & 0xFF = 0x10D & 0xFF = 0x0D
+      final results = BleResponseParser.parseAll([0x55, 0xAA, 0x06, 0x04, 0x01, 0x03, 0x0D]);
+      expect(results.length, 1);
+      expect(BleResponseParser.parseSpeed(results[0]), 3);
+    });
+
+    test('request-format mode echo is also parsed', () {
+      // Remote triggers nature mode: 55 AA 06 21 01 02 —
+      // checksum = (0x55+0xAA+0x06+0x21+0x01+0x02) & 0xFF = 0x129 & 0xFF = 0x29
+      final results = BleResponseParser.parseAll([0x55, 0xAA, 0x06, 0x21, 0x01, 0x02, 0x29]);
+      expect(results.length, 1);
+      expect(BleResponseParser.parseModeString(results[0]), 'nature');
+    });
+
+    test('unrecognised packet id (0x08) is rejected', () {
+      // (0x55+0xAA+0x08+0x04+0x01+0x03) & 0xFF = 0x10F & 0xFF = 0x0F
+      expect(
+        BleResponseParser.parseAll([0x55, 0xAA, 0x08, 0x04, 0x01, 0x03, 0x0F]),
+        isEmpty,
+      );
     });
   });
 

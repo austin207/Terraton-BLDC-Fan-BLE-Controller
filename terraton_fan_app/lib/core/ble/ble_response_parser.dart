@@ -36,19 +36,24 @@ class BleResponseParser {
     return FanResponse(command: command, data: data);
   }
 
-  /// Scans [bytes] for ALL complete response frames and returns them in order.
+  /// Scans [bytes] for ALL complete frames and returns them in order.
   ///
   /// The hardware sometimes concatenates multiple frames into one BLE notification
   /// (e.g. a mode frame immediately followed by an RPM frame). Calling parse()
   /// on such a notification would only see the first frame; this method finds all.
+  ///
+  /// Accepts both response (0x07) and request (0x06) packet IDs. The MCU echoes
+  /// remote-triggered speed/mode changes using the request format (0x06) since it
+  /// forwards the RF command rather than replying to an app command.
   static List<FanResponse> parseAll(List<int> bytes) {
     final header = CommandLoader.frameHeader;
     final rspId  = CommandLoader.responsePacketId;
+    final reqId  = CommandLoader.requestPacketId;
     final results = <FanResponse>[];
     int i = 0;
     while (i <= bytes.length - 6) {
       if (bytes[i] != header[0] || bytes[i + 1] != header[1]) { i++; continue; }
-      if (bytes[i + 2] != rspId) { i++; continue; }
+      if (bytes[i + 2] != rspId && bytes[i + 2] != reqId) { i++; continue; }
       final command = bytes[i + 3];
       final dataLen = bytes[i + 4];
       final end = i + 5 + dataLen + 1;
