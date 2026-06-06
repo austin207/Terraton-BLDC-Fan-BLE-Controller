@@ -60,6 +60,24 @@ const kAmber  = Color(0xFFFFB400); // warm amber    — boost/highlight accent
 const kPowerOn  = Color(0xFF3FD37A); // connected + powered on
 const kPowerOff = Color(0xFFE5484D); // connected + powered off
 
+// Alpha shades of the power-button colours (fill + two glow layers per state).
+// Kept as const tokens so the BoxShadow lists stay const.
+const kPowerOnFill   = Color(0x1A3FD37A);
+const kPowerOnGlow1  = Color(0x8C3FD37A);
+const kPowerOnGlow2  = Color(0x4D3FD37A);
+const kPowerOffFill  = Color(0x14E5484D);
+const kPowerOffGlow1 = Color(0x4DE5484D);
+const kPowerOffGlow2 = Color(0x26E5484D);
+
+// ── Bluetooth indicator accent ────────────────────────────────────────────────
+// Distinct from kBlue (the settings/UI accent). Faint variant is the blink fade.
+const kBluetoothBlue      = Color(0xFF409CFF);
+const kBluetoothBlueFaint = Color(0x1A409CFF);
+
+// ── Nature mode green ─────────────────────────────────────────────────────────
+// Shares its hue with kCompareGood but is semantically the Nature-mode accent.
+const kNatureGreen = Color(0xFF22C55E);
+
 // ── Legacy aliases (kept so unchanged imports compile) ────────────────────────
 const kPrimary    = kYellow;
 const kBackground = kBg;

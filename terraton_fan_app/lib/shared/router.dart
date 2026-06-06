@@ -7,9 +7,10 @@ import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/features/splash/splash_screen.dart';
 import 'package:terraton_fan_app/features/home/home_screen.dart';
-import 'package:terraton_fan_app/features/home/fan_types_screen.dart';
+import 'package:terraton_fan_app/features/home/appliance_types_screen.dart';
 import 'package:terraton_fan_app/features/home/fans_list_screen.dart';
-import 'package:terraton_fan_app/models/fan_type.dart';
+import 'package:terraton_fan_app/features/coming_soon/coming_soon_screen.dart';
+import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/features/onboarding/profile_setup_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/qr_scan_screen.dart';
 import 'package:terraton_fan_app/features/onboarding/ble_scan_screen.dart';
@@ -38,13 +39,35 @@ final appRouter = GoRouter(
       builder: (_, __) => const HomeScreen(),
     ),
     GoRoute(
+      path: AppRoutes.applianceTypes,
+      builder: (_, state) => ApplianceTypesScreen(
+        category: state.extra is ApplianceCategory
+            ? state.extra! as ApplianceCategory
+            : null,
+      ),
+    ),
+    // Legacy /fan-types path — redirects to /appliance-types. Note: a string
+    // redirect cannot carry GoRouter `extra`, so the category falls back to null
+    // (ApplianceTypesScreen handles a null category gracefully). Callers that
+    // need a specific category must push /appliance-types directly with `extra`.
+    GoRoute(
       path: AppRoutes.fanTypes,
-      builder: (_, __) => const FanTypesScreen(),
+      redirect: (_, __) => AppRoutes.applianceTypes,
     ),
     GoRoute(
       path: AppRoutes.fans,
       builder: (_, state) => FansListScreen(
-        fanType: state.extra is FanType ? state.extra! as FanType : null,
+        fanType: state.extra is ApplianceType
+            ? state.extra! as ApplianceType
+            : null,
+      ),
+    ),
+    GoRoute(
+      path: AppRoutes.comingSoon,
+      builder: (_, state) => ComingSoonScreen(
+        applianceType: state.extra is ApplianceType
+            ? state.extra! as ApplianceType
+            : null,
       ),
     ),
     GoRoute(

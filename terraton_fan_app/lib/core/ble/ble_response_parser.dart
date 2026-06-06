@@ -11,6 +11,13 @@ class FanResponse {
 }
 
 class BleResponseParser {
+  // Hardware quirk: RPM responses (cmd 0x24) arrive with checksum = (correct − 1) & 0xFF.
+  // All other responses use the standard formula. Accept both.
+  static bool _checksumOk(int computed, int received) =>
+      (computed & 0xFF) == received || ((computed - 1) & 0xFF) == received;
+
+  /// Parses a single frame starting at byte 0.
+  /// Returns null if the bytes do not form a valid response frame.
   static FanResponse? parse(List<int> bytes) {
     if (bytes.length < 6) return null;
     final header = CommandLoader.frameHeader;
@@ -21,11 +28,39 @@ class BleResponseParser {
     if (bytes.length < 5 + dataLen + 1) return null;
     final data = bytes.sublist(5, 5 + dataLen);
     final received = bytes[5 + dataLen];
-    // Checksum = sum of ALL frame bytes before the checksum (including header).
     int sum = bytes[0] + bytes[1] + bytes[2] + bytes[3] + bytes[4];
     for (final b in data) { sum += b; }
-    if ((sum & 0xFF) != received) return null;
+    if (!_checksumOk(sum, received)) return null;
     return FanResponse(command: command, data: data);
+  }
+
+  /// Scans [bytes] for ALL complete response frames and returns them in order.
+  ///
+  /// The hardware sometimes concatenates multiple frames into one BLE notification
+  /// (e.g. a mode frame immediately followed by an RPM frame). Calling parse()
+  /// on such a notification would only see the first frame; this method finds all.
+  static List<FanResponse> parseAll(List<int> bytes) {
+    final header = CommandLoader.frameHeader;
+    final rspId  = CommandLoader.responsePacketId;
+    final results = <FanResponse>[];
+    int i = 0;
+    while (i <= bytes.length - 6) {
+      if (bytes[i] != header[0] || bytes[i + 1] != header[1]) { i++; continue; }
+      if (bytes[i + 2] != rspId) { i++; continue; }
+      final command = bytes[i + 3];
+      final dataLen = bytes[i + 4];
+      final end = i + 5 + dataLen + 1;
+      if (end > bytes.length) { i++; continue; } // incomplete frame — skip and keep scanning
+      final data     = bytes.sublist(i + 5, i + 5 + dataLen);
+      final received = bytes[i + 5 + dataLen];
+      int sum = bytes[i] + bytes[i + 1] + bytes[i + 2] + bytes[i + 3] + bytes[i + 4];
+      for (final b in data) { sum += b; }
+      if (_checksumOk(sum, received)) {
+        results.add(FanResponse(command: command, data: data));
+      }
+      i = end;
+    }
+    return results;
   }
 
   // Protocol: power reported as a single byte in watts (max 255 W).
@@ -56,7 +91,8 @@ class BleResponseParser {
 
   static int? parseTimer(FanResponse r) {
     final cmd = CommandLoader.responseCommand('timer');
-    return r.command == cmd && r.data.isNotEmpty ? r.data[0] : null;
+    if (r.command != cmd || r.data.isEmpty) return null;
+    return r.data[0];
   }
 
   // Converts mode response byte to mode name string.

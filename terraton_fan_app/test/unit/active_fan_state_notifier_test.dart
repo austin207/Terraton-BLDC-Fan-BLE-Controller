@@ -274,4 +274,51 @@ void main() {
       expect(s.isBoost, true);
     });
   });
+
+  // ── Remote sync scenarios ──────────────────────────────────────────────────
+  // These tests document the exact notifier calls made by _subscribeNotify
+  // for each remote-triggered state change. The toggle detection (Reverse)
+  // and byte mapping (Timer) both live in control_screen.dart; the notifier
+  // just needs to honour the contract below.
+
+  group('ActiveFanStateNotifier — remote sync scenarios', () {
+    test('remote Reverse ON — updateMode reverse → activeMode=reverse', () {
+      // Remote presses Reverse while not in reverse: hardware sends 0x03,
+      // _subscribeNotify calls updateMode('reverse').
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      c.read(activeFanStateProvider(deviceId).notifier).updateMode('reverse');
+      expect(c.read(activeFanStateProvider(deviceId)).activeMode, 'reverse');
+    });
+
+    test('remote Reverse OFF — setActiveMode(null) → activeMode=null', () {
+      // Remote presses Reverse while reverse is active: hardware sends 0x03,
+      // toggle-detection in _subscribeNotify calls setActiveMode(null).
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.setActiveMode('reverse');
+      n.setActiveMode(null);
+      expect(c.read(activeFanStateProvider(deviceId)).activeMode, isNull);
+    });
+
+    test('remote timer OFF byte 0x00 — updateTimer(0x00) → activeTimerCode=null', () {
+      // Remote sends Timer OFF; parseTimer returns 0x00; updateTimer(0x00)
+      // must treat 0 as "clear" (OFF state is stored as null).
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateTimer(0x04); // prime with 4H
+      n.updateTimer(0x00); // remote sends OFF
+      expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, isNull);
+    });
+
+    test('remote timer 2H byte 0x02 — updateTimer(0x02) → activeTimerCode=0x02', () {
+      // Remote sends Timer 2H; parseTimer returns 0x02; updateTimer stores it.
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      c.read(activeFanStateProvider(deviceId).notifier).updateTimer(0x02);
+      expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, 0x02);
+    });
+  });
 }

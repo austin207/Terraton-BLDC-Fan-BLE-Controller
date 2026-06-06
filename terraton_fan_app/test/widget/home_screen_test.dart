@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
@@ -31,6 +32,7 @@ Widget _buildScreen(_MockFanRepo fanRepo, _MockUsageLogRepo logRepo) {
     initialLocation: AppRoutes.home,
     routes: [
       GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
+      GoRoute(path: AppRoutes.applianceTypes, builder: (_, __) => const Scaffold(body: Text('Appliance Types'))),
       GoRoute(path: AppRoutes.fans, builder: (_, __) => const Scaffold(body: Text('Fans Screen'))),
       GoRoute(path: AppRoutes.settings, builder: (_, __) => const Scaffold(body: Text('Settings'))),
       GoRoute(path: AppRoutes.scanBle, builder: (_, __) => const Scaffold(body: Text('BLE Scan'))),
@@ -62,6 +64,7 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await CommandLoader.load();
+    await ApplianceLoader.load();
     registerFallbackValue(FanState());
     registerFallbackValue(FanDevice());
     registerFallbackValue(UsageLog(

@@ -8,14 +8,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
-import 'package:terraton_fan_app/models/fan_type.dart';
+import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 import 'package:terraton_fan_app/shared/router.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class FansListScreen extends ConsumerWidget {
-  final FanType? fanType;
+  final ApplianceType? fanType;
   const FansListScreen({super.key, this.fanType});
 
   @override
@@ -79,7 +79,7 @@ class FansListScreen extends ConsumerWidget {
 
 // ── Fan model sheet ───────────────────────────────────────────────────────────
 
-Future<void> _showFanModelSheet(BuildContext context, FanType fanType) async {
+Future<void> _showFanModelSheet(BuildContext context, ApplianceType fanType) async {
   final model = await showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -100,11 +100,11 @@ Future<void> _showConnectModal(BuildContext context, String model) async {
     builder: (sheetCtx) => _ConnectModal(
       model: model,
       onScanQr: () {
-        Navigator.of(sheetCtx).pop();
+        if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         if (context.mounted) unawaited(context.push(AppRoutes.scanQr));
       },
       onAutoConnect: () {
-        Navigator.of(sheetCtx).pop();
+        if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         if (context.mounted) unawaited(context.push(AppRoutes.scanBle));
       },
     ),
@@ -114,7 +114,7 @@ Future<void> _showConnectModal(BuildContext context, String model) async {
 // ── _FanModelSheet ────────────────────────────────────────────────────────────
 
 class _FanModelSheet extends StatelessWidget {
-  final FanType fanType;
+  final ApplianceType fanType;
   const _FanModelSheet({required this.fanType});
 
   @override
@@ -155,7 +155,7 @@ class _FanModelSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    fanType.label,
+                    fanType.displayName,
                     style: GoogleFonts.jetBrainsMono(
                       fontSize: 11, fontWeight: FontWeight.w600,
                       color: kTextMut, letterSpacing: 1.2,
@@ -510,7 +510,7 @@ class _Fab extends StatelessWidget {
 
 class _FanList extends ConsumerWidget {
   final List<FanDevice> fans;
-  final FanType? fanType;
+  final ApplianceType? fanType;
   const _FanList({required this.fans, this.fanType});
 
   @override

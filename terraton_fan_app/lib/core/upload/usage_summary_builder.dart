@@ -28,8 +28,10 @@ abstract final class UsageSummaryBuilder {
     final hourly   = List.filled(24, 0);
     double totalSecs     = 0;
     double weightedWatts = 0;
+    double weightedRpm   = 0;
     double totalKwh      = 0;
     int    validSecs     = 0;
+    int    validRpmSecs  = 0;
     int    activeLogs    = 0;
 
     for (final log in dayLogs) {
@@ -48,6 +50,10 @@ abstract final class UsageSummaryBuilder {
         weightedWatts += log.watts * log.durationSecs;
         validSecs     += log.durationSecs;
       }
+      if (log.rpm > 0) {
+        weightedRpm  += log.rpm * log.durationSecs;
+        validRpmSecs += log.durationSecs;
+      }
     }
 
     if (activeLogs == 0) return null;
@@ -58,7 +64,8 @@ abstract final class UsageSummaryBuilder {
     final modeDist = modeSecs.map(
       (k, v) => MapEntry(k, totalSecs > 0 ? v / totalSecs : 0.0),
     );
-    final avgWatts       = validSecs > 0 ? weightedWatts / validSecs : 0.0;
+    final avgWatts       = validSecs    > 0 ? weightedWatts / validSecs    : 0.0;
+    final avgRpm         = validRpmSecs > 0 ? weightedRpm   / validRpmSecs : 0.0;
     final avgSessionMins = totalSecs / activeLogs / 60;
 
     final deviceHash = sha256
@@ -80,6 +87,7 @@ abstract final class UsageSummaryBuilder {
       sessions:       activeLogs,
       totalKwh:       totalKwh,
       avgWatts:       avgWatts,
+      avgRpm:         avgRpm,
       tempMaxC:       tempMaxC,
       tempMinC:       tempMinC,
       humidityPct:    humidityPct,

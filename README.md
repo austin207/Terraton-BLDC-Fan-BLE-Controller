@@ -18,7 +18,8 @@ Flutter App  ──BLE 5.2──►  Amp'ed RF BLE60  ──UART──►  Fan M
 | **Mood Lighting** | ON/OFF toggle + warm↔cool colour temperature slider *(bytes pending from Terraton)* |
 | **Telemetry** | Live watts and RPM polled every 3 s over BLE; stale values auto-clear after 5 s |
 | **Analytics** | Energy consumption (kWh), estimated cost, avg wattage, efficiency vs. traditional fan; Day / Week / Month views with per-fan breakdown |
-| **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service keeps the process alive when swiped from recents |
+| **Background tracking** | Usage segments flushed on app pause/close via `WidgetsBindingObserver`; Android foreground service shows a persistent "Fan running" notification while connected |
+| **Connection lifecycle** | BLE disconnects when the app is backgrounded / screen sleeps (frees the fan for another phone) and auto-reconnects on resume; never steals a connection already held by another phone (BLE60 is single-connection) |
 | **Data upload** | Anonymised daily usage summaries (gear distribution, mode distribution, hourly usage, kWh, weather, KSEB tariff slab) uploaded to Cloudflare R2 for AI training (opt-in; API key injected at build time only) |
 | **Multi-fan** | Manage multiple fans; live connection status badge with spinning icon; rename, remove, and long-press actions |
 | **Storage** | Fan metadata + last-known state persisted with ObjectBox; usage logs for analytics |
@@ -142,30 +143,30 @@ AT-AB -BypassMode-\r\n          ← transparent mode starts here
 
 ### Command table
 
-Manually verified against hardware — these are the exact byte sequences the MCU accepts:
+Manually verified against hardware — request and response byte sequences confirmed on real hardware:
 
-| Operation | Frame (hex) |
-| --- | --- |
-| Power ON | `55 AA 06 02 01 01 09` |
-| Power OFF | `55 AA 06 02 01 00 08` |
-| Speed 1 | `55 AA 06 04 01 01 0B` |
-| Speed 2 | `55 AA 06 04 01 02 0C` |
-| Speed 3 | `55 AA 06 04 01 03 0D` |
-| Speed 4 | `55 AA 06 04 01 04 0E` |
-| Speed 5 | `55 AA 06 04 01 05 0F` |
-| Speed 6 | `55 AA 06 04 01 06 10` |
-| Boost mode | `55 AA 06 21 01 01 28` |
-| Nature mode | `55 AA 06 21 01 02 29` |
-| Reverse mode | `55 AA 06 21 01 03 2A` |
-| Smart mode | `55 AA 06 21 01 04 2B` |
-| Timer OFF | `55 AA 06 22 01 00 28` |
-| Timer 2 h | `55 AA 06 22 01 02 2A` |
-| Timer 4 h | `55 AA 06 22 01 04 2C` |
-| Timer 8 h | `55 AA 06 22 01 08 30` |
-| Query power (watts) | `55 AA 06 23 01 00 29` |
-| Query speed (RPM) | `55 AA 06 24 01 00 2A` |
-| Status poll | `55 AA 00 00 01 00 01` *(non-standard fixed frame)* |
-| Lighting ON/OFF/colour temp | *Pending — command bytes not yet provided by Terraton* |
+| Operation | Request (hex) | Response (hex) |
+| --- | --- | --- |
+| Power ON | `55 AA 06 02 01 01 09` | `55 AA 07 02 01 01 0A` |
+| Power OFF | `55 AA 06 02 01 00 08` | `55 AA 07 02 01 00 09` |
+| Speed 1 | `55 AA 06 04 01 01 0B` | `55 AA 07 04 01 01 0C` |
+| Speed 2 | `55 AA 06 04 01 02 0C` | `55 AA 07 04 01 02 0D` |
+| Speed 3 | `55 AA 06 04 01 03 0D` | `55 AA 07 04 01 03 0E` |
+| Speed 4 | `55 AA 06 04 01 04 0E` | `55 AA 07 04 01 04 0F` |
+| Speed 5 | `55 AA 06 04 01 05 0F` | `55 AA 07 04 01 05 10` |
+| Speed 6 | `55 AA 06 04 01 06 10` | `55 AA 07 04 01 06 11` |
+| Boost mode | `55 AA 06 21 01 01 28` | `55 AA 07 21 01 01 29` |
+| Nature mode | `55 AA 06 21 01 02 29` | `55 AA 07 21 01 02 2A` |
+| Reverse mode | `55 AA 06 21 01 03 2A` | `55 AA 07 21 01 03 2B` |
+| Smart mode | `55 AA 06 21 01 04 2B` | `55 AA 07 21 01 04 2C` |
+| Timer OFF | `55 AA 06 22 01 00 28` | `55 AA 07 22 01 00 29` |
+| Timer 2 h | `55 AA 06 22 01 02 2A` | `55 AA 07 22 01 02 2B` |
+| Timer 4 h | `55 AA 06 22 01 04 2C` | `55 AA 07 22 01 04 2D` |
+| Timer 8 h | `55 AA 06 22 01 08 30` | `55 AA 07 22 01 08 31` |
+| Query power (watts) | `55 AA 06 23 01 00 29` | `55 AA 07 23 01 WW cs` — `WW` = watts byte |
+| Query speed (RPM) | `55 AA 06 24 01 00 2A` | `55 AA 07 24 02 HH LL cs` — RPM = `(HH << 8) \| LL` |
+| Status poll | `55 AA 00 00 01 00 00` *(non-standard fixed frame)* | Triggers watts + RPM frames above |
+| Lighting ON/OFF/colour temp | *Pending — command bytes not yet provided by Terraton* | *Pending* |
 
 ---
 
@@ -209,7 +210,7 @@ terraton_fan_app/
 │   │   ├── control/
 │   │   │   ├── circular_speed_dial.dart     # Radial dot-ring speed selector + centre readout
 │   │   │   ├── connection_banner.dart       # ConnectionLostCard overlay (bottom-anchored)
-│   │   │   ├── control_screen.dart          # Main fan control; telemetry timer; BLE notify dispatch
+│   │   │   ├── control_screen.dart          # Main fan control; telemetry timer; BLE notify dispatch; lifecycle disconnect/reconnect
 │   │   │   ├── lighting_control_widget.dart
 │   │   │   ├── mode_control_widget.dart     # Nature / Smart / Reverse / Boost buttons
 │   │   │   └── timer_control_widget.dart    # OFF / 2H / 4H / 8H selector

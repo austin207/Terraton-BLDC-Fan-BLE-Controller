@@ -73,17 +73,20 @@ if (Test-Path $BuildsDir) {
     Write-Host "Cleared old APKs from builds/" -ForegroundColor DarkGray
 }
 
-# ── 1. Regenerate launcher icons from assets/icon/icon.png ───────────────────
-Write-Host "Regenerating launcher icons..." -ForegroundColor Cyan
+# ── 1. Clean all caches ──────────────────────────────────────────────────────
 Set-Location $AppDir
-dart run flutter_launcher_icons
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Launcher icon generation failed." -ForegroundColor Red
-    exit 1
-}
 
-# ── 2. Clean all caches ──────────────────────────────────────────────────────
-Set-Location $AppDir
+# Kill leftover flutter build processes (Dart VMs, Gradle daemons, ADB)
+Write-Host "Killing leftover build processes..." -ForegroundColor DarkGray
+@('dart', 'java', 'flutter', 'adb') | ForEach-Object {
+    Stop-Process -Name $_ -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 1
+
+# Stop OneDrive sync so it doesn't hold file locks during flutter clean / build
+Write-Host "Pausing OneDrive sync..." -ForegroundColor DarkGray
+Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 
 Write-Host "Running flutter clean..." -ForegroundColor Cyan
 flutter clean
@@ -223,6 +226,13 @@ if ($bumpChoice.Trim().ToUpper() -ne 'S') {
     } else {
         Write-Host "Version $NewVersion already committed." -ForegroundColor DarkGray
     }
+}
+
+# Restart OneDrive sync
+$odExe = "$env:LOCALAPPDATA\Microsoft\OneDrive\OneDrive.exe"
+if (Test-Path $odExe) {
+    Start-Process $odExe
+    Write-Host "OneDrive sync resumed." -ForegroundColor DarkGray
 }
 
 Write-Host ""

@@ -66,10 +66,49 @@ void main() {
       expect(BleResponseParser.parsePowerWatts(r!), 28);
     });
 
-    test('parses RPM response', () {
+    test('parses RPM response — correct checksum', () {
       // (0x55+0xAA+0x07+0x24+0x02+0x01+0x68) & 0xFF = 405 & 0xFF = 0x95  (360 RPM)
       final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x24, 0x02, 0x01, 0x68, 0x95]);
       expect(BleResponseParser.parseRpm(r!), 360);
+    });
+
+    test('parses RPM response — firmware off-by-one checksum', () {
+      // Real hardware frame: 55 AA 07 24 02 00 EC 17
+      // Correct sum = (0x55+0xAA+0x07+0x24+0x02+0x00+0xEC) & 0xFF = 0x18
+      // Firmware sends 0x17 (correct − 1). Must still parse to 236 RPM.
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x24, 0x02, 0x00, 0xEC, 0x17]);
+      expect(BleResponseParser.parseRpm(r!), 236);
+    });
+  });
+
+  group('BleResponseParser.parseAll', () {
+    test('single frame — returns one result', () {
+      // mode=smart frame (correct checksum)
+      final results = BleResponseParser.parseAll(
+          [0x55, 0xAA, 0x07, 0x21, 0x01, 0x04, 0x2C]);
+      expect(results.length, 1);
+      expect(BleResponseParser.parseModeString(results[0]), 'smart');
+    });
+
+    test('two concatenated frames — returns both', () {
+      // Frame 1: mode=smart  55 AA 07 21 01 04 2C
+      // Frame 2: RPM=236     55 AA 07 24 02 00 EC 17  (firmware off-by-one checksum)
+      final combined = [
+        0x55, 0xAA, 0x07, 0x21, 0x01, 0x04, 0x2C,
+        0x55, 0xAA, 0x07, 0x24, 0x02, 0x00, 0xEC, 0x17,
+      ];
+      final results = BleResponseParser.parseAll(combined);
+      expect(results.length, 2);
+      expect(BleResponseParser.parseModeString(results[0]), 'smart');
+      expect(BleResponseParser.parseRpm(results[1]), 236);
+    });
+
+    test('empty bytes — returns empty list', () {
+      expect(BleResponseParser.parseAll([]), isEmpty);
+    });
+
+    test('garbage bytes — returns empty list', () {
+      expect(BleResponseParser.parseAll([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]), isEmpty);
     });
   });
 
@@ -108,6 +147,40 @@ void main() {
       // Power-on response frame (valid, parses successfully)
       final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]);
       expect(BleResponseParser.parseModeString(r!), isNull);
+    });
+  });
+
+  group('BleResponseParser.parseTimer', () {
+    // Hardware echo bytes match the command bytes we send — no swap needed.
+    // OFF=0x00, 2H=0x02, 4H=0x04, 8H=0x08. All pass through unchanged.
+
+    test('OFF response (data 0x00) → returns 0x00', () {
+      // Frame: 55 AA 07 22 01 00 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x00)&0xFF = 0x29
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29]);
+      expect(BleResponseParser.parseTimer(r!), 0x00);
+    });
+
+    test('2H response (data 0x02) → returns 0x02', () {
+      // Frame: 55 AA 07 22 01 02 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x02)&0xFF = 0x2B
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x02, 0x2B]);
+      expect(BleResponseParser.parseTimer(r!), 0x02);
+    });
+
+    test('4H response (data 0x04) → returns 0x04', () {
+      // Frame: 55 AA 07 22 01 04 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x04)&0xFF = 0x2D
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x04, 0x2D]);
+      expect(BleResponseParser.parseTimer(r!), 0x04);
+    });
+
+    test('8H response (data 0x08) → returns 0x08', () {
+      // Frame: 55 AA 07 22 01 08 — checksum = (0x55+0xAA+0x07+0x22+0x01+0x08)&0xFF = 0x31
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x22, 0x01, 0x08, 0x31]);
+      expect(BleResponseParser.parseTimer(r!), 0x08);
+    });
+
+    test('wrong command byte → null', () {
+      final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]);
+      expect(BleResponseParser.parseTimer(r!), isNull);
     });
   });
 }

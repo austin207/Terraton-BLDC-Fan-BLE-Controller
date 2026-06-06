@@ -6,11 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
 import 'package:terraton_fan_app/core/upload/device_ping_service.dart';
+import 'package:terraton_fan_app/features/control/control_registry.dart';
+import 'package:terraton_fan_app/features/control/water_filtration_control.dart';
+import 'package:terraton_fan_app/features/control/air_purification_control.dart';
+import 'package:terraton_fan_app/features/control/energy_storage_control.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 import 'package:terraton_fan_app/app.dart';
 
@@ -43,16 +48,34 @@ Future<void> main() async {
   ]);
 
   await CommandLoader.load();
+  await ApplianceLoader.load();
+
+  // Register non-fan appliance control widgets.
+  // Each string must match a control type declared in appliances.yaml.
+  ControlRegistry.register('water_quality',  buildWaterFiltrationControl);
+  ControlRegistry.register('air_quality',    buildAirPurificationControl);
+  ControlRegistry.register('energy_metrics', buildEnergyStorageControl);
+
   await initObjectBox();
   // Permissions are requested contextually by BlePermissionScreen after the
   // splash screen checks status. Requesting here (before any UI) shows the
   // system dialog over a blank screen, violating Android UX guidelines.
   await _ensureBluetoothOn();
 
+  // Bound ObjectBox growth: drop usage logs older than a year. A full year
+  // covers every analytics window (Day/Week/Month) and the rolling-30-day kWh
+  // estimate, while uploads happen next-day so nothing un-uploaded is lost.
+  final usageLogRepo = UsageLogRepositoryImpl(store);
+  try {
+    usageLogRepo.pruneBefore(DateTime.now().subtract(const Duration(days: 365)));
+  } on Object catch (_) {
+    // Prune is best-effort housekeeping; never block startup on it.
+  }
+
   // Fire-and-forget — anonymous heartbeat; tells Cloudflare this device is active.
   unawaited(DevicePingService.ping());
   // Fire-and-forget — uploads previous days' summaries if user opted in + Wi-Fi.
-  unawaited(DataUploadService.tryUpload(UsageLogRepositoryImpl(store)));
+  unawaited(DataUploadService.tryUpload(usageLogRepo));
 
   runApp(const ProviderScope(child: TerratorApp()));
 }

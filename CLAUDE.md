@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Product Overview
 
-Android Flutter app that controls a Terraton BLDC ceiling fan over BLE v5.2 via an Amp'ed RF BLE60 module. Fully offline — no backend, no cloud, no HTTP in Phase 1.
+Android Flutter app that controls a Terraton BLDC ceiling fan over BLE v5.2 via an Amp'ed RF BLE60 module. Fan control is fully offline over BLE — no network is required to operate a fan. The only HTTP calls are to a Cloudflare Worker and are non-essential: an anonymous launch ping, an opt-in once-per-day usage upload (Wi-Fi only), and the OTA update check.
 
 ```text
 Flutter App --BLE v5.2--> BLE60 Module --UART1--> Fan MCU --> BLDC Motor
@@ -14,26 +14,44 @@ The app writes framed packets to the Write Characteristic; the fan responds on t
 
 ---
 
+## RTK Usage
+
+RTK is installed at `~/.local/bin/rtk.exe`. The bash auto-rewrite hook does not fire on native Windows, so **always prefix commands explicitly** with `rtk` when running in the Bash tool:
+
+| Instead of | Use |
+|---|---|
+| `flutter test ...` | `rtk flutter test ...` |
+| `flutter analyze ...` | `rtk flutter analyze ...` |
+| `git status` | `rtk git status` |
+| `git diff` | `rtk git diff` |
+| `git log` | `rtk git log` |
+| `git add / commit / push` | `rtk git add` / `rtk git commit` / `rtk git push` |
+| `dart run build_runner ...` | `rtk dart run build_runner ...` |
+
+Use `rtk gain` to check cumulative token savings.
+
+---
+
 ## Commands
 
 All Flutter commands run from `terraton_fan_app/`.
 
 ```powershell
 # Analyze
-flutter analyze --no-fatal-infos
+rtk flutter analyze --no-fatal-infos
 
 # Run all tests
-flutter test
+rtk flutter test
 
 # Single test file
-flutter test test/unit/ble_frame_builder_test.dart
-flutter test test/widget/control_screen_test.dart
+rtk flutter test test/unit/ble_frame_builder_test.dart
+rtk flutter test test/widget/control_screen_test.dart
 
 # Build — saves to builds/ and publishes to GitHub Releases (run from repo root)
 .\build.ps1
 
 # Regenerate ObjectBox & Riverpod code (run after editing models or providers)
-dart run build_runner build --delete-conflicting-outputs
+rtk dart run build_runner build --delete-conflicting-outputs
 ```
 
 ---
@@ -77,7 +95,7 @@ assets/commands.yaml
 **Request frame:** `[0x55, 0xAA, 0x06, <cmd>, <len>, ...data, <checksum>]`
 **Response frame:** same but byte[2] is `0x07`.
 **Checksum:** `(0x55 + 0xAA + packetId + cmd + dataLen + Σdata) & 0xFF` — includes the full header.
-**Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 01]` — do NOT pass through `buildFrame()`.
+**Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 00]` — do NOT pass through `buildFrame()`.
 
 **BLE UUIDs (defined only in `ble_constants.dart`):**
 - Scan filter: `00001827-0000-1000-8000-00805f9b34fb` (BLE Mesh Proxy)
@@ -206,7 +224,18 @@ Polls every 3 seconds after connect via a single `statusPoll()` frame (non-stand
 - `0x23` → watts
 - `0x24` → RPM
 
-Only polls when `fanState.isPowered == true`. Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+Polls on every 3 s tick regardless of power state. **Response frame count (hardware-verified):** always 2 frames — `0x23` watts + `0x24` RPM. Power state (`0x02`) and speed (`0x04`) are NOT included in poll responses (firmware limitation; firmware developer has been notified). Stale values (no response in 5 s) cleared by `notifier.clearWatts()` / `notifier.clearRpm()`.
+
+### App lifecycle: disconnect on background, reconnect on resume (`control_screen.dart`)
+
+`_ControlScreenState` is a `WidgetsBindingObserver`. `didChangeAppLifecycleState`:
+- **`paused`** (screen off OR app backgrounded — home button, app switch): cancel the telemetry timer, `BleForegroundService.stop()`, then `_ble.disconnect()`. Releasing the single GATT connection frees the fan for another phone. The foreground notification is stopped so it can't linger showing stale telemetry.
+- **`resumed`**: if `_ble.currentState != connected`, call `_connect()`. Because the BLE60 allows only one connection, `connect()` fails gracefully with an `'in use by another device'` status (GATT 133, see `ble_service.dart`) when another phone holds the fan — so resume **never steals** an active connection. The connect attempt *is* the "is another phone using it?" check; there is no separate probe (the fan stops advertising when connected elsewhere, and scan-before-connect is forbidden).
+- `inactive` / `hidden` / `detached`: no-op.
+
+Demo mode (`_isDemo`) skips all of the above. Observer is registered in `initState` and removed first thing in `dispose`.
+
+**Note:** this is independent of Cloudflare usage upload — that runs at app startup in `main.dart` (`DevicePingService.ping()` + `DataUploadService.tryUpload()`), gated by opt-in + Wi-Fi + once-per-day. Dropping the BLE link on background does not affect uploads.
 
 ### Permission handling (`lib/features/permission/ble_permission_screen.dart`)
 
@@ -232,7 +261,7 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 - ObjectBox only for fan data (no Hive, no Isar, no SharedPreferences)
 - Android only — no iOS build
 - Single active BLE connection — one fan at a time
-- No backend, no HTTP — Phase 1 is fully offline
+- Fan control is fully offline over BLE — never gate fan operation on network. The only HTTP is the anonymous launch ping (`DevicePingService`), the opt-in daily usage upload (`DataUploadService`, Wi-Fi only), and the OTA update check (`AppUpdateService`) — all to a Cloudflare Worker, all non-essential
 - Design tokens (`kYellow`, `kBg`, `kCard`, `kText`, etc.) from `lib/shared/theme.dart` — no hardcoded hex colours in widget files
 
 ---

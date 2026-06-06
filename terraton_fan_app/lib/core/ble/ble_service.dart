@@ -1,4 +1,18 @@
 // lib/core/ble/ble_service.dart
+//
+// MULTI-DEVICE CONNECTION NOTES:
+// Root cause: BLE60 stops advertising while a GATT connection is active
+//   (standard GAP behavior for single-connection BLE-UART bridge modules).
+//   Scan results are empty when another phone is connected — this strongly
+//   indicates the hardware stops advertising on first GATT connection.
+// BLE60 advertising while connected: likely no (hardware/firmware constraint)
+// Maximum simultaneous GATT connections supported: 1 (observed)
+// Implemented behavior: Option A — second phone takes over the connection.
+//   GATT error 133 (GATT_CONN_FAIL_ESTABLISH) surfaces a user-readable
+//   'in use by another device' status rather than a raw exception string.
+// Remaining limitation: Phone 2 cannot discover the fan via BLE scan while
+//   Phone 1 is connected. For already-paired fans, connection by saved MAC
+//   (BluetoothDevice.fromId) works without requiring re-discovery.
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -250,8 +264,16 @@ class BleServiceImpl implements BleService {
         return mac;
 
       } on Object catch (e) {
-        _connectStatus =
-            'attempt $attempt failed: ${e.toString().split('\n').first}';
+        final msg = e.toString();
+        // GATT error 133 (GATT_CONN_FAIL_ESTABLISH) means the peripheral
+        // refused the connection — most likely it is already connected to
+        // another device. Surface a human-readable status instead of the
+        // raw exception so ConnectionLostCard can show a helpful hint.
+        final isInUse = msg.contains('133');
+        _connectStatus = isInUse
+            ? 'in use by another device (attempt $attempt/$_maxRetries)'
+            : 'attempt $attempt failed: ${msg.split('\n').first}';
+
         // Disconnect the partial GATT before retrying — avoids "already
         // connected" errors on the next attempt. Timeout so we don't hang
         // if the peripheral never ACKs the disconnect.

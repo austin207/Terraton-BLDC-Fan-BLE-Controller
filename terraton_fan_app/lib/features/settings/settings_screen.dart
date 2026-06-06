@@ -262,7 +262,17 @@ class SettingsScreen extends ConsumerWidget {
       allowedExtensions: ['json'],
     );
     if (result == null || result.files.single.path == null) return;
-    final json = await File(result.files.single.path!).readAsString();
+    final String json;
+    try {
+      json = await File(result.files.single.path!).readAsString();
+    } on Exception {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read the selected file.')),
+        );
+      }
+      return;
+    }
     try {
       final count = await ref.read(fanRepositoryProvider).importFromJson(json);
       if (!context.mounted) return;

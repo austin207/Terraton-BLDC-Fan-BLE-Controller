@@ -11,7 +11,10 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
+import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/features/control/control_registry.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/features/control/connection_banner.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
@@ -41,7 +44,8 @@ class ControlScreen extends ConsumerStatefulWidget {
   ConsumerState<ControlScreen> createState() => _ControlScreenState();
 }
 
-class _ControlScreenState extends ConsumerState<ControlScreen> {
+class _ControlScreenState extends ConsumerState<ControlScreen>
+    with WidgetsBindingObserver {
   Timer? _telemetryTimer;
   Timer? _expiryTimer;
   Timer? _expiryOnceTimer;
@@ -68,6 +72,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
+    WidgetsBinding.instance.addObserver(this);
     _resolvedMac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
     if (!_isDemo) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
@@ -180,48 +185,73 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     _notifySub = _ble.notifyStream.listen((bytes) {
       if (!mounted) return;
       _debug.value = _debug.value.copyWith(receivedFrame: bytes);
-      final response = BleResponseParser.parse(bytes);
-      if (response == null) return;
+
+      // Hardware sometimes concatenates multiple frames in one notification
+      // (e.g. mode frame + RPM frame). Parse all frames present.
+      final responses = BleResponseParser.parseAll(bytes);
+      if (responses.isEmpty) return;
+
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-      final power = BleResponseParser.parsePowerState(response);
-      if (power != null) {
-        notifier.updatePower(power);
-        if (!_isDemo) {
-          if (power) {
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
-            unawaited(BleForegroundService.start(label));
+
+      for (final response in responses) {
+        final power = BleResponseParser.parsePowerState(response);
+        if (power != null) {
+          notifier.updatePower(power);
+          if (!_isDemo) {
+            if (power) {
+              final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+              final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
+              unawaited(BleForegroundService.start(label));
+            } else {
+              unawaited(BleForegroundService.stop());
+            }
+          }
+          continue;
+        }
+        final speed = BleResponseParser.parseSpeed(response);
+        if (speed != null) {
+          notifier.updateSpeed(speed);
+          if (speed > 0) notifier.updatePower(true);
+          // A speed response while boost is active means the hardware exited
+          // boost (e.g. remote changed speed). Clear the boost UI flag.
+          if (ref.read(activeFanStateProvider(widget.fan.deviceId)).isBoost) {
+            notifier.setBoostActive(false);
+          }
+          continue;
+        }
+        final mode = BleResponseParser.parseModeString(response);
+        if (mode != null) {
+          if (mode == 'reverse' &&
+                     ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
+            // Hardware toggle model: 0x03 means "reverse active". When the remote
+            // sends 0x03 while we are already in reverse, this is an exit toggle.
+            notifier.setActiveMode(null);
           } else {
-            unawaited(BleForegroundService.stop());
+            notifier.updateMode(mode);
           }
+          continue;
         }
-        return;
-      }
-      final speed = BleResponseParser.parseSpeed(response);
-      if (speed != null) {
-        notifier.updateSpeed(speed);
-        if (speed > 0) notifier.updatePower(true);
-        return;
-      }
-      final mode = BleResponseParser.parseModeString(response);
-      if (mode != null) { notifier.updateMode(mode); return; }
-      final timer = BleResponseParser.parseTimer(response);
-      if (timer != null) { notifier.updateTimer(timer); return; }
-      final watts = BleResponseParser.parsePowerWatts(response);
-      if (watts != null) {
-        notifier.updateWatts(watts);
-        _lastWattsAt = DateTime.now();
-        if (!_isDemo) {
-          final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-          if (s.isPowered) {
-            final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
-            unawaited(BleForegroundService.update(label));
+        final timer = BleResponseParser.parseTimer(response);
+        if (timer != null) {
+          notifier.updateTimer(timer);
+          continue;
+        }
+        final watts = BleResponseParser.parsePowerWatts(response);
+        if (watts != null) {
+          notifier.updateWatts(watts);
+          _lastWattsAt = DateTime.now();
+          if (!_isDemo) {
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            if (s.isPowered) {
+              final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
+              unawaited(BleForegroundService.update(label));
+            }
           }
+          continue;
         }
-        return;
+        final rpm = BleResponseParser.parseRpm(response);
+        if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
       }
-      final rpm = BleResponseParser.parseRpm(response);
-      if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
   }
@@ -243,9 +273,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
         _lastRpmAt = null;
       }
 
-      final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
-      if (!fanState.isPowered) return;
-
+      // Poll regardless of power state — fan always returns 2 frames (watts + RPM).
+      // Power state and speed are not included in poll responses (firmware limitation;
+      // firmware developer has been notified to add them).
       try {
         await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;
@@ -256,7 +286,37 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isDemo) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+        // Screen off / app backgrounded: release the single GATT connection so
+        // another phone can use the fan. Stop the foreground notification too —
+        // it would otherwise stay up showing stale telemetry. (Cloudflare usage
+        // upload is independent: it runs at app startup in main.dart, gated by
+        // opt-in + Wi-Fi + once-per-day, so dropping the link here doesn't
+        // affect it.)
+        _telemetryTimer?.cancel();
+        unawaited(BleForegroundService.stop());
+        unawaited(_ble.disconnect());
+      case AppLifecycleState.resumed:
+        // Re-establish the link unless we're already connected. connect() fails
+        // gracefully with an 'in use by another device' status (GATT 133) when
+        // another phone holds the fan — the BLE60 allows only one connection —
+        // so this never steals an active connection from someone else.
+        if (_ble.currentState != BleConnectionState.connected) {
+          unawaited(_connect());
+        }
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _connecting = false;
     _telemetryTimer?.cancel();
     _expiryTimer?.cancel();
@@ -279,13 +339,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     } else if (cmd == CommandLoader.responseCommand('speed')) {
       notifier.updateSpeed(data);
     } else if (cmd == CommandLoader.responseCommand('mode')) {
-      notifier.updateMode(switch (data) {
+      final modeStr = switch (data) {
         0x01 => 'boost',
         0x02 => 'nature',
         0x03 => 'reverse',
         0x04 => 'smart',
-        _    => null,
-      });
+        _    => null as String?,
+      };
+      if (modeStr == 'reverse' &&
+          ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
+        notifier.setActiveMode(null);
+      } else {
+        notifier.updateMode(modeStr);
+      }
     } else if (cmd == CommandLoader.responseCommand('timer')) {
       notifier.updateTimer(data);
     }
@@ -430,6 +496,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               child: ConnectionLostCard(
                 onRetry: _connect,
                 connectStatus: _isDemo ? null : _ble.connectStatus,
+                subtitle: !_isDemo && _ble.connectStatus.contains('in use by another device')
+                    ? 'This fan appears to be connected to another device. '
+                      'Ask the other user to disconnect, then try again.'
+                    : null,
               ),
             ),
           if (_showDisconnectAlert)
@@ -543,16 +613,31 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   int   _segmentGear = 0;
   String? _segmentMode;
 
+  // Running accumulators: sum all BLE poll responses during a segment, then
+  // divide at flush time. Avoids the "watts=0 if polled before first response"
+  // problem that made kWh=0 for every log and broke analytics + Cloudflare.
+  int _segmentWattsSum   = 0;
+  int _segmentWattsCount = 0;
+  int _segmentRpmSum     = 0;
+  int _segmentRpmCount   = 0;
+  // Last observed non-zero value — used by _flushOnClose() where ref is unavailable.
+  int _lastKnownWatts    = 0;
+
   // Cached in initState — ref.read() is forbidden inside dispose().
   late final UsageLogRepository _usageLogRepo;
+  // Cached because fan.model is immutable for the widget's lifetime.
+  late final ApplianceType? _applianceType;
 
   // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
   int _preNatureSpeed = 0;
+  // Speed saved when Reverse mode activates — restored when Reverse is toggled off.
+  int _preReverseSpeed = 0;
 
   @override
   void initState() {
     super.initState();
-    _usageLogRepo = ref.read(usageLogRepositoryProvider);
+    _usageLogRepo    = ref.read(usageLogRepositoryProvider);
+    _applianceType   = ApplianceLoader.typeForModel(widget.fan.model);
     WidgetsBinding.instance.addObserver(this);
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed _preNatureSpeed so that if the fan is loaded from ObjectBox already
@@ -560,6 +645,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (s.activeMode == 'nature') {
       // Default to 3 when speed is 0 (e.g. screen re-opened before first telemetry).
       _preNatureSpeed = s.speed > 0 ? s.speed : 3;
+    }
+    if (s.activeMode == 'reverse') {
+      _preReverseSpeed = s.speed > 0 ? s.speed : 1;
     }
     // Restore lighting UI state from last persisted values.
     _colorType       = s.lastLightColorType;
@@ -597,51 +685,75 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   }
 
   /// Flush the current open segment directly (no ref — safe for dispose).
+  /// Uses the same running-average logic as [_flushSegment] so the final
+  /// segment (app backgrounded / disposed while running) is averaged like
+  /// every other one, not recorded at a single point-in-time watt value.
   void _flushOnClose() {
     final start = _segmentStart;
     if (start == null || _segmentGear <= 0) return;
     final secs = DateTime.now().difference(start).inSeconds;
     if (secs <= 0) return;
+    final avgWatts = _segmentWattsCount > 0
+        ? (_segmentWattsSum / _segmentWattsCount).round()
+        : _lastKnownWatts;
+    final avgRpm = _segmentRpmCount > 0
+        ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
     try {
       _usageLogRepo.addLog(UsageLog(
         deviceId:     widget.fan.deviceId,
         startTime:    start,
         durationSecs: secs,
         gear:         _segmentGear,
-        watts:        0, // watts unavailable in dispose; duration/gear matter most
+        watts:        avgWatts,
+        rpm:          avgRpm,
         mode:         _segmentMode,
       ));
     } on Object catch (_) {}
   }
 
-  /// Flush the completed segment to ObjectBox, then start a new one.
-  /// Watts are read from the live fan state at flush time.
+  /// Flush the completed segment to ObjectBox then start a new one.
+  /// Uses the running avg of all poll responses received during the segment,
+  /// falling back to the last known non-zero watt value when no readings
+  /// arrived yet (e.g. speed changed immediately after connect).
   void _flushSegment({required int newGear, required String? newMode}) {
     final start = _segmentStart;
     if (start != null && _segmentGear > 0) {
       final secs = DateTime.now().difference(start).inSeconds;
       if (secs > 0) {
-        final watts = ref
-            .read(activeFanStateProvider(widget.fan.deviceId))
-            .lastWatts ?? 0;
+        final avgWatts = _segmentWattsCount > 0
+            ? (_segmentWattsSum / _segmentWattsCount).round()
+            : _lastKnownWatts;
+        final avgRpm = _segmentRpmCount > 0
+            ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
         try {
-          ref.read(usageLogRepositoryProvider).addLog(UsageLog(
-            deviceId:    widget.fan.deviceId,
-            startTime:   start,
+          _usageLogRepo.addLog(UsageLog(
+            deviceId:     widget.fan.deviceId,
+            startTime:    start,
             durationSecs: secs,
-            gear:        _segmentGear,
-            watts:       watts,
-            mode:        _segmentMode,
+            gear:         _segmentGear,
+            watts:        avgWatts,
+            rpm:          avgRpm,
+            mode:         _segmentMode,
           ));
         } on Object catch (_) {
           // Store teardown or disk-full; segment is lost but app must not crash.
         }
       }
     }
+    // Reset accumulators for the new segment.
+    _segmentWattsSum   = 0;
+    _segmentWattsCount = 0;
+    _segmentRpmSum     = 0;
+    _segmentRpmCount   = 0;
     _segmentStart = DateTime.now();
     _segmentGear  = newGear;
     _segmentMode  = newMode;
   }
+
+  /// Returns true when the appliance type for this fan declares [control],
+  /// OR when the device has no stored model (legacy BLE-paired fan → show all).
+  bool _has(String control) =>
+      _applianceType == null || _applianceType.hasControl(control);
 
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
@@ -657,6 +769,20 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
     // Tapping the already-active mode toggles it off.
     if (fanState.activeMode == m) {
+      if (m == 'reverse') {
+        // Hardware toggle: second Reverse command exits reverse mode.
+        // No optimistic setActiveMode(null) — the BLE echo (0x03) will arrive
+        // and the toggle-detection in _subscribeNotify clears the mode.
+        // Speed is restored optimistically because the speed command is separate.
+        final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
+        _flushSegment(newGear: restore, newMode: null);
+        if (restore > 0) notifier.updateSpeed(restore);
+        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (toggle)'));
+        if (restore > 0) {
+          unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
+        }
+        return;
+      }
       _flushSegment(newGear: fanState.speed, newMode: null);
       notifier.setActiveMode(null);
       if (fanState.speed > 0) {
@@ -678,7 +804,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
     if (fanState.activeMode == 'nature') {
       final restore = (m == 'smart' && _preNatureSpeed < 3) ? 3 : _preNatureSpeed;
-      notifier.setActiveMode(m);
+      if (m == 'reverse') _preReverseSpeed = restore > 0 ? restore : fanState.speed;
+      // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
+      if (m != 'reverse') notifier.setActiveMode(m);
       if (restore > 0) notifier.updateSpeed(restore);
       _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
       // Mode frame first so the hardware exits Nature before receiving the speed command.
@@ -695,12 +823,14 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     }
 
     // Normal activation (Smart/Reverse, not from Nature).
+    if (m == 'reverse') _preReverseSpeed = fanState.speed;
     if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
       notifier.updateSpeed(3);
       unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
     }
     _flushSegment(newGear: fanState.speed, newMode: m);
-    notifier.setActiveMode(m);
+    // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
+    if (m != 'reverse') notifier.setActiveMode(m);
     final frame = switch (m) {
       'reverse' => BleFrameBuilder.setReverse(),
       'smart'   => BleFrameBuilder.setSmart(),
@@ -747,129 +877,177 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final enabled  = widget.controlsEnabled;
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
+    // Accumulate every BLE poll response that arrives while a segment is open.
+    // ref.listen fires on state changes — no side-effect risk. NOTE: one poll
+    // cycle delivers two frames (0x23 watts, then 0x24 RPM) as two separate
+    // notifier mutations, so this fires ~twice per 3 s cadence and each reading
+    // is counted ~twice. The average is unaffected (sum and count inflate
+    // symmetrically); only treat _segment*Count as a weight, never as a poll
+    // count.
+    ref.listen(activeFanStateProvider(fan.deviceId), (_, next) {
+      if (_segmentGear > 0) {
+        if (next.lastWatts != null && next.lastWatts! > 0) {
+          _segmentWattsSum   += next.lastWatts!;
+          _segmentWattsCount++;
+          _lastKnownWatts = next.lastWatts!;
+        }
+        if (next.lastRpm != null && next.lastRpm! > 0) {
+          _segmentRpmSum   += next.lastRpm!;
+          _segmentRpmCount++;
+        }
+      }
+    });
+
+    // Custom (non-built-in) controls declared in appliances.yaml for this type.
+    // _applianceType is cached in initState — fan.model is immutable.
+    final customControls = _applianceType == null
+        ? const <String>[]
+        : _applianceType.controls
+            .where((String c) => !ControlRegistry.isBuiltIn(c))
+            .toList(growable: false);
+
     return Column(
       children: [
 
         // ── Speed dial ──────────────────────────────────────────────────────
-        RepaintBoundary(
-          child: CircularSpeedDial(
-            currentSpeed: fanState.speed,
-            watts: fanState.lastWatts,
-            rpm: fanState.lastRpm,
-            enabled: enabled,
-            isBoost: fanState.isBoost,
-            isNature: fanState.activeMode == 'nature',
-            disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
-            onSpeedSelected: (s) {
-              if (fanState.activeMode == 'smart' && s < 3) return;
-              final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-              if (fanState.isBoost) {
-                notifier.setBoostActive(false);
-                if (fanState.activeMode == 'reverse') {
-                  unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
-                } else if (fanState.activeMode == 'smart') {
-                  unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+        if (_has('speed'))
+          RepaintBoundary(
+            child: CircularSpeedDial(
+              currentSpeed: fanState.speed,
+              watts: fanState.lastWatts,
+              // Negate RPM in reverse so the dial shows e.g. "−236 RPM".
+              rpm: fanState.activeMode == 'reverse' && fanState.lastRpm != null
+                  ? -(fanState.lastRpm!)
+                  : fanState.lastRpm,
+              enabled: enabled,
+              isBoost: fanState.isBoost,
+              isNature: fanState.activeMode == 'nature',
+              disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
+              onSpeedSelected: (s) {
+                if (fanState.activeMode == 'smart' && s < 3) return;
+                final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+                if (fanState.isBoost) {
+                  notifier.setBoostActive(false);
+                  if (fanState.activeMode == 'reverse') {
+                    unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
+                  } else if (fanState.activeMode == 'smart') {
+                    unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+                  }
                 }
-              }
-              _flushSegment(newGear: s, newMode: fanState.activeMode);
-              notifier.updateSpeed(s);
-              unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
-            },
+                _flushSegment(newGear: s, newMode: fanState.activeMode);
+                notifier.updateSpeed(s);
+                unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
+              },
+            ),
           ),
-        ),
 
-        const SizedBox(height: 12),
+        if (_has('speed')) const SizedBox(height: 12),
 
-        // ── Operating modes ─────────────────────────────────────────────────
-        const _SectionHeader('OPERATING MODES'),
-        const SizedBox(height: 10),
-        ModeControlWidget(
-          activeMode: fanState.activeMode,
-          isBoost: fanState.isBoost,
-          enabled: enabled,
-          onMode: _onMode,
-          onBoost: _onBoost,
-        ),
-
-        const SizedBox(height: 20),
+        // ── Operating modes (includes boost button) ──────────────────────────
+        if (_has('mode')) ...[
+          const _SectionHeader('OPERATING MODES'),
+          const SizedBox(height: 10),
+          ModeControlWidget(
+            activeMode: fanState.activeMode,
+            isBoost: fanState.isBoost,
+            enabled: enabled,
+            onMode: _onMode,
+            onBoost: _onBoost,
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // ── Sleep timer ─────────────────────────────────────────────────────
-        _SectionHeader(
-          'SLEEP TIMER',
-          trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
-              ? Text(
-                  '${_timerLabel(fanState.activeTimerCode)} REMAINING',
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10, color: kYellow,
-                      fontWeight: FontWeight.w700, letterSpacing: 1.6),
-                )
-              : null,
-        ),
-        const SizedBox(height: 10),
-        TimerControlWidget(
-          activeTimerCode: fanState.activeTimerCode,
-          enabled: enabled,
-          onTimer: (a) {
-            final code = switch (a) {
-              '2h' => 0x02,
-              '4h' => 0x04,
-              '8h' => 0x08,
-              _    => 0x00,
-            };
-            ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
-            final frame = switch (a) {
-              '2h' => BleFrameBuilder.timer2h(),
-              '4h' => BleFrameBuilder.timer4h(),
-              '8h' => BleFrameBuilder.timer8h(),
-              _    => BleFrameBuilder.timerOff(),
-            };
-            unawaited(widget.send(frame, label: 'Timer: $a'));
-          },
-        ),
-
-        const SizedBox(height: 20),
+        if (_has('timer')) ...[
+          _SectionHeader(
+            'SLEEP TIMER',
+            trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
+                ? Text(
+                    '${_timerLabel(fanState.activeTimerCode)} REMAINING',
+                    style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10, color: kYellow,
+                        fontWeight: FontWeight.w700, letterSpacing: 1.6),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 10),
+          TimerControlWidget(
+            activeTimerCode: fanState.activeTimerCode,
+            enabled: enabled,
+            onTimer: (a) {
+              final code = switch (a) {
+                '2h' => 0x02,
+                '4h' => 0x04,
+                '8h' => 0x08,
+                _    => 0x00,
+              };
+              ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
+              final frame = switch (a) {
+                '2h' => BleFrameBuilder.timer2h(),
+                '4h' => BleFrameBuilder.timer4h(),
+                '8h' => BleFrameBuilder.timer8h(),
+                _    => BleFrameBuilder.timerOff(),
+              };
+              unawaited(widget.send(frame, label: 'Timer: $a'));
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // ── Mood lighting ───────────────────────────────────────────────────
-        LightingControlWidget(
-          enabled: enabled,
-          isLightOn: _isLightOn,
-          colorType: _colorType,
-          brightnessValue: _brightnessValue,
-          onLightOn: () {
-            setState(() => _isLightOn = true);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
-            unawaited(widget.send(BleFrameBuilder.lightOn(),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onLightOff: () {
-            setState(() => _isLightOn = false);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
-            unawaited(widget.send(BleFrameBuilder.lightOff(),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onColorTypeChanged: (t) {
-            setState(() => _colorType = t);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
-            final byte = switch (t) {
-              'neutral' => 0x80,
-              'cool'    => 0xFF,
-              _         => 0x00,
-            };
-            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-          onBrightness: (v) {
-            setState(() => _brightnessValue = v);
-            ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
-            final byte = (v * 255).round().clamp(0, 255);
-            unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                pendingMsg: 'Lighting commands pending from Terraton'));
-          },
-        ),
+        if (_has('lighting'))
+          LightingControlWidget(
+            enabled: enabled,
+            isLightOn: _isLightOn,
+            colorType: _colorType,
+            brightnessValue: _brightnessValue,
+            onLightOn: () {
+              setState(() => _isLightOn = true);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
+              unawaited(widget.send(BleFrameBuilder.lightOn(),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onLightOff: () {
+              setState(() => _isLightOn = false);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
+              unawaited(widget.send(BleFrameBuilder.lightOff(),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onColorTypeChanged: (t) {
+              setState(() => _colorType = t);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
+              final byte = switch (t) {
+                'neutral' => 0x80,
+                'cool'    => 0xFF,
+                _         => 0x00,
+              };
+              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+            onBrightness: (v) {
+              setState(() => _brightnessValue = v);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier)
+                  .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
+              final byte = (v * 255).round().clamp(0, 255);
+              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
+                  pendingMsg: 'Lighting commands pending from Terraton'));
+            },
+          ),
+
+        // ── Custom controls from ControlRegistry ──────────────────────────
+        // Any control type in appliances.yaml that is not built-in is looked
+        // up in ControlRegistry and rendered here. Register builders in main.dart.
+        for (final controlType in customControls)
+          if (ControlRegistry.get(controlType) case final builder?)
+            builder(ControlBuildParams(
+              device:    fan,
+              fanState:  fanState,
+              enabled:   enabled,
+              ref:       ref,
+            )),
 
       ],
     );
@@ -928,7 +1106,7 @@ class _BluetoothIndicatorState extends State<_BluetoothIndicator>
           Icons.bluetooth_rounded,
           size: 20,
           color: widget.isConnected
-              ? Color.lerp(const Color(0xFF409CFF), const Color(0x1A409CFF), _blinkCtrl.value)!
+              ? Color.lerp(kBluetoothBlue, kBluetoothBlueFaint, _blinkCtrl.value)!
               : widget.isConnecting
                   ? kYellowSoft
                   : kTextMut,
@@ -991,18 +1169,18 @@ class _PowerButton extends StatelessWidget {
     } else if (isPowered) {
       rim       = kPowerOn;
       iconColor = kPowerOn;
-      bgColor   = const Color(0x1A3FD37A);
+      bgColor   = kPowerOnFill;
       shadows   = const [
-        BoxShadow(color: Color(0x8C3FD37A), blurRadius: 14),
-        BoxShadow(color: Color(0x4D3FD37A), blurRadius: 28),
+        BoxShadow(color: kPowerOnGlow1, blurRadius: 14),
+        BoxShadow(color: kPowerOnGlow2, blurRadius: 28),
       ];
     } else {
       rim       = kPowerOff;
       iconColor = kPowerOff;
-      bgColor   = const Color(0x14E5484D);
+      bgColor   = kPowerOffFill;
       shadows   = const [
-        BoxShadow(color: Color(0x4DE5484D), blurRadius: 10),
-        BoxShadow(color: Color(0x26E5484D), blurRadius: 22),
+        BoxShadow(color: kPowerOffGlow1, blurRadius: 10),
+        BoxShadow(color: kPowerOffGlow2, blurRadius: 22),
       ];
     }
 

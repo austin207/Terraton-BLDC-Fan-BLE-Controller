@@ -6,7 +6,10 @@ import 'package:terraton_fan_app/shared/theme.dart';
 class ConnectionLostCard extends StatelessWidget {
   final VoidCallback onRetry;
   final String? connectStatus;
-  const ConnectionLostCard({super.key, required this.onRetry, this.connectStatus});
+  /// Overrides the default subtitle. Pass when the disconnect has a specific
+  /// cause (e.g. fan in use by another device) that deserves its own message.
+  final String? subtitle;
+  const ConnectionLostCard({super.key, required this.onRetry, this.connectStatus, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +44,7 @@ class ConnectionLostCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Is the fan powered on and within range?',
+            subtitle ?? 'Is the fan powered on and within range?',
             style: GoogleFonts.manrope(fontSize: 13, color: kTextMut, height: 1.5),
             textAlign: TextAlign.center,
           ),
