@@ -794,6 +794,29 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       return;
     }
 
+    // Switching FROM Reverse → Nature or Smart: exit reverse first, then activate.
+    if (fanState.activeMode == 'reverse' && (m == 'nature' || m == 'smart')) {
+      final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
+      if (m == 'nature') {
+        _preNatureSpeed = restore > 0 ? restore : fanState.speed;
+        _flushSegment(newGear: fanState.speed, newMode: 'nature');
+        // No optimistic mode update — reverse echo clears it, nature echo sets it.
+        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (exit reverse)'));
+        unawaited(widget.send(BleFrameBuilder.setNature(), label: 'Mode: nature'));
+      } else {
+        final smartSpeed = restore < 3 ? 3 : restore;
+        _flushSegment(newGear: smartSpeed, newMode: 'smart');
+        if (smartSpeed != fanState.speed) notifier.updateSpeed(smartSpeed);
+        // No optimistic mode update — reverse echo clears it, smart echo sets it.
+        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (exit reverse)'));
+        unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+        if (smartSpeed != fanState.speed) {
+          unawaited(widget.send(BleFrameBuilder.setSpeed(smartSpeed), label: 'Speed $smartSpeed'));
+        }
+      }
+      return;
+    }
+
     // Switching INTO Nature: save current speed, then activate.
     if (m == 'nature') {
       _preNatureSpeed = fanState.speed;
