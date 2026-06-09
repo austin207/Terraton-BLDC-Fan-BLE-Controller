@@ -711,9 +711,10 @@ class _FanRowState extends ConsumerState<_FanRow> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: TerratonFanIcon(
-                size: 26,
+                size: 22,
                 spinning: isConnected,
                 color: isConnected ? kYellow : kTextDim,
+                imagePath: 'assets/icons/3 Fan.png',
               ),
             ),
             const SizedBox(width: 14),

@@ -14,12 +14,16 @@ class TerratonFanIcon extends StatefulWidget {
   final double size;
   final Color color;
   final bool spinning;
+  /// If provided, renders this image asset instead of the custom-painted blades.
+  /// The spin animation still applies when [spinning] is true.
+  final String? imagePath;
 
   const TerratonFanIcon({
     super.key,
     this.size = 24,
     this.color = kYellow,
     this.spinning = false,
+    this.imagePath,
   });
 
   @override
@@ -59,10 +63,18 @@ class _TerratonFanIconState extends State<TerratonFanIcon>
 
   @override
   Widget build(BuildContext context) {
-    final icon = CustomPaint(
-      size: Size(widget.size, widget.size),
-      painter: _TerratonFanPainter(color: widget.color),
-    );
+    final Widget icon = widget.imagePath != null
+        ? Image.asset(
+            widget.imagePath!,
+            width: widget.size,
+            height: widget.size,
+            color: widget.color,
+            colorBlendMode: BlendMode.srcIn,
+          )
+        : CustomPaint(
+            size: Size(widget.size, widget.size),
+            painter: _TerratonFanPainter(color: widget.color),
+          );
 
     if (!widget.spinning) return icon;
 
