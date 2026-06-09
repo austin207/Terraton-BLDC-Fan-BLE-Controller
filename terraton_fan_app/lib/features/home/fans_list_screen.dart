@@ -524,7 +524,11 @@ class _FanList extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const TerratonFanIcon(size: 64, color: kTextDim),
+            const TerratonFanIcon(
+              size: 64,
+              color: kTextDim,
+              imagePath: 'assets/icons/3 Fan.png',
+            ),
             const SizedBox(height: 16),
             Text(
               'No $noun paired yet.',

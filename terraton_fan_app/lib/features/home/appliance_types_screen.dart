@@ -148,11 +148,11 @@ class _ApplianceTypeCardState extends State<ApplianceTypeCard> {
                 child: Center(
                   child: Image.asset(
                     type.iconPath,
-                    width: 20, height: 20,
+                    width: 28, height: 28,
                     color: kYellow,
                     colorBlendMode: BlendMode.srcIn,
                     errorBuilder: (_, __, ___) => Icon(
-                      _fallbackIcon(type.id), size: 18, color: kYellow,
+                      _fallbackIcon(type.id), size: 26, color: kYellow,
                     ),
                   ),
                 ),

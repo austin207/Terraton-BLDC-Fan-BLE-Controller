@@ -63,11 +63,18 @@ class _TerratonFanIconState extends State<TerratonFanIcon>
 
   @override
   Widget build(BuildContext context) {
+    // Decode the PNG at display resolution (×DPR) rather than its native
+    // 448×454 — avoids oversampling a large buffer for a 22–64 px icon,
+    // while staying crisp on high-density screens.
+    final int cachePx =
+        (widget.size * MediaQuery.devicePixelRatioOf(context)).ceil();
     final Widget icon = widget.imagePath != null
         ? Image.asset(
             widget.imagePath!,
             width: widget.size,
             height: widget.size,
+            cacheWidth: cachePx,
+            cacheHeight: cachePx,
             color: widget.color,
             colorBlendMode: BlendMode.srcIn,
           )
