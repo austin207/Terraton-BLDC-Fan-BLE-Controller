@@ -90,7 +90,7 @@ appliances:
     types:
 
       - id: ro_filter
-        displayName: RO Filter
+        displayName: RO
         modelPrefix: RO
         icon: assets/icons/ro_filter.png      # icon pending
         modelCount: 10
@@ -98,7 +98,7 @@ appliances:
           - water_quality
 
       - id: uf_uv_filter
-        displayName: UF / UV Filter
+        displayName: UF+UV
         modelPrefix: UV
         icon: assets/icons/uf_uv_filter.png   # icon pending
         modelCount: 10
@@ -116,7 +116,7 @@ appliances:
     types:
 
       - id: aqm_monitor
-        displayName: AQM Monitor
+        displayName: AQM
         modelPrefix: AQ
         icon: assets/icons/aqm_monitor.png    # icon pending
         modelCount: 10
@@ -144,15 +144,15 @@ appliances:
       - id: solar
         displayName: Solar
         modelPrefix: SL
-        icon: assets/icons/solar.png          # icon pending
+        icon: assets/icons/Energy.png
         modelCount: 10
         controls:
           - energy_metrics
 
       - id: battery_storage
-        displayName: Battery Storage
+        displayName: Storage
         modelPrefix: BA
-        icon: assets/icons/battery_storage.png  # icon pending
+        icon: assets/icons/Battery.png
         modelCount: 10
         controls:
           - energy_metrics

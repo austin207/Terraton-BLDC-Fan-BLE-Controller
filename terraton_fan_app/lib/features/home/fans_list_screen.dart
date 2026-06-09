@@ -57,14 +57,13 @@ class FansListScreen extends ConsumerWidget {
                   style: TextStyle(color: kTextMut)),
             ),
           ),
-          // FAB — opens model picker when type is known, old pairing flow otherwise.
           Positioned(
             right: 22,
             bottom: 26,
             child: _Fab(
               onTap: () {
                 if (fanType != null) {
-                  unawaited(_showFanModelSheet(context, fanType!));
+                  unawaited(_showConnectModal(context, ''));
                 } else {
                   goToOnboarding(context);
                 }
@@ -332,14 +331,16 @@ class _ConnectModal extends StatelessWidget {
                 fontSize: 20, fontWeight: FontWeight.w700, color: kText,
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Choose a connection method for $model',
-              style: GoogleFonts.manrope(
-                fontSize: 13, color: kTextMut, height: 1.4,
+            if (model.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Choose a connection method for $model',
+                style: GoogleFonts.manrope(
+                  fontSize: 13, color: kTextMut, height: 1.4,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
+            ],
             const SizedBox(height: 24),
             ConnectOptionButton(
               icon: Icons.qr_code_scanner_rounded,

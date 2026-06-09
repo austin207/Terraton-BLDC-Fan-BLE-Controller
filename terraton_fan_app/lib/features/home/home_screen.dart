@@ -132,8 +132,6 @@ class _HomeTab extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
         ],
-
-        const _UsageCard(),
       ],
     );
   }
