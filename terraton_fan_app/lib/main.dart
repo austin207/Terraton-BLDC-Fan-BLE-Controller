@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
+import 'package:terraton_fan_app/core/config/app_feature_config.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
@@ -50,6 +51,7 @@ Future<void> main() async {
 
   await CommandLoader.load();
   await ApplianceLoader.load();
+  await AppFeatureConfig.load();
 
   // Register non-fan appliance control widgets (tester variant only).
   // Skipped for client variant — those categories are not in appliances_client.yaml.

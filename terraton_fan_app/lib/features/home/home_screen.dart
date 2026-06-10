@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
+import 'package:terraton_fan_app/core/config/app_feature_config.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
@@ -30,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     // OTA update check — tester variant only; client variant ships without updates.
-    if (!kIsClientVariant) {
+    if (!kIsClientVariant && AppFeatureConfig.autoUpdateEnabled) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => unawaited(_checkForUpdate()),
       );

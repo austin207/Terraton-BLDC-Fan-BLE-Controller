@@ -1,7 +1,7 @@
 name: terraton_fan_app
 description: "Terraton BLDC Fan BLE Controller"
 publish_to: 'none'
-version: 3.0.5+35
+version: 3.0.6+36
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
@@ -63,6 +63,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/app_config.yaml
     - assets/commands.yaml
     - assets/appliances.yaml
     - assets/appliances_client.yaml

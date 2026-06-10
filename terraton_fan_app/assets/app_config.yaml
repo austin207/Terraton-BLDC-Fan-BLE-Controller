@@ -1,0 +1,8 @@
+# App-level runtime configuration flags.
+#
+# auto_update_enabled — when false, disables the in-app OTA update feature
+# entirely: the automatic check on Home launch AND the manual "Check for
+# Updates" tile in Settings. Has no effect on the client variant, which
+# never shows OTA regardless of this flag.
+
+auto_update_enabled: true

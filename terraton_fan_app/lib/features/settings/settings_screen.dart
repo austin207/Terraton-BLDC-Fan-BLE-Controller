@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:terraton_fan_app/core/config/app_feature_config.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
@@ -126,7 +127,8 @@ class SettingsScreen extends ConsumerWidget {
             ),
             divider: true,
           ),
-          if (!kIsClientVariant) const _UpdateCheckTile(divider: true),
+          if (!kIsClientVariant && AppFeatureConfig.autoUpdateEnabled)
+            const _UpdateCheckTile(divider: true),
           const _SettingRow(
             iconBg: kCardHi,
             iconColor: kText,
