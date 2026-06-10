@@ -93,6 +93,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       repo.getLogsInRange(
           from, endExclusive.subtract(const Duration(milliseconds: 1)));
 
+  Future<void> _onRefresh() async {
+    ref.invalidate(savedFansProvider);
+    _reloadData();
+    await _loadTariff();
+  }
+
   @override
   void dispose() {
     _tariffCtrl.dispose();
@@ -339,9 +345,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final maxFanKwh =
         fanKwh.isEmpty ? 1.0 : fanKwh.map((f) => f.$2).reduce(math.max);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-      children: [
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: kYellow,
+      backgroundColor: kCard,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+        children: [
         // Header
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
@@ -735,7 +746,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             ),
           )),
         ],
-      ],
+        ],
+      ),
     );
   }
 }
