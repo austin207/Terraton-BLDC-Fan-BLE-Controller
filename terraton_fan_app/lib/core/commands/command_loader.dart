@@ -65,6 +65,12 @@ class CommandLoader {
     return List<int>.from((node['frame'] as YamlList));
   }
 
+  static List<int> getMotorState() {
+    final node = _safeGet(['get_motor_state']);
+    if (node == null) throw StateError('get_motor_state missing from commands.yaml');
+    return List<int>.from((node['frame'] as YamlList));
+  }
+
   static List<int>? power(String action) {
     final cmd = _safeGet(['commands', 'power']);
     if (cmd == null) return null;

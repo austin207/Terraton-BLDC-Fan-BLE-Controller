@@ -441,12 +441,12 @@ class _CenterReadout extends StatelessWidget {
           children: [
             _Stat(
               label: 'RPM',
-              value: (enabled && !isNature && (speed > 0 || boost)) ? (rpm != null ? '$rpm' : '—') : '—',
+              value: (enabled && (speed > 0 || boost || isNature)) ? (rpm != null ? '$rpm' : '—') : '—',
             ),
             Container(width: 1, height: 28, color: kHairline, margin: const EdgeInsets.symmetric(horizontal: 18)),
             _Stat(
               label: 'WATTS',
-              value: (enabled && !isNature && (speed > 0 || boost)) ? (watts != null ? '$watts' : '—') : '—',
+              value: (enabled && (speed > 0 || boost || isNature)) ? (watts != null ? '$watts' : '—') : '—',
             ),
           ],
         ),

@@ -63,7 +63,7 @@ class FansListScreen extends ConsumerWidget {
             child: _Fab(
               onTap: () {
                 if (fanType != null) {
-                  unawaited(_showConnectModal(context, ''));
+                  unawaited(_showFanModelSheet(context, fanType!));
                 } else {
                   goToOnboarding(context);
                 }

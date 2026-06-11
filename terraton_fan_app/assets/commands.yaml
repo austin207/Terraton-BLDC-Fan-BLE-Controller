@@ -26,6 +26,13 @@ protocol:
 status_poll:
   frame: [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00]
 
+# Special case: get motor state uses a fixed non-standard frame.
+# Sent once after every connection/reconnection to sync button states
+# (power, speed, mode, timer). The 5-second status poll above continues
+# to handle ongoing RPM/watts telemetry.
+get_motor_state:
+  frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]
+
 commands:
 
   power:

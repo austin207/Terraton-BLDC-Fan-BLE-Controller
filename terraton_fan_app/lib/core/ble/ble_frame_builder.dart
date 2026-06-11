@@ -7,6 +7,7 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 
 class BleFrameBuilder {
   static List<int>  statusPoll()          => CommandLoader.statusPoll();
+  static List<int>  getMotorState()       => CommandLoader.getMotorState();
   static List<int>? powerOn()             => CommandLoader.power('on');
   static List<int>? powerOff()            => CommandLoader.power('off');
   static List<int>? setSpeed(int step)    => CommandLoader.speed(step);

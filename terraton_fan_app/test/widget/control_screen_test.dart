@@ -199,6 +199,9 @@ void main() {
     );
     expect(boostGesture.onTap, isNull);
 
+    // _connect() already sent the post-connect Get Motor State sync frame;
+    // clear it so this verifies no *control* frame was written.
+    clearInteractions(mockBle);
     verifyNever(() => mockBle.writeFrame(any()));
   });
 
@@ -207,6 +210,9 @@ void main() {
   testWidgets('light ON shows SnackBar and does not call writeFrame',
       (tester) async {
     await pumpConnected(tester);
+    // _connect() already sent the post-connect Get Motor State sync frame;
+    // clear it so this verifies no frame was written for the lighting tap.
+    clearInteractions(mockBle);
 
     // LightingControlWidget may be scrolled off the 600 px test viewport.
     // Invoke onLightOn directly — the contract being tested is the frame

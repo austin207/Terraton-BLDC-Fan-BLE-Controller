@@ -5,4 +5,4 @@
 # Updates" tile in Settings. Has no effect on the client variant, which
 # never shows OTA regardless of this flag.
 
-auto_update_enabled: true
+auto_update_enabled: false

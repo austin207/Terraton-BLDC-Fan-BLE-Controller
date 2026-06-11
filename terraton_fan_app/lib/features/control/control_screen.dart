@@ -170,6 +170,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _lastRpmAt   = null;
       _startTelemetry();
       _subscribeNotify();
+      try {
+        await _ble.writeFrame(BleFrameBuilder.getMotorState());
+      } on Object catch (_) {
+        // Fan disconnected before motor-state sync; reconnection retries cover it.
+      }
     } on Object catch (_) {
       // Expected connection Exception — connectionStateStream emits disconnected,
       // surfacing the ConnectionLostCard with a Retry button.
