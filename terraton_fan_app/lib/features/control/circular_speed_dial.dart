@@ -42,7 +42,10 @@ class CircularSpeedDial extends StatelessWidget {
       isNature: isNature,
       disabledSpeeds: disabledSpeeds,
       onSpeedTap: (s) {
-        if (!enabled || isNature || disabledSpeeds.contains(s)) return;
+        // Nature/Smart dim certain dots for visual feedback, but a tap on a
+        // dimmed dot still registers — the control screen interprets it as
+        // "exit Nature/Smart and apply this speed".
+        if (!enabled) return;
         unawaited(HapticFeedback.lightImpact());
         onSpeedSelected(s);
       },
@@ -147,7 +150,9 @@ class _RadialDial extends StatelessWidget {
             Builder(builder: (_) {
               final ang = i * angStep;
               final pos = _polar(cx, cy, _r, ang);
-              final tappable = enabled && !isNature && !disabledSpeeds.contains(i + 1);
+              // Dimmed dots (Nature/Smart-disabled) remain tappable — tapping
+              // them exits Nature/Smart and applies the selected speed.
+              final tappable = enabled;
               return Positioned(
                 left: pos.dx - _hitD / 2,
                 top: pos.dy - _hitD / 2,

@@ -171,14 +171,54 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         .round();
   }
 
+  /// Per-speed wattage, scaled linearly from the [_traditionalWatts] baseline.
+  static double _traditionalWattsForSpeed(int speed) =>
+      _traditionalWatts * speed / 6;
+
+  /// Smart Mode efficiency: compares each Smart segment's modelled consumption
+  /// against what the baseline speed (active immediately before Smart was
+  /// enabled) would have consumed over the same runtime.
+  ///
+  /// Smart Mode consumption models a gradual reduction from the baseline speed
+  /// down to Speed 1 — the first 2 hours per speed level (baseline..1) are
+  /// spent stepping down through those levels; any remaining runtime is spent
+  /// entirely at Speed 1.
   int _efficiency(List<UsageLog> logs) {
-    final active = logs.where((l) => l.watts > 0 && l.gear > 0).toList();
-    if (active.isEmpty) return 0;
-    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
-    if (totalSecs == 0) return 0;
-    final terrWh = active.fold(0.0, (s, l) => s + l.watts * l.durationSecs / 3600.0);
-    final tradWh = _traditionalWatts * totalSecs / 3600.0;
-    return ((tradWh - terrWh) / tradWh * 100).round().clamp(0, 100);
+    final smart = logs
+        .where((l) => l.mode == 'smart' && l.gear > 0 && l.durationSecs > 0)
+        .toList();
+    if (smart.isEmpty) return 0;
+
+    const stepSecs = 2 * 3600;
+    double totalTraditionalWh = 0;
+    double totalSmartWh = 0;
+
+    for (final l in smart) {
+      final baseline = (l.smartBaselineGear ?? l.gear).clamp(1, 6);
+      totalTraditionalWh += _traditionalWattsForSpeed(baseline) * l.durationSecs / 3600.0;
+
+      final reductionTotalSecs = stepSecs * baseline;
+      final levelSecs = <int, int>{};
+      if (l.durationSecs <= reductionTotalSecs) {
+        final perLevel = l.durationSecs / baseline;
+        for (var level = 1; level <= baseline; level++) {
+          levelSecs[level] = perLevel.round();
+        }
+      } else {
+        for (var level = 1; level <= baseline; level++) {
+          levelSecs[level] = stepSecs;
+        }
+        levelSecs[1] = (levelSecs[1] ?? 0) + (l.durationSecs - reductionTotalSecs);
+      }
+      for (final entry in levelSecs.entries) {
+        totalSmartWh += _traditionalWattsForSpeed(entry.key) * entry.value / 3600.0;
+      }
+    }
+
+    if (totalTraditionalWh == 0) return 0;
+    return ((totalTraditionalWh - totalSmartWh) / totalTraditionalWh * 100)
+        .round()
+        .clamp(0, 100);
   }
 
   int _avgRpm(List<UsageLog> logs) {
@@ -328,6 +368,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final fansAsync = ref.watch(savedFansProvider);
+    final userName = ref.watch(userNameProvider).valueOrNull ?? '';
 
     // All O(n) aggregation is cached in _reloadData(); build() only does O(1) arithmetic.
     final cost = _totalKwh * _tariff;
@@ -359,7 +400,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           child: BrandMark(height: 40),
         ),
         Text(
-          'Energy & savings',
+          userName.isNotEmpty ? "$userName's Energy Usage" : 'Energy & savings',
           style: GoogleFonts.manrope(
             fontSize: 24, fontWeight: FontWeight.w700,
             color: kText, letterSpacing: -0.5,
@@ -371,6 +412,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ? 'Start using your fans to see usage data.'
               : 'Tracking ${fanKwh.length} fan${fanKwh.length == 1 ? '' : 's'} across your home.',
           style: GoogleFonts.manrope(fontSize: 13, color: kTextMut),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'ⓘ Analytics are calculated using both recorded fan activity and '
+          'estimated runtime based on the last known speed and mode. Changes '
+          'made using a remote or while the app is disconnected may not be '
+          'fully reflected in the displayed data.',
+          style: GoogleFonts.manrope(fontSize: 11, color: kTextMut, height: 1.4),
         ),
 
         const SizedBox(height: 16),

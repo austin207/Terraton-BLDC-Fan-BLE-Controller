@@ -31,6 +31,18 @@ class _FakeRepo implements FanRepository {
   Future<void> saveState(FanState fanState) async =>
       _states[fanState.deviceId] = fanState;
   @override
+  Future<void> saveOpenSegment(
+    String deviceId, {
+    required DateTime start,
+    required int gear,
+    String? mode,
+    int? smartBaselineGear,
+    required int wattsSum,
+    required int wattsCount,
+    required int rpmSum,
+    required int rpmCount,
+  }) async {}
+  @override
   String exportToJson() => '{}';
   @override
   Future<int> importFromJson(String json) async => 0;

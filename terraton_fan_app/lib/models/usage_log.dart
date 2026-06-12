@@ -29,6 +29,10 @@ class UsageLog {
   /// Active mode: 'smart' | 'reverse' | 'nature' | 'boost' | null (normal).
   String? mode;
 
+  /// Speed (1-6) active immediately before Smart Mode was enabled for this
+  /// segment. Only set when mode == 'smart'; used as the efficiency baseline.
+  int? smartBaselineGear;
+
   UsageLog({
     this.id = 0,
     required this.deviceId,
@@ -38,6 +42,7 @@ class UsageLog {
     required this.watts,
     this.rpm = 0,
     this.mode,
+    this.smartBaselineGear,
   });
 
   /// Energy in kWh for this segment.

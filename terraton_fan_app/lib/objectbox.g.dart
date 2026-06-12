@@ -95,7 +95,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 6584660752010918141),
     name: 'FanState',
-    lastPropertyId: const obx_int.IdUid(12, 1825458419538538317),
+    lastPropertyId: const obx_int.IdUid(20, 1038581388731706913),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -171,6 +171,54 @@ final _entities = <obx_int.ModelEntity>[
         type: 1,
         flags: 0,
       ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(13, 3257475452761487086),
+        name: 'openSegmentStart',
+        type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(14, 2922610925722302106),
+        name: 'openSegmentGear',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(15, 356690034951243647),
+        name: 'openSegmentMode',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(16, 1968679545250408128),
+        name: 'openSegmentSmartBaseline',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(17, 4999734423800603426),
+        name: 'openSegmentWattsSum',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(18, 1576495503626155822),
+        name: 'openSegmentWattsCount',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(19, 6520789390621056405),
+        name: 'openSegmentRpmSum',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(20, 1038581388731706913),
+        name: 'openSegmentRpmCount',
+        type: 6,
+        flags: 0,
+      ),
     ],
     relations: <obx_int.ModelRelation>[],
     backlinks: <obx_int.ModelBacklink>[],
@@ -178,7 +226,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(3, 7745722999259312107),
     name: 'UsageLog',
-    lastPropertyId: const obx_int.IdUid(8, 4350952620612556560),
+    lastPropertyId: const obx_int.IdUid(9, 7541423025244100045),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -226,6 +274,12 @@ final _entities = <obx_int.ModelEntity>[
       obx_int.ModelProperty(
         id: const obx_int.IdUid(8, 4350952620612556560),
         name: 'rpm',
+        type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(9, 7541423025244100045),
+        name: 'smartBaselineGear',
         type: 6,
         flags: 0,
       ),
@@ -380,7 +434,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final lastLightColorTypeOffset = fbb.writeString(
           object.lastLightColorType,
         );
-        fbb.startTable(13);
+        final openSegmentModeOffset = object.openSegmentMode == null
+            ? null
+            : fbb.writeString(object.openSegmentMode!);
+        fbb.startTable(21);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.speed);
@@ -393,6 +450,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addOffset(9, lastLightColorTypeOffset);
         fbb.addFloat64(10, object.lastLightBrightness);
         fbb.addBool(11, object.lastLightIsOn);
+        fbb.addInt64(12, object.openSegmentStart.millisecondsSinceEpoch);
+        fbb.addInt64(13, object.openSegmentGear);
+        fbb.addOffset(14, openSegmentModeOffset);
+        fbb.addInt64(15, object.openSegmentSmartBaseline);
+        fbb.addInt64(16, object.openSegmentWattsSum);
+        fbb.addInt64(17, object.openSegmentWattsCount);
+        fbb.addInt64(18, object.openSegmentRpmSum);
+        fbb.addInt64(19, object.openSegmentRpmCount);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -450,6 +515,47 @@ obx_int.ModelDefinition getObjectBoxModel() {
             rootOffset,
             26,
             false,
+          )
+          ..openSegmentStart = DateTime.fromMillisecondsSinceEpoch(
+            const fb.Int64Reader().vTableGet(buffer, rootOffset, 28, 0),
+          )
+          ..openSegmentGear = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            30,
+            0,
+          )
+          ..openSegmentMode = const fb.StringReader(
+            asciiOptimization: true,
+          ).vTableGetNullable(buffer, rootOffset, 32)
+          ..openSegmentSmartBaseline = const fb.Int64Reader().vTableGetNullable(
+            buffer,
+            rootOffset,
+            34,
+          )
+          ..openSegmentWattsSum = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            36,
+            0,
+          )
+          ..openSegmentWattsCount = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            38,
+            0,
+          )
+          ..openSegmentRpmSum = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            40,
+            0,
+          )
+          ..openSegmentRpmCount = const fb.Int64Reader().vTableGet(
+            buffer,
+            rootOffset,
+            42,
+            0,
           );
 
         return object;
@@ -468,7 +574,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final modeOffset = object.mode == null
             ? null
             : fbb.writeString(object.mode!);
-        fbb.startTable(9);
+        fbb.startTable(10);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.startTime.millisecondsSinceEpoch);
@@ -477,6 +583,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(5, object.watts);
         fbb.addOffset(6, modeOffset);
         fbb.addInt64(7, object.rpm);
+        fbb.addInt64(8, object.smartBaselineGear);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -522,6 +629,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final modeParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 16);
+        final smartBaselineGearParam = const fb.Int64Reader().vTableGetNullable(
+          buffer,
+          rootOffset,
+          20,
+        );
         final object = UsageLog(
           id: idParam,
           deviceId: deviceIdParam,
@@ -531,6 +643,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           watts: wattsParam,
           rpm: rpmParam,
           mode: modeParam,
+          smartBaselineGear: smartBaselineGearParam,
         );
 
         return object;
@@ -655,6 +768,46 @@ class FanState_ {
   static final lastLightIsOn = obx.QueryBooleanProperty<FanState>(
     _entities[1].properties[11],
   );
+
+  /// See [FanState.openSegmentStart].
+  static final openSegmentStart = obx.QueryDateProperty<FanState>(
+    _entities[1].properties[12],
+  );
+
+  /// See [FanState.openSegmentGear].
+  static final openSegmentGear = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[13],
+  );
+
+  /// See [FanState.openSegmentMode].
+  static final openSegmentMode = obx.QueryStringProperty<FanState>(
+    _entities[1].properties[14],
+  );
+
+  /// See [FanState.openSegmentSmartBaseline].
+  static final openSegmentSmartBaseline = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[15],
+  );
+
+  /// See [FanState.openSegmentWattsSum].
+  static final openSegmentWattsSum = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[16],
+  );
+
+  /// See [FanState.openSegmentWattsCount].
+  static final openSegmentWattsCount = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[17],
+  );
+
+  /// See [FanState.openSegmentRpmSum].
+  static final openSegmentRpmSum = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[18],
+  );
+
+  /// See [FanState.openSegmentRpmCount].
+  static final openSegmentRpmCount = obx.QueryIntegerProperty<FanState>(
+    _entities[1].properties[19],
+  );
 }
 
 /// [UsageLog] entity fields to define ObjectBox queries.
@@ -697,5 +850,10 @@ class UsageLog_ {
   /// See [UsageLog.rpm].
   static final rpm = obx.QueryIntegerProperty<UsageLog>(
     _entities[2].properties[7],
+  );
+
+  /// See [UsageLog.smartBaselineGear].
+  static final smartBaselineGear = obx.QueryIntegerProperty<UsageLog>(
+    _entities[2].properties[8],
   );
 }

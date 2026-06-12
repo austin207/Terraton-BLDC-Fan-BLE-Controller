@@ -75,6 +75,31 @@ class _FakeRepo implements FanRepository {
   }
 
   @override
+  Future<void> saveOpenSegment(
+    String deviceId, {
+    required DateTime start,
+    required int gear,
+    String? mode,
+    int? smartBaselineGear,
+    required int wattsSum,
+    required int wattsCount,
+    required int rpmSum,
+    required int rpmCount,
+  }) async {
+    final existing = getState(deviceId);
+    existing.openSegmentStart         = start;
+    existing.openSegmentGear          = gear;
+    existing.openSegmentMode          = mode;
+    existing.openSegmentSmartBaseline = smartBaselineGear;
+    existing.openSegmentWattsSum      = wattsSum;
+    existing.openSegmentWattsCount    = wattsCount;
+    existing.openSegmentRpmSum        = rpmSum;
+    existing.openSegmentRpmCount      = rpmCount;
+    _states.removeWhere((s) => s.deviceId == deviceId);
+    _states.add(existing);
+  }
+
+  @override
   String exportToJson() {
     final fans = getAllFans();
     final map = {

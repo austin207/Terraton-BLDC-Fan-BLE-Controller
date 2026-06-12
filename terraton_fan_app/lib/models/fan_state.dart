@@ -22,6 +22,23 @@ class FanState {
   double lastLightBrightness = 0.7;
   bool   lastLightIsOn       = false;
 
+  // ── Last Known State Continuation — open usage-log segment ─────────────────
+  // Persisted so a segment's duration can span app restarts/disconnects.
+  // openSegmentGear == 0 means no open segment. Deliberately excluded from
+  // ==/hashCode — these are bookkeeping fields, not part of the live fan state
+  // that Riverpod consumers compare against.
+  @Property(type: PropertyType.date)
+  DateTime openSegmentStart = DateTime(0);
+  int      openSegmentGear  = 0;
+  String?  openSegmentMode;
+  // Speed active immediately before Smart Mode was enabled for this segment —
+  // used as the Smart Mode efficiency baseline. Only set when openSegmentMode == 'smart'.
+  int?     openSegmentSmartBaseline;
+  int      openSegmentWattsSum   = 0;
+  int      openSegmentWattsCount = 0;
+  int      openSegmentRpmSum     = 0;
+  int      openSegmentRpmCount   = 0;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -70,5 +87,13 @@ extension FanStateCopyWith on FanState {
         ..lastRpm             = lastRpm             != null ? lastRpm()         : this.lastRpm
         ..lastLightColorType  = lastLightColorType  ?? this.lastLightColorType
         ..lastLightBrightness = lastLightBrightness ?? this.lastLightBrightness
-        ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn;
+        ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn
+        ..openSegmentStart         = openSegmentStart
+        ..openSegmentGear          = openSegmentGear
+        ..openSegmentMode          = openSegmentMode
+        ..openSegmentSmartBaseline = openSegmentSmartBaseline
+        ..openSegmentWattsSum      = openSegmentWattsSum
+        ..openSegmentWattsCount    = openSegmentWattsCount
+        ..openSegmentRpmSum        = openSegmentRpmSum
+        ..openSegmentRpmCount      = openSegmentRpmCount;
 }

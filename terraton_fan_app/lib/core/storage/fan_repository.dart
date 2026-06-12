@@ -14,6 +14,22 @@ abstract class FanRepository {
   Future<void> renameFan(String deviceId, String newNickname);
   FanState getState(String deviceId);
   Future<void> saveState(FanState fanState);
+
+  /// Persists the "open" usage-log segment for Last Known State Continuation —
+  /// independent of [saveState] so frequent telemetry-driven writes don't
+  /// touch the live Riverpod fan state.
+  Future<void> saveOpenSegment(
+    String deviceId, {
+    required DateTime start,
+    required int gear,
+    String? mode,
+    int? smartBaselineGear,
+    required int wattsSum,
+    required int wattsCount,
+    required int rpmSum,
+    required int rpmCount,
+  });
+
   String exportToJson();
   Future<int> importFromJson(String json);
 }
@@ -99,9 +115,48 @@ class FanRepositoryImpl implements FanRepository {
         _stateBox.query(FanState_.deviceId.equals(fanState.deviceId)).build(),
         (q) => q.findFirst());
     // Copy before mutating so the live Riverpod state object is never modified
-    // outside a Riverpod state transition.
-    final toSave = existing != null ? (fanState.copyWith()..id = existing.id) : fanState;
+    // outside a Riverpod state transition. The live state never carries open-segment
+    // bookkeeping, so preserve whatever is already persisted for those fields.
+    final toSave = existing != null
+        ? (fanState.copyWith()
+          ..id                       = existing.id
+          ..openSegmentStart         = existing.openSegmentStart
+          ..openSegmentGear          = existing.openSegmentGear
+          ..openSegmentMode          = existing.openSegmentMode
+          ..openSegmentSmartBaseline = existing.openSegmentSmartBaseline
+          ..openSegmentWattsSum      = existing.openSegmentWattsSum
+          ..openSegmentWattsCount    = existing.openSegmentWattsCount
+          ..openSegmentRpmSum        = existing.openSegmentRpmSum
+          ..openSegmentRpmCount      = existing.openSegmentRpmCount)
+        : fanState;
     _stateBox.put(toSave);
+  }
+
+  @override
+  Future<void> saveOpenSegment(
+    String deviceId, {
+    required DateTime start,
+    required int gear,
+    String? mode,
+    int? smartBaselineGear,
+    required int wattsSum,
+    required int wattsCount,
+    required int rpmSum,
+    required int rpmCount,
+  }) async {
+    final existing = _useQuery(
+        _stateBox.query(FanState_.deviceId.equals(deviceId)).build(),
+        (q) => q.findFirst())
+        ?? (FanState()..deviceId = deviceId);
+    existing.openSegmentStart         = start;
+    existing.openSegmentGear          = gear;
+    existing.openSegmentMode          = mode;
+    existing.openSegmentSmartBaseline = smartBaselineGear;
+    existing.openSegmentWattsSum      = wattsSum;
+    existing.openSegmentWattsCount    = wattsCount;
+    existing.openSegmentRpmSum        = rpmSum;
+    existing.openSegmentRpmCount      = rpmCount;
+    _stateBox.put(existing);
   }
 
   @override

@@ -84,6 +84,17 @@ void main() {
         .thenReturn(FanState()..deviceId = 'TT-001');
     when(() => mockRepo.getAllFans()).thenReturn([]);
     when(() => mockRepo.saveState(any())).thenAnswer((_) async {});
+    when(() => mockRepo.saveOpenSegment(
+          any(),
+          start: any(named: 'start'),
+          gear: any(named: 'gear'),
+          mode: any(named: 'mode'),
+          smartBaselineGear: any(named: 'smartBaselineGear'),
+          wattsSum: any(named: 'wattsSum'),
+          wattsCount: any(named: 'wattsCount'),
+          rpmSum: any(named: 'rpmSum'),
+          rpmCount: any(named: 'rpmCount'),
+        )).thenAnswer((_) async {});
     when(() => mockRepo.updateMac(any(), any())).thenAnswer((_) async {});
   });
 
@@ -207,16 +218,16 @@ void main() {
 
   // ── Lighting pending ───────────────────────────────────────────────────────
 
-  testWidgets('light ON shows SnackBar and does not call writeFrame',
+  testWidgets('light ON shows SnackBar and auto powers on the fan',
       (tester) async {
     await pumpConnected(tester);
     // _connect() already sent the post-connect Get Motor State sync frame;
-    // clear it so this verifies no frame was written for the lighting tap.
+    // clear it so this verifies only the frames written for the lighting tap.
     clearInteractions(mockBle);
 
     // LightingControlWidget may be scrolled off the 600 px test viewport.
     // Invoke onLightOn directly — the contract being tested is the frame
-    // (null → SnackBar, no writeFrame call), not the tap geometry.
+    // (null → SnackBar, no lighting writeFrame call), not the tap geometry.
     final lightWidget = tester.widget<LightingControlWidget>(
       find.byType(LightingControlWidget),
     );
@@ -227,6 +238,10 @@ void main() {
       find.text('Lighting commands pending from Terraton'),
       findsOneWidget,
     );
-    verifyNever(() => mockBle.writeFrame(any()));
+    // The lighting frame itself is still pending (null → SnackBar only), but
+    // since the fan was off, using any control auto powers it on first.
+    verify(
+      () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]),
+    ).called(1);
   });
 }

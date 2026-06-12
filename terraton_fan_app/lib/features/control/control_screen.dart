@@ -16,12 +16,14 @@ import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/features/control/control_registry.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/features/control/connection_banner.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
 import 'package:terraton_fan_app/core/background/ble_foreground_service.dart';
+import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
@@ -466,14 +468,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
                   },
                 ),
                 const SizedBox(height: 20),
+                // Only block taps when disconnected — when the fan is connected
+                // but powered off, taps still register so they can auto power-on
+                // the fan via _ensurePoweredOn() before applying the action.
                 IgnorePointer(
-                  ignoring: !controlsEnabled,
+                  ignoring: !enabled,
                   child: AnimatedOpacity(
                     opacity: controlsEnabled ? 1.0 : 0.45,
                     duration: const Duration(milliseconds: 300),
                     child: _FanControlsPanel(
                       fan: widget.fan,
-                      controlsEnabled: controlsEnabled,
+                      enabled: enabled,
                       send: _send,
                     ),
                   ),
@@ -596,12 +601,14 @@ class _ConnStatusLabel extends StatelessWidget {
 
 class _FanControlsPanel extends ConsumerStatefulWidget {
   final FanDevice fan;
-  final bool controlsEnabled;
+  // BLE-connection-based (not power-gated) — controls stay tappable while the
+  // fan is powered off so _ensurePoweredOn() can auto power-on the fan.
+  final bool enabled;
   final _SendFn send;
 
   const _FanControlsPanel({
     required this.fan,
-    required this.controlsEnabled,
+    required this.enabled,
     required this.send,
   });
 
@@ -615,10 +622,15 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   double _brightnessValue = 0.7;
   bool   _isLightOn       = false;
 
-  // ── Usage-log segment tracker ──────────────────────────────────────────────
+  // ── Usage-log segment tracker (Last Known State Continuation) ──────────────
+  // A segment's duration can span app restarts/disconnects — it remains open
+  // until the app detects another speed/mode change, per the analytics spec.
   DateTime? _segmentStart;
   int   _segmentGear = 0;
   String? _segmentMode;
+  // Speed active immediately before Smart Mode was enabled — Smart-mode
+  // efficiency baseline. Only meaningful when _segmentMode == 'smart'.
+  int? _segmentSmartBaseline;
 
   // Running accumulators: sum all BLE poll responses during a segment, then
   // divide at flush time. Avoids the "watts=0 if polled before first response"
@@ -627,23 +639,27 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   int _segmentWattsCount = 0;
   int _segmentRpmSum     = 0;
   int _segmentRpmCount   = 0;
-  // Last observed non-zero value — used by _flushOnClose() where ref is unavailable.
+  // Last observed non-zero value — used as a fallback when no telemetry
+  // arrived yet (e.g. speed changed immediately after connect).
   int _lastKnownWatts    = 0;
 
   // Cached in initState — ref.read() is forbidden inside dispose().
   late final UsageLogRepository _usageLogRepo;
+  late final FanRepository      _fanRepo;
   // Cached because fan.model is immutable for the widget's lifetime.
   late final ApplianceType? _applianceType;
 
-  // Speed saved when Nature mode activates — restored when switching to Smart/Reverse.
+  // Speed saved when Nature mode activates — restored when Nature is toggled off
+  // or when switching to Smart/Reverse.
   int _preNatureSpeed = 0;
-  // Speed saved when Reverse mode activates — restored when Reverse is toggled off.
-  int _preReverseSpeed = 0;
+  // Speed saved when Smart mode activates — restored when Smart is toggled off.
+  int _preSmartSpeed = 0;
 
   @override
   void initState() {
     super.initState();
     _usageLogRepo    = ref.read(usageLogRepositoryProvider);
+    _fanRepo         = ref.read(fanRepositoryProvider);
     _applianceType   = ApplianceLoader.typeForModel(widget.fan.model);
     WidgetsBinding.instance.addObserver(this);
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
@@ -653,98 +669,170 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       // Default to 3 when speed is 0 (e.g. screen re-opened before first telemetry).
       _preNatureSpeed = s.speed > 0 ? s.speed : 3;
     }
-    if (s.activeMode == 'reverse') {
-      _preReverseSpeed = s.speed > 0 ? s.speed : 1;
+    if (s.activeMode == 'smart') {
+      _preSmartSpeed = s.speed > 0 ? s.speed : 3;
     }
     // Restore lighting UI state from last persisted values.
     _colorType       = s.lastLightColorType;
     _brightnessValue = s.lastLightBrightness;
     _isLightOn       = s.lastLightIsOn;
-    // Seed segment tracking if the fan is already running (e.g. screen reopened).
-    if (s.isPowered && s.speed > 0) {
-      _segmentStart = DateTime.now();
-      _segmentGear  = s.speed;
-      _segmentMode  = s.activeMode;
-    }
+    // Resume or reconcile the persisted open segment (Last Known State Continuation).
+    _reconcileOpenSegment(s);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      // Flush the open segment before the app is backgrounded.
-      _flushSegment(newGear: 0, newMode: null);
+      // Persist the open segment's progress so it can be continued (or
+      // reconciled against a remote-detected change) on resume/restart.
+      _persistOpenSegment();
     } else if (state == AppLifecycleState.resumed) {
-      // Restart tracking from the live fan state when the user returns.
       final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-      if (s.isPowered && s.speed > 0) {
-        _segmentStart = DateTime.now();
-        _segmentGear  = s.speed;
-        _segmentMode  = s.activeMode;
-      }
+      _reconcileOpenSegment(s);
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _flushOnClose();
+    _persistOpenSegment();
     super.dispose();
   }
 
-  /// Flush the current open segment directly (no ref — safe for dispose).
-  /// Uses the same running-average logic as [_flushSegment] so the final
-  /// segment (app backgrounded / disposed while running) is averaged like
-  /// every other one, not recorded at a single point-in-time watt value.
-  void _flushOnClose() {
-    final start = _segmentStart;
-    if (start == null || _segmentGear <= 0) return;
-    final secs = DateTime.now().difference(start).inSeconds;
-    if (secs <= 0) return;
-    final avgWatts = _segmentWattsCount > 0
-        ? (_segmentWattsSum / _segmentWattsCount).round()
-        : _lastKnownWatts;
-    final avgRpm = _segmentRpmCount > 0
-        ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
+  /// Reconciles the in-memory segment tracker against the persisted "open
+  /// segment" and the current live fan state (Last Known State Continuation).
+  ///
+  /// - If the persisted open segment matches the live gear/mode, resume it
+  ///   as-is — its duration now spans whatever time has passed, including
+  ///   any time the app was closed or disconnected.
+  /// - If the live state differs (a remote/disconnected change was detected),
+  ///   close the persisted segment as of now and start a new one.
+  /// - If there is no persisted open segment, start one if the fan is running.
+  void _reconcileOpenSegment(FanState live) {
+    final persisted = _fanRepo.getState(widget.fan.deviceId);
+    final continuing = persisted.openSegmentGear > 0 &&
+        persisted.openSegmentGear == live.speed &&
+        persisted.openSegmentMode == live.activeMode &&
+        live.isPowered;
+
+    if (continuing) {
+      _segmentStart         = persisted.openSegmentStart;
+      _segmentGear          = persisted.openSegmentGear;
+      _segmentMode          = persisted.openSegmentMode;
+      _segmentSmartBaseline = persisted.openSegmentSmartBaseline;
+      _segmentWattsSum      = persisted.openSegmentWattsSum;
+      _segmentWattsCount    = persisted.openSegmentWattsCount;
+      _segmentRpmSum        = persisted.openSegmentRpmSum;
+      _segmentRpmCount      = persisted.openSegmentRpmCount;
+      return;
+    }
+
+    if (persisted.openSegmentGear > 0) {
+      final secs = DateTime.now().difference(persisted.openSegmentStart).inSeconds;
+      if (secs > 0) {
+        _writeUsageLog(
+          start:             persisted.openSegmentStart,
+          durationSecs:      secs,
+          gear:              persisted.openSegmentGear,
+          mode:              persisted.openSegmentMode,
+          smartBaselineGear: persisted.openSegmentSmartBaseline,
+          wattsSum:          persisted.openSegmentWattsSum,
+          wattsCount:        persisted.openSegmentWattsCount,
+          rpmSum:            persisted.openSegmentRpmSum,
+          rpmCount:          persisted.openSegmentRpmCount,
+        );
+      }
+    }
+
+    _segmentWattsSum   = 0;
+    _segmentWattsCount = 0;
+    _segmentRpmSum     = 0;
+    _segmentRpmCount   = 0;
+    if (live.isPowered && live.speed > 0) {
+      _segmentStart         = DateTime.now();
+      _segmentGear          = live.speed;
+      _segmentMode          = live.activeMode;
+      _segmentSmartBaseline = null;
+    } else {
+      _segmentStart         = null;
+      _segmentGear          = 0;
+      _segmentMode          = null;
+      _segmentSmartBaseline = null;
+    }
+    _persistOpenSegment();
+  }
+
+  /// Writes a completed segment to the usage log, averaging telemetry
+  /// accumulated over its lifetime.
+  void _writeUsageLog({
+    required DateTime start,
+    required int durationSecs,
+    required int gear,
+    required String? mode,
+    required int? smartBaselineGear,
+    required int wattsSum,
+    required int wattsCount,
+    required int rpmSum,
+    required int rpmCount,
+  }) {
+    final avgWatts = wattsCount > 0 ? (wattsSum / wattsCount).round() : _lastKnownWatts;
+    final avgRpm   = rpmCount > 0 ? (rpmSum / rpmCount).round() : 0;
     try {
       _usageLogRepo.addLog(UsageLog(
-        deviceId:     widget.fan.deviceId,
-        startTime:    start,
-        durationSecs: secs,
-        gear:         _segmentGear,
-        watts:        avgWatts,
-        rpm:          avgRpm,
-        mode:         _segmentMode,
+        deviceId:          widget.fan.deviceId,
+        startTime:         start,
+        durationSecs:      durationSecs,
+        gear:              gear,
+        watts:             avgWatts,
+        rpm:               avgRpm,
+        mode:              mode,
+        smartBaselineGear: smartBaselineGear,
       ));
-    } on Object catch (_) {}
+    } on Object catch (_) {
+      // Store teardown or disk-full; segment is lost but app must not crash.
+    }
+  }
+
+  /// Persists the currently-open segment (start, gear, mode, running
+  /// telemetry sums) so it can be resumed across app restarts/disconnects.
+  void _persistOpenSegment() {
+    unawaited(_fanRepo.saveOpenSegment(
+      widget.fan.deviceId,
+      start:             _segmentStart ?? DateTime(0),
+      gear:              _segmentGear,
+      mode:              _segmentMode,
+      smartBaselineGear: _segmentSmartBaseline,
+      wattsSum:          _segmentWattsSum,
+      wattsCount:        _segmentWattsCount,
+      rpmSum:            _segmentRpmSum,
+      rpmCount:          _segmentRpmCount,
+    ));
   }
 
   /// Flush the completed segment to ObjectBox then start a new one.
   /// Uses the running avg of all poll responses received during the segment,
   /// falling back to the last known non-zero watt value when no readings
   /// arrived yet (e.g. speed changed immediately after connect).
-  void _flushSegment({required int newGear, required String? newMode}) {
+  void _flushSegment({
+    required int newGear,
+    required String? newMode,
+    int? smartBaselineGear,
+  }) {
     final start = _segmentStart;
     if (start != null && _segmentGear > 0) {
       final secs = DateTime.now().difference(start).inSeconds;
       if (secs > 0) {
-        final avgWatts = _segmentWattsCount > 0
-            ? (_segmentWattsSum / _segmentWattsCount).round()
-            : _lastKnownWatts;
-        final avgRpm = _segmentRpmCount > 0
-            ? (_segmentRpmSum / _segmentRpmCount).round() : 0;
-        try {
-          _usageLogRepo.addLog(UsageLog(
-            deviceId:     widget.fan.deviceId,
-            startTime:    start,
-            durationSecs: secs,
-            gear:         _segmentGear,
-            watts:        avgWatts,
-            rpm:          avgRpm,
-            mode:         _segmentMode,
-          ));
-        } on Object catch (_) {
-          // Store teardown or disk-full; segment is lost but app must not crash.
-        }
+        _writeUsageLog(
+          start:             start,
+          durationSecs:      secs,
+          gear:              _segmentGear,
+          mode:              _segmentMode,
+          smartBaselineGear: _segmentSmartBaseline,
+          wattsSum:          _segmentWattsSum,
+          wattsCount:        _segmentWattsCount,
+          rpmSum:            _segmentRpmSum,
+          rpmCount:          _segmentRpmCount,
+        );
       }
     }
     // Reset accumulators for the new segment.
@@ -755,6 +843,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     _segmentStart = DateTime.now();
     _segmentGear  = newGear;
     _segmentMode  = newMode;
+    _segmentSmartBaseline = newMode == 'smart' ? smartBaselineGear : null;
+    _persistOpenSegment();
   }
 
   /// Returns true when the appliance type for this fan declares [control],
@@ -769,10 +859,22 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     _    => '',
   };
 
+  /// If the fan is connected but powered off, power it on (optimistically and
+  /// over BLE) before executing the requested control action. Mirrors the
+  /// manual power-button flow so any control interaction "wakes" the fan.
+  void _ensurePoweredOn() {
+    final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
+    if (fanState.isPowered) return;
+    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).updatePower(true);
+    unawaited(widget.send(BleFrameBuilder.powerOn(), label: 'Power ON (auto)'));
+  }
+
   void _onMode(String m) {
     final fan      = widget.fan;
     final fanState = ref.read(activeFanStateProvider(fan.deviceId));
     final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+    _ensurePoweredOn();
 
     // Tapping the already-active mode toggles it off.
     if (fanState.activeMode == m) {
@@ -780,14 +882,29 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         // Hardware toggle: second Reverse command exits reverse mode.
         // No optimistic setActiveMode(null) — the BLE echo (0x03) will arrive
         // and the toggle-detection in _subscribeNotify clears the mode.
-        // Speed is restored optimistically because the speed command is separate.
-        final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
-        _flushSegment(newGear: restore, newMode: null);
-        if (restore > 0) notifier.updateSpeed(restore);
+        // Speed is preserved as-is — exiting Reverse only flips direction.
+        _flushSegment(newGear: fanState.speed, newMode: null);
         unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (toggle)'));
+        return;
+      }
+      if (m == 'nature') {
+        // Restore the speed that was active before Nature was enabled.
+        final restore = _preNatureSpeed > 0 ? _preNatureSpeed : fanState.speed;
+        _flushSegment(newGear: restore, newMode: null);
+        notifier.setActiveMode(null);
         if (restore > 0) {
+          notifier.updateSpeed(restore);
           unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
         }
+        return;
+      }
+      if (m == 'smart') {
+        // Restore the speed that was active before Smart was enabled.
+        final restore = _preSmartSpeed > 0 ? _preSmartSpeed : fanState.speed;
+        _flushSegment(newGear: restore, newMode: null);
+        notifier.setActiveMode(null);
+        notifier.updateSpeed(restore);
+        unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
         return;
       }
       _flushSegment(newGear: fanState.speed, newMode: null);
@@ -800,17 +917,20 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     }
 
     // Switching FROM Reverse → Nature or Smart: exit reverse first, then activate.
+    // The fan's current speed carries over unchanged (Reverse no longer tracks
+    // a separate "pre-reverse" speed to restore).
     if (fanState.activeMode == 'reverse' && (m == 'nature' || m == 'smart')) {
-      final restore = _preReverseSpeed > 0 ? _preReverseSpeed : fanState.speed;
+      final restore = fanState.speed;
       if (m == 'nature') {
-        _preNatureSpeed = restore > 0 ? restore : fanState.speed;
+        _preNatureSpeed = restore;
         _flushSegment(newGear: fanState.speed, newMode: 'nature');
         // No optimistic mode update — reverse echo clears it, nature echo sets it.
         unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (exit reverse)'));
         unawaited(widget.send(BleFrameBuilder.setNature(), label: 'Mode: nature'));
       } else {
+        _preSmartSpeed = restore;
         final smartSpeed = restore < 3 ? 3 : restore;
-        _flushSegment(newGear: smartSpeed, newMode: 'smart');
+        _flushSegment(newGear: smartSpeed, newMode: 'smart', smartBaselineGear: _preSmartSpeed);
         if (smartSpeed != fanState.speed) notifier.updateSpeed(smartSpeed);
         // No optimistic mode update — reverse echo clears it, smart echo sets it.
         unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (exit reverse)'));
@@ -834,11 +954,15 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     // Switching FROM Nature → Smart or Reverse: restore pre-nature speed.
     if (fanState.activeMode == 'nature') {
       final restore = (m == 'smart' && _preNatureSpeed < 3) ? 3 : _preNatureSpeed;
-      if (m == 'reverse') _preReverseSpeed = restore > 0 ? restore : fanState.speed;
+      if (m == 'smart') _preSmartSpeed = _preNatureSpeed;
       // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
       if (m != 'reverse') notifier.setActiveMode(m);
       if (restore > 0) notifier.updateSpeed(restore);
-      _flushSegment(newGear: restore > 0 ? restore : fanState.speed, newMode: m);
+      _flushSegment(
+        newGear: restore > 0 ? restore : fanState.speed,
+        newMode: m,
+        smartBaselineGear: m == 'smart' ? _preSmartSpeed : null,
+      );
       // Mode frame first so the hardware exits Nature before receiving the speed command.
       final frame = switch (m) {
         'smart'   => BleFrameBuilder.setSmart(),
@@ -853,12 +977,18 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     }
 
     // Normal activation (Smart/Reverse, not from Nature).
-    if (m == 'reverse') _preReverseSpeed = fanState.speed;
-    if (m == 'smart' && fanState.speed > 0 && fanState.speed < 3) {
-      notifier.updateSpeed(3);
-      unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
+    if (m == 'smart') {
+      _preSmartSpeed = fanState.speed;
+      if (fanState.speed > 0 && fanState.speed < 3) {
+        notifier.updateSpeed(3);
+        unawaited(widget.send(BleFrameBuilder.setSpeed(3), label: 'Speed 3 (Smart)'));
+      }
     }
-    _flushSegment(newGear: fanState.speed, newMode: m);
+    _flushSegment(
+      newGear: fanState.speed,
+      newMode: m,
+      smartBaselineGear: m == 'smart' ? _preSmartSpeed : null,
+    );
     // Reverse: no optimistic mode update — let the BLE echo drive it via toggle detection.
     if (m != 'reverse') notifier.setActiveMode(m);
     final frame = switch (m) {
@@ -873,6 +1003,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     final fan      = widget.fan;
     final fanState = ref.read(activeFanStateProvider(fan.deviceId));
     final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+    _ensurePoweredOn();
 
     // Nature → Boost: clear Nature, activate Boost, skip speed restore.
     if (fanState.activeMode == 'nature') {
@@ -904,7 +1036,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   @override
   Widget build(BuildContext context) {
     final fan      = widget.fan;
-    final enabled  = widget.controlsEnabled;
+    final enabled  = widget.enabled;
     final fanState = ref.watch(activeFanStateProvider(fan.deviceId));
 
     // Accumulate every BLE poll response that arrives while a segment is open.
@@ -955,14 +1087,34 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
               isNature: fanState.activeMode == 'nature',
               disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
               onSpeedSelected: (s) {
-                if (fanState.activeMode == 'smart' && s < 3) return;
+                _ensurePoweredOn();
                 final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
+
+                // Selecting a speed while Nature is active exits Nature and
+                // applies the new speed immediately.
+                if (fanState.activeMode == 'nature') {
+                  notifier.setActiveMode(null);
+                  _flushSegment(newGear: s, newMode: null);
+                  notifier.updateSpeed(s);
+                  unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
+                  return;
+                }
+
+                // Selecting a speed while Smart is active exits Smart and applies
+                // the new speed immediately — including speeds 1-2, which Smart
+                // normally restricts.
+                if (fanState.activeMode == 'smart') {
+                  notifier.setActiveMode(null);
+                  _flushSegment(newGear: s, newMode: null);
+                  notifier.updateSpeed(s);
+                  unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
+                  return;
+                }
+
                 if (fanState.isBoost) {
                   notifier.setBoostActive(false);
                   if (fanState.activeMode == 'reverse') {
                     unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
-                  } else if (fanState.activeMode == 'smart') {
-                    unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
                   }
                 }
                 _flushSegment(newGear: s, newMode: fanState.activeMode);
@@ -1006,6 +1158,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             activeTimerCode: fanState.activeTimerCode,
             enabled: enabled,
             onTimer: (a) {
+              _ensurePoweredOn();
               final code = switch (a) {
                 '2h' => 0x02,
                 '4h' => 0x04,
@@ -1033,6 +1186,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             colorType: _colorType,
             brightnessValue: _brightnessValue,
             onLightOn: () {
+              _ensurePoweredOn();
               setState(() => _isLightOn = true);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
@@ -1040,6 +1194,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                   pendingMsg: 'Lighting commands pending from Terraton'));
             },
             onLightOff: () {
+              _ensurePoweredOn();
               setState(() => _isLightOn = false);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
@@ -1047,6 +1202,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                   pendingMsg: 'Lighting commands pending from Terraton'));
             },
             onColorTypeChanged: (t) {
+              _ensurePoweredOn();
               setState(() => _colorType = t);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
@@ -1059,6 +1215,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                   pendingMsg: 'Lighting commands pending from Terraton'));
             },
             onBrightness: (v) {
+              _ensurePoweredOn();
               setState(() => _brightnessValue = v);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
