@@ -82,21 +82,17 @@ void main() {
   group('UsageSummary — immutability', () {
     test('gearDist is unmodifiable', () {
       final s = _make();
-      expect(() => (s.gearDist as List<double>).add(0.0),
-          throwsUnsupportedError);
+      expect(() => s.gearDist.add(0.0), throwsUnsupportedError);
     });
 
     test('modeDist is unmodifiable', () {
       final s = _make();
-      expect(
-          () => (s.modeDist as Map<String, double>)['test'] = 1.0,
-          throwsUnsupportedError);
+      expect(() => s.modeDist['test'] = 1.0, throwsUnsupportedError);
     });
 
     test('hourlyUsage is unmodifiable', () {
       final s = _make();
-      expect(() => (s.hourlyUsage as List<int>).add(0),
-          throwsUnsupportedError);
+      expect(() => s.hourlyUsage.add(0), throwsUnsupportedError);
     });
   });
 

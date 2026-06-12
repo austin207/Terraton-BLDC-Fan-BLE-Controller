@@ -133,45 +133,45 @@ void main() {
 
   group('ApplianceCategory — construction', () {
     test('stores id and displayName', () {
-      final cat = ApplianceCategory(
+      const cat = ApplianceCategory(
         id: 'fans', displayName: 'Fans', pluralLabel: 'Fans',
-        iconPath: 'assets/icons/fans.png', types: const [_ceilingFan],
+        iconPath: 'assets/icons/fans.png', types: [_ceilingFan],
       );
       expect(cat.id, 'fans');
       expect(cat.displayName, 'Fans');
     });
 
     test('comingSoon defaults to false', () {
-      final cat = ApplianceCategory(
+      const cat = ApplianceCategory(
         id: 'x', displayName: 'X', pluralLabel: 'Xs',
-        iconPath: '', types: const [],
+        iconPath: '', types: [],
       );
       expect(cat.comingSoon, isFalse);
     });
 
     test('comingSoon can be set to true', () {
-      final cat = ApplianceCategory(
+      const cat = ApplianceCategory(
         id: 'x', displayName: 'X', pluralLabel: 'Xs',
-        iconPath: '', types: const [], comingSoon: true,
+        iconPath: '', types: [], comingSoon: true,
       );
       expect(cat.comingSoon, isTrue);
     });
 
     test('pluralLabel stored verbatim', () {
-      final cat = ApplianceCategory(
+      const cat = ApplianceCategory(
         id: 'water_filtration',
         displayName: 'Water Filtration',
         pluralLabel: 'Water Filters',
         iconPath: '',
-        types: const [],
+        types: [],
       );
       expect(cat.pluralLabel, 'Water Filters');
     });
 
     test('types list is accessible', () {
-      final cat = ApplianceCategory(
+      const cat = ApplianceCategory(
         id: 'fans', displayName: 'Fans', pluralLabel: 'Fans',
-        iconPath: '', types: const [_ceilingFan],
+        iconPath: '', types: [_ceilingFan],
       );
       expect(cat.types, hasLength(1));
       expect(cat.types.first.id, 'ceiling_fan');

@@ -1,6 +1,7 @@
 // lib/core/update/app_update_service.dart
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
@@ -12,10 +13,17 @@ class UpdateInfo {
   final String version;
   final int buildNumber;
   final String localVersion;
+
+  /// Lowercase hex SHA-256 of the arm64 release APK, from version.json's
+  /// optional `apk_sha256` field. Null for releases published before the
+  /// field existed — downloads then skip integrity verification.
+  final String? apkSha256;
+
   const UpdateInfo({
     required this.version,
     required this.buildNumber,
     required this.localVersion,
+    this.apkSha256,
   });
 }
 
@@ -54,12 +62,19 @@ abstract final class AppUpdateService {
       throw const FormatException('version.json missing build_number/version');
     }
     final remoteBuild = remoteBuildRaw.toInt();
+    // Optional integrity hash — absent from releases published before the
+    // field was added to build.ps1.
+    final shaRaw     = decoded['apk_sha256'];
+    final apkSha256  = (shaRaw is String && shaRaw.isNotEmpty)
+        ? shaRaw.toLowerCase()
+        : null;
     if (kDebugMode) debugPrint('[OTA] local=$localBuild remote=$remoteBuild');
     return remoteBuild > localBuild
         ? UpdateInfo(
             version: remoteVersionRaw,
             buildNumber: remoteBuild,
             localVersion: localVersion,
+            apkSha256: apkSha256,
           )
         : null;
   }
@@ -102,10 +117,16 @@ abstract final class AppUpdateService {
   /// Use this for the manual "Check for Updates" trigger in Settings.
   static Future<UpdateInfo?> checkForUpdateManual() => _doCheck();
 
-  /// Streams the arm64 APK to a temp file.
+  /// Streams the arm64 APK to a temp file, hashing the bytes as they arrive.
   /// [onProgress] receives values from 0.0 to 1.0.
+  ///
+  /// When [expectedSha256] is provided (lowercase hex), the download is
+  /// rejected — file deleted, null returned — if the hash doesn't match.
   /// Returns the [File] on success, or null on any failure.
-  static Future<File?> downloadUpdate(void Function(double) onProgress) async {
+  static Future<File?> downloadUpdate(
+    void Function(double) onProgress, {
+    String? expectedSha256,
+  }) async {
     try {
       final dir  = await getTemporaryDirectory();
       final file = File('${dir.path}/terraton-update.apk');
@@ -119,15 +140,29 @@ abstract final class AppUpdateService {
         final total    = res.contentLength ?? 0;
         var   received = 0;
         final sink     = file.openWrite();
+        Digest? digest;
+        final hashSink = sha256.startChunkedConversion(
+          ChunkedConversionSink<Digest>.withCallback((d) => digest = d.single),
+        );
         try {
           await for (final chunk in res.stream) {
             sink.add(chunk);
+            hashSink.add(chunk);
             received += chunk.length;
             if (total > 0) onProgress(received / total);
           }
           await sink.flush();
         } finally {
           await sink.close();
+          hashSink.close();
+        }
+
+        if (expectedSha256 != null && digest.toString() != expectedSha256) {
+          if (kDebugMode) {
+            debugPrint('[OTA] sha256 mismatch: got $digest, want $expectedSha256');
+          }
+          try { await file.delete(); } on Exception catch (_) {}
+          return null;
         }
         return file;
       } finally {

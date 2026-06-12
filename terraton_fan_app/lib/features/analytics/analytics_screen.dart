@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/features/analytics/analytics_calculations.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
@@ -105,8 +106,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     super.dispose();
   }
 
-  static const double _traditionalWatts = 85.0;
-
   static const _monthNames = [
     'Jan','Feb','Mar','Apr','May','Jun',
     'Jul','Aug','Sep','Oct','Nov','Dec',
@@ -158,85 +157,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   }
 
   // ── Aggregation helpers ───────────────────────────────────────────────────
+  // Pure math lives in AnalyticsCalculations (unit-tested); these are thin
+  // delegates kept for call-site brevity.
 
-  double _sumKwh(List<UsageLog> logs) =>
-      logs.fold(0.0, (s, l) => s + l.kwh);
-
-  int _avgWatts(List<UsageLog> logs) {
-    final active = logs.where((l) => l.watts > 0 && l.gear > 0).toList();
-    if (active.isEmpty) return 0;
-    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
-    if (totalSecs == 0) return 0;
-    return (active.fold(0.0, (s, l) => s + l.watts * l.durationSecs) / totalSecs)
-        .round();
-  }
-
-  /// Per-speed wattage, scaled linearly from the [_traditionalWatts] baseline.
-  static double _traditionalWattsForSpeed(int speed) =>
-      _traditionalWatts * speed / 6;
-
-  /// Smart Mode efficiency: compares each Smart segment's modelled consumption
-  /// against what the baseline speed (active immediately before Smart was
-  /// enabled) would have consumed over the same runtime.
-  ///
-  /// Smart Mode consumption models a gradual reduction from the baseline speed
-  /// down to Speed 1 — the first 2 hours per speed level (baseline..1) are
-  /// spent stepping down through those levels; any remaining runtime is spent
-  /// entirely at Speed 1.
-  int _efficiency(List<UsageLog> logs) {
-    final smart = logs
-        .where((l) => l.mode == 'smart' && l.gear > 0 && l.durationSecs > 0)
-        .toList();
-    if (smart.isEmpty) return 0;
-
-    const stepSecs = 2 * 3600;
-    double totalTraditionalWh = 0;
-    double totalSmartWh = 0;
-
-    for (final l in smart) {
-      final baseline = (l.smartBaselineGear ?? l.gear).clamp(1, 6);
-      totalTraditionalWh += _traditionalWattsForSpeed(baseline) * l.durationSecs / 3600.0;
-
-      final reductionTotalSecs = stepSecs * baseline;
-      final levelSecs = <int, int>{};
-      if (l.durationSecs <= reductionTotalSecs) {
-        final perLevel = l.durationSecs / baseline;
-        for (var level = 1; level <= baseline; level++) {
-          levelSecs[level] = perLevel.round();
-        }
-      } else {
-        for (var level = 1; level <= baseline; level++) {
-          levelSecs[level] = stepSecs;
-        }
-        levelSecs[1] = (levelSecs[1] ?? 0) + (l.durationSecs - reductionTotalSecs);
-      }
-      for (final entry in levelSecs.entries) {
-        totalSmartWh += _traditionalWattsForSpeed(entry.key) * entry.value / 3600.0;
-      }
-    }
-
-    if (totalTraditionalWh == 0) return 0;
-    return ((totalTraditionalWh - totalSmartWh) / totalTraditionalWh * 100)
-        .round()
-        .clamp(0, 100);
-  }
-
-  int _avgRpm(List<UsageLog> logs) {
-    final active = logs.where((l) => l.rpm > 0 && l.gear > 0).toList();
-    if (active.isEmpty) return 0;
-    final totalSecs = active.fold(0, (s, l) => s + l.durationSecs);
-    if (totalSecs == 0) return 0;
-    return (active.fold(0.0, (s, l) => s + l.rpm * l.durationSecs) / totalSecs)
-        .round();
-  }
-
-  String _efficiencyLabel(int pct) {
-    if (pct >= 80) return 'Excellent Efficiency';
-    if (pct >= 60) return 'Optimal Range';
-    if (pct >= 40) return 'Moderate Efficiency';
-    if (pct > 0)   return 'Low Efficiency';
-    return 'No Data Yet';
-  }
+  double _sumKwh(List<UsageLog> logs)   => AnalyticsCalculations.sumKwh(logs);
+  int _avgWatts(List<UsageLog> logs)    => AnalyticsCalculations.avgWatts(logs);
+  int _avgRpm(List<UsageLog> logs)      => AnalyticsCalculations.avgRpm(logs);
+  int _efficiency(List<UsageLog> logs)  => AnalyticsCalculations.efficiency(logs);
+  String _efficiencyLabel(int pct)      => AnalyticsCalculations.efficiencyLabel(pct);
 
   // ── Chart data ────────────────────────────────────────────────────────────
   // Returns one kWh value per bucket. Buckets must use the SAME window as the
@@ -656,7 +584,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               const SizedBox(height: 4),
               Text(
                 _avgWattsV > 0
-                    ? '${((_traditionalWatts - _avgWattsV) / _traditionalWatts * 100).round()}% lower than a typical ${_traditionalWatts.round()}W fan'
+                    ? '${((AnalyticsCalculations.traditionalWatts - _avgWattsV) / AnalyticsCalculations.traditionalWatts * 100).round()}% lower than a typical ${AnalyticsCalculations.traditionalWatts.round()}W fan'
                     : 'No usage data yet',
                 style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
               ),

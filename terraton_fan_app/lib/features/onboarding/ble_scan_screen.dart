@@ -64,9 +64,9 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     // Cancel the old subscription before clearing results so a stale delivery
     // from the outgoing sub cannot overwrite the fresh empty list.
     await _sub?.cancel();
+    if (!mounted) return;
     setState(() { _scanning = true; _timedOut = false; _results = []; });
 
-    if (!mounted) return;
     _sub = _ble.scanResultsStream.listen((fans) {
       if (mounted) setState(() => _results = fans);
     });

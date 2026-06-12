@@ -91,7 +91,7 @@ Widget _buildScreen() {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 void main() {
-  late Directory _tempDir;
+  late Directory tempDir;
 
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -99,8 +99,8 @@ void main() {
 
     // Redirect path_provider to a temp directory so AppSettings I/O is hermetic
     // and platform channels don't block in the CI test environment.
-    _tempDir = await Directory.systemTemp.createTemp('ble_perm_test_');
-    PathProviderPlatform.instance = _FakePathProvider(_tempDir.path);
+    tempDir = await Directory.systemTemp.createTemp('ble_perm_test_');
+    PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
 
     // Write profile_set once here — the file is written well before any
     // navigation test reads it, avoiding Windows OS-level file-lock races
@@ -128,8 +128,8 @@ void main() {
     // Ignore failures — on Windows, OS scanners (Defender etc.) can briefly
     // hold the temp file open after the last test. The OS will clean up.
     try {
-      await _tempDir.delete(recursive: true);
-    } catch (_) {}
+      await tempDir.delete(recursive: true);
+    } on Object catch (_) {}
   });
 
   group('BlePermissionScreen — rendering', () {

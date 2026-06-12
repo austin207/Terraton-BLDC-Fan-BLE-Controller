@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/config/app_feature_config.dart';
+import 'package:terraton_fan_app/core/diagnostics/crash_log_service.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/upload/data_upload_service.dart';
@@ -25,9 +26,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
 
-  FlutterError.onError = FlutterError.presentError;
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    // Persist for field diagnostics — release builds have no console, so this
+    // local log (surfaced in Settings) is the only crash visibility we have.
+    unawaited(CrashLogService.record(
+        details.exception, details.stack, source: 'flutter'));
+  };
   WidgetsBinding.instance.platformDispatcher.onError = (Object error, StackTrace stack) {
     FlutterError.presentError(FlutterErrorDetails(exception: error, stack: stack));
+    unawaited(CrashLogService.record(error, stack, source: 'async'));
     return true;
   };
   ErrorWidget.builder = (details) => const Material(

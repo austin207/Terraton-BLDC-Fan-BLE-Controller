@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 
 void main() {
-  FanState _base() => FanState()
+  FanState baseState() => FanState()
     ..deviceId        = 'dev1'
     ..speed           = 3
     ..isBoost         = false
@@ -17,65 +17,65 @@ void main() {
 
   group('FanState.copyWith', () {
     test('returns new instance with identical values when no args given', () {
-      final a = _base();
+      final a = baseState();
       final b = a.copyWith();
       expect(identical(a, b), isFalse);
       expect(a, equals(b));
     });
 
     test('updates speed', () {
-      final s = _base().copyWith(speed: 6);
+      final s = baseState().copyWith(speed: 6);
       expect(s.speed, 6);
       expect(s.deviceId, 'dev1'); // unchanged
     });
 
     test('updates isPowered to false', () {
-      expect(_base().copyWith(isPowered: false).isPowered, isFalse);
+      expect(baseState().copyWith(isPowered: false).isPowered, isFalse);
     });
 
     test('updates isBoost to true', () {
-      expect(_base().copyWith(isBoost: true).isBoost, isTrue);
+      expect(baseState().copyWith(isBoost: true).isBoost, isTrue);
     });
 
     test('sets activeMode to a new non-null value via getter', () {
-      expect(_base().copyWith(activeMode: () => 'nature').activeMode, 'nature');
+      expect(baseState().copyWith(activeMode: () => 'nature').activeMode, 'nature');
     });
 
     test('clears activeMode to null via getter', () {
-      expect(_base().copyWith(activeMode: () => null).activeMode, isNull);
+      expect(baseState().copyWith(activeMode: () => null).activeMode, isNull);
     });
 
     test('omitting activeMode preserves existing value', () {
       // No getter passed → old value kept.
-      expect(_base().copyWith(speed: 1).activeMode, 'smart');
+      expect(baseState().copyWith(speed: 1).activeMode, 'smart');
     });
 
     test('sets activeTimerCode via getter', () {
-      expect(_base().copyWith(activeTimerCode: () => 4).activeTimerCode, 4);
+      expect(baseState().copyWith(activeTimerCode: () => 4).activeTimerCode, 4);
     });
 
     test('clears activeTimerCode to null via getter', () {
-      expect(_base().copyWith(activeTimerCode: () => null).activeTimerCode, isNull);
+      expect(baseState().copyWith(activeTimerCode: () => null).activeTimerCode, isNull);
     });
 
     test('sets lastWatts via getter', () {
-      expect(_base().copyWith(lastWatts: () => 80).lastWatts, 80);
+      expect(baseState().copyWith(lastWatts: () => 80).lastWatts, 80);
     });
 
     test('clears lastWatts to null via getter', () {
-      expect(_base().copyWith(lastWatts: () => null).lastWatts, isNull);
+      expect(baseState().copyWith(lastWatts: () => null).lastWatts, isNull);
     });
 
     test('sets lastRpm via getter', () {
-      expect(_base().copyWith(lastRpm: () => 500).lastRpm, 500);
+      expect(baseState().copyWith(lastRpm: () => 500).lastRpm, 500);
     });
 
     test('clears lastRpm to null via getter', () {
-      expect(_base().copyWith(lastRpm: () => null).lastRpm, isNull);
+      expect(baseState().copyWith(lastRpm: () => null).lastRpm, isNull);
     });
 
     test('preserves id and deviceId through copy', () {
-      final a = _base()..id = 7;
+      final a = baseState()..id = 7;
       final b = a.copyWith(speed: 2);
       expect(b.id, 7);
       expect(b.deviceId, 'dev1');
@@ -86,40 +86,40 @@ void main() {
 
   group('FanState equality', () {
     test('two identical instances are equal', () {
-      expect(_base(), equals(_base()));
+      expect(baseState(), equals(baseState()));
     });
 
     test('not equal when speed differs', () {
-      expect(_base().copyWith(speed: 1), isNot(equals(_base())));
+      expect(baseState().copyWith(speed: 1), isNot(equals(baseState())));
     });
 
     test('not equal when isPowered differs', () {
-      expect(_base().copyWith(isPowered: false), isNot(equals(_base())));
+      expect(baseState().copyWith(isPowered: false), isNot(equals(baseState())));
     });
 
     test('not equal when isBoost differs', () {
-      expect(_base().copyWith(isBoost: true), isNot(equals(_base())));
+      expect(baseState().copyWith(isBoost: true), isNot(equals(baseState())));
     });
 
     test('not equal when activeMode differs', () {
-      expect(_base().copyWith(activeMode: () => null), isNot(equals(_base())));
+      expect(baseState().copyWith(activeMode: () => null), isNot(equals(baseState())));
     });
 
     test('not equal when activeTimerCode differs', () {
-      expect(_base().copyWith(activeTimerCode: () => null), isNot(equals(_base())));
+      expect(baseState().copyWith(activeTimerCode: () => null), isNot(equals(baseState())));
     });
 
     test('not equal when lastWatts differs', () {
-      expect(_base().copyWith(lastWatts: () => null), isNot(equals(_base())));
+      expect(baseState().copyWith(lastWatts: () => null), isNot(equals(baseState())));
     });
 
     test('not equal when lastRpm differs', () {
-      expect(_base().copyWith(lastRpm: () => null), isNot(equals(_base())));
+      expect(baseState().copyWith(lastRpm: () => null), isNot(equals(baseState())));
     });
 
     test('not equal when deviceId differs', () {
-      final other = _base()..deviceId = 'dev2';
-      expect(_base(), isNot(equals(other)));
+      final other = baseState()..deviceId = 'dev2';
+      expect(baseState(), isNot(equals(other)));
     });
   });
 
@@ -127,16 +127,16 @@ void main() {
 
   group('FanState.hashCode', () {
     test('equal instances have the same hashCode', () {
-      expect(_base().hashCode, equals(_base().hashCode));
+      expect(baseState().hashCode, equals(baseState().hashCode));
     });
 
     test('different speed → different hashCode', () {
-      expect(_base().copyWith(speed: 1).hashCode, isNot(equals(_base().hashCode)));
+      expect(baseState().copyWith(speed: 1).hashCode, isNot(equals(baseState().hashCode)));
     });
 
     test('different activeMode → different hashCode', () {
-      final a = _base().copyWith(activeMode: () => 'nature');
-      expect(a.hashCode, isNot(equals(_base().hashCode)));
+      final a = baseState().copyWith(activeMode: () => 'nature');
+      expect(a.hashCode, isNot(equals(baseState().hashCode)));
     });
   });
 }

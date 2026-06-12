@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/config/app_feature_config.dart';
+import 'package:terraton_fan_app/core/diagnostics/crash_log_service.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/update/app_update_service.dart';
@@ -164,12 +165,21 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.qr_code_rounded,
             label: 'Service QR',
             chevron: true,
+            divider: true,
             onTap: () {
               final fans = (ref.read(savedFansProvider).valueOrNull ?? [])
                   .where((f) => !f.isServiceAccess)
                   .toList();
               _showServiceQr(context, fans);
             },
+          ),
+          _SettingRow(
+            iconBg: kYellow.withAlpha(38),
+            iconColor: kYellow,
+            icon: Icons.bug_report_outlined,
+            label: 'Crash Log',
+            chevron: true,
+            onTap: () => unawaited(_showCrashLog(context)),
           ),
         ]),
 
@@ -228,6 +238,77 @@ class SettingsScreen extends ConsumerWidget {
         },
       ),
     ));
+  }
+
+  /// Shows the locally-recorded crash log (written by the global error
+  /// handlers in main.dart). Testers share it when reporting a bug; nothing
+  /// is uploaded automatically.
+  Future<void> _showCrashLog(BuildContext context) async {
+    final log = await CrashLogService.read();
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Crash Log',
+                  style: GoogleFonts.manrope(
+                    fontSize: 18, fontWeight: FontWeight.w700, color: kText,
+                  )),
+              const SizedBox(height: 12),
+              if (log == null)
+                Text('No crashes recorded. 🎉',
+                    style: GoogleFonts.manrope(fontSize: 14, color: kTextMut))
+              else ...[
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(sheetCtx).height * 0.5,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(log,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 11, color: kTextMut, height: 1.4,
+                        )),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          await CrashLogService.clear();
+                          if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => unawaited(
+                          Share.share(log, subject: 'Terraton Fan crash log'),
+                        ),
+                        child: const Text('Share'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showServiceQr(BuildContext context, List<FanDevice> fans) {

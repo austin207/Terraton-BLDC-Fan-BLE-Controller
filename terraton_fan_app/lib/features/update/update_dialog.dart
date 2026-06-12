@@ -34,15 +34,17 @@ class _UpdateDialogState extends State<UpdateDialog> {
   Future<void> _startDownload() async {
     setState(() { _phase = _Phase.downloading; _progress = 0; });
 
-    final file = await AppUpdateService.downloadUpdate((p) {
-      if (mounted) setState(() => _progress = p);
-    });
+    final file = await AppUpdateService.downloadUpdate(
+      (p) { if (mounted) setState(() => _progress = p); },
+      expectedSha256: widget.info.apkSha256,
+    );
 
     if (!mounted) return;
     if (file == null) {
       setState(() {
         _phase = _Phase.error;
-        _errorMsg = 'Download failed. Check your connection and try again.';
+        _errorMsg = 'Download failed or the file was corrupted. '
+            'Check your connection and try again.';
       });
       return;
     }

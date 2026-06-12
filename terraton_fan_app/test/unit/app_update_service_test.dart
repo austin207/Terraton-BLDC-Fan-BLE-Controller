@@ -55,6 +55,43 @@ void main() {
     });
   });
 
+  group('AppUpdateService.parseVersionResponse — apk_sha256', () {
+    test('parses apk_sha256 when present, lowercased', () {
+      final info = AppUpdateService.parseVersionResponse(
+        _json({
+          'version': '4.0.0',
+          'build_number': 40,
+          'apk_sha256': 'ABCDEF0123456789',
+        }),
+        30, '3.0.0',
+      );
+      expect(info?.apkSha256, 'abcdef0123456789');
+    });
+
+    test('apkSha256 is null when field is absent (older releases)', () {
+      final info = AppUpdateService.parseVersionResponse(
+        _json({'version': '4.0.0', 'build_number': 40}),
+        30, '3.0.0',
+      );
+      expect(info, isNotNull);
+      expect(info!.apkSha256, isNull);
+    });
+
+    test('apkSha256 is null when field is empty or wrong type', () {
+      final empty = AppUpdateService.parseVersionResponse(
+        _json({'version': '4.0.0', 'build_number': 40, 'apk_sha256': ''}),
+        30, '3.0.0',
+      );
+      expect(empty!.apkSha256, isNull);
+
+      final wrongType = AppUpdateService.parseVersionResponse(
+        _json({'version': '4.0.0', 'build_number': 40, 'apk_sha256': 123}),
+        30, '3.0.0',
+      );
+      expect(wrongType!.apkSha256, isNull);
+    });
+  });
+
   group('AppUpdateService.parseVersionResponse — BOM stripping', () {
     test('strips UTF-8 BOM (0xEF BB BF) and parses correctly', () {
       final info = AppUpdateService.parseVersionResponse(

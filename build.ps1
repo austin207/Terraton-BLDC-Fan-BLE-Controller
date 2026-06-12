@@ -195,10 +195,13 @@ if ($buildTester) {
     # Write version.json for OTA version check.
     # IMPORTANT: use WriteAllText with UTF8Encoding(false) — Set-Content -Encoding utf8 in
     # PowerShell 5.1 adds a BOM which breaks jsonDecode() in the app.
+    # apk_sha256 covers the arm64 APK (the asset _apkUrl points to) — the app
+    # verifies the downloaded bytes against it before launching the installer.
     $VersionJsonPath = Join-Path $BuildsDir "version.json"
-    $versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum}"
+    $ApkSha256 = (Get-FileHash $Arm64Release -Algorithm SHA256).Hash.ToLower()
+    $versionJsonContent = "{`"version`": `"$SemVer`", `"build_number`": $BuildNum, `"apk_sha256`": `"$ApkSha256`"}"
     [System.IO.File]::WriteAllText($VersionJsonPath, $versionJsonContent, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "version.json : v$SemVer (build $BuildNum)" -ForegroundColor Green
+    Write-Host "version.json : v$SemVer (build $BuildNum, sha256 $($ApkSha256.Substring(0,12))...)" -ForegroundColor Green
 
     Write-Host ""
     Write-Host "Publishing TESTER variant to GitHub Releases..." -ForegroundColor Cyan

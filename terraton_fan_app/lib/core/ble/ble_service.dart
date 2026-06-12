@@ -155,7 +155,9 @@ class BleServiceImpl implements BleService {
   }
 
   @override
-  Future<void> stopScan() => FlutterBluePlus.stopScan();
+  Future<void> stopScan() async {
+    try { await FlutterBluePlus.stopScan(); } on Object catch (_) {}
+  }
 
   // ── Connect ───────────────────────────────────────────────────────────────
 

@@ -14,7 +14,7 @@ const _info = UpdateInfo(
   localVersion: '3.0.0',
 );
 
-Widget _wrapDirect() => MaterialApp(
+Widget _wrapDirect() => const MaterialApp(
       home: Scaffold(body: UpdateDialog(info: _info)),
     );
 
@@ -58,7 +58,7 @@ void main() {
               body: ElevatedButton(
                 onPressed: () => showModalBottomSheet<void>(
                   context: ctx,
-                  builder: (_) => UpdateDialog(info: _info),
+                  builder: (_) => const UpdateDialog(info: _info),
                 ),
                 child: const Text('Open'),
               ),

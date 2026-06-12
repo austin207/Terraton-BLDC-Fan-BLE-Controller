@@ -32,7 +32,7 @@ void main() {
     await ApplianceLoader.load();
   });
 
-  GoRouter _router({ApplianceCategory? category}) => GoRouter(
+  GoRouter buildRouter({ApplianceCategory? category}) => GoRouter(
         initialLocation: '/appliance-types',
         routes: [
           GoRoute(
@@ -62,7 +62,7 @@ void main() {
 
   testWidgets('shows all type display names for fans category', (tester) async {
     final fansCat = ApplianceLoader.categoryById('fans')!;
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: fansCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: fansCat)));
     await tester.pumpAndSettle();
     for (final type in fansCat.types) {
       expect(find.text(type.displayName), findsOneWidget,
@@ -73,7 +73,7 @@ void main() {
   testWidgets('shows "N models" subtitle for non-comingSoon category',
       (tester) async {
     final fansCat = ApplianceLoader.categoryById('fans')!;
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: fansCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: fansCat)));
     await tester.pumpAndSettle();
     final firstType = fansCat.types.first;
     expect(find.text('${firstType.modelCount} models'), findsAtLeastNWidgets(1));
@@ -81,7 +81,7 @@ void main() {
 
   testWidgets('shows "Coming soon" subtitle for comingSoon category',
       (tester) async {
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: _comingSoonCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: _comingSoonCat)));
     await tester.pumpAndSettle();
     expect(find.text('Coming soon'), findsWidgets);
   });
@@ -89,7 +89,7 @@ void main() {
   testWidgets('tapping a type in non-comingSoon category navigates to /fans',
       (tester) async {
     final fansCat = ApplianceLoader.categoryById('fans')!;
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: fansCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: fansCat)));
     await tester.pumpAndSettle();
     await tester.tap(find.text(fansCat.types.first.displayName));
     await tester.pumpAndSettle();
@@ -98,7 +98,7 @@ void main() {
 
   testWidgets('tapping a type in comingSoon category navigates to /coming-soon',
       (tester) async {
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: _comingSoonCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: _comingSoonCat)));
     await tester.pumpAndSettle();
     await tester.tap(find.text('RO Filter'));
     await tester.pumpAndSettle();
@@ -107,7 +107,7 @@ void main() {
 
   testWidgets('null category falls back to fans from ApplianceLoader',
       (tester) async {
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router()));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter()));
     await tester.pumpAndSettle();
     // Should fall back to fans → shows at least one fan type
     expect(find.text('Ceiling Fan'), findsOneWidget);
@@ -115,7 +115,7 @@ void main() {
 
   testWidgets('appBar title shows "Select <Category> Type"', (tester) async {
     final fansCat = ApplianceLoader.categoryById('fans')!;
-    await tester.pumpWidget(MaterialApp.router(routerConfig: _router(category: fansCat)));
+    await tester.pumpWidget(MaterialApp.router(routerConfig: buildRouter(category: fansCat)));
     await tester.pumpAndSettle();
     expect(find.text('Select Fans Type'), findsOneWidget);
   });
