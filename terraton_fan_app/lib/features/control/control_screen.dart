@@ -51,6 +51,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   Timer? _telemetryTimer;
   Timer? _expiryTimer;
   Timer? _expiryOnceTimer;
+  Timer? _motorStateTimer;
   StreamSubscription<List<int>>? _notifySub;
   late BleService _ble;
   DateTime? _lastWattsAt;
@@ -200,6 +201,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
+      // A getMotorState response always contains a timer frame (0x22) alongside
+      // the power and speed/mode frames. Status-poll responses only contain
+      // watts (0x23) and RPM (0x24) — never a timer. Use this to distinguish.
+      final isMotorStateResponse =
+          responses.any((r) => BleResponseParser.parseTimer(r) != null);
+
       for (final response in responses) {
         final power = BleResponseParser.parsePowerState(response);
         if (power != null) {
@@ -213,22 +220,30 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
               unawaited(BleForegroundService.stop());
             }
           }
+          _updateMotorStatePoll();
           continue;
         }
         final speed = BleResponseParser.parseSpeed(response);
         if (speed != null) {
           notifier.updateSpeed(speed);
           if (speed > 0) notifier.updatePower(true);
-          // A speed response while boost is active means the hardware exited
-          // boost (e.g. remote changed speed). Clear the boost UI flag.
-          if (ref.read(activeFanStateProvider(widget.fan.deviceId)).isBoost) {
+          if (isMotorStateResponse) {
+            // Motor State frame [2] = speed → fan is in plain speed, no special
+            // mode active. Clear all mode state as source-of-truth.
+            notifier.applyMotorStateTruth(null);
+          } else if (ref.read(activeFanStateProvider(widget.fan.deviceId)).isBoost) {
+            // Status-poll speed: hardware exited boost (e.g. remote changed speed).
             notifier.setBoostActive(false);
           }
           continue;
         }
         final mode = BleResponseParser.parseModeString(response);
         if (mode != null) {
-          if (mode == 'reverse' &&
+          if (isMotorStateResponse) {
+            // Motor State frame [2] = mode → this mode is the exclusive active
+            // state. Apply as truth and clear all other mode state.
+            notifier.applyMotorStateTruth(mode);
+          } else if (mode == 'reverse' &&
                      ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
             // Hardware toggle model: 0x03 means "reverse active". When the remote
             // sends 0x03 while we are already in reverse, this is an exit toggle.
@@ -236,6 +251,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           } else {
             notifier.updateMode(mode);
           }
+          _updateMotorStatePoll();
           continue;
         }
         final timer = BleResponseParser.parseTimer(response);
@@ -261,6 +277,50 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
+  }
+
+  // Starts or stops the 90-second Motor State poll based on whether the fan
+  // is in Smart, Nature, or Reverse mode. Called whenever mode or power state
+  // changes so the timer tracks the actual firmware state.
+  void _updateMotorStatePoll() {
+    if (_isDemo) return;
+    final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
+    final needsPoll = fanState.isPowered &&
+        (fanState.activeMode == 'smart' ||
+         fanState.activeMode == 'nature' ||
+         fanState.activeMode == 'reverse');
+
+    if (!needsPoll || _ble.currentState != BleConnectionState.connected) {
+      _motorStateTimer?.cancel();
+      _motorStateTimer = null;
+      return;
+    }
+
+    // Timer already running — avoid duplicates.
+    if (_motorStateTimer != null) return;
+
+    _motorStateTimer = Timer.periodic(const Duration(seconds: 90), (_) async {
+      if (!mounted) { _motorStateTimer?.cancel(); return; }
+      if (_ble.currentState != BleConnectionState.connected) {
+        _motorStateTimer?.cancel();
+        _motorStateTimer = null;
+        return;
+      }
+      final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+      if (!s.isPowered ||
+          (s.activeMode != 'smart' &&
+           s.activeMode != 'nature' &&
+           s.activeMode != 'reverse')) {
+        _motorStateTimer?.cancel();
+        _motorStateTimer = null;
+        return;
+      }
+      try {
+        await _ble.writeFrame(BleFrameBuilder.getMotorState());
+      } on Object catch (_) {
+        // Fan disconnected mid-poll; connection state stream handles recovery.
+      }
+    });
   }
 
   void _startTelemetry() {
@@ -306,6 +366,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         // opt-in + Wi-Fi + once-per-day, so dropping the link here doesn't
         // affect it.)
         _telemetryTimer?.cancel();
+        _motorStateTimer?.cancel();
+        _motorStateTimer = null;
         unawaited(BleForegroundService.stop());
         unawaited(_ble.disconnect());
       case AppLifecycleState.resumed:
@@ -328,6 +390,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     WidgetsBinding.instance.removeObserver(this);
     _connecting = false;
     _telemetryTimer?.cancel();
+    _motorStateTimer?.cancel();
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());

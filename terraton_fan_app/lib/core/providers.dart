@@ -140,6 +140,21 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     activeMode: () => mode,
   ));
 
+  /// Applied when Motor State (getMotorState) frame [2] is received.
+  /// Frame [2] is the exclusive truth: one speed OR one special mode is active,
+  /// never both simultaneously. Clears all other mode state atomically.
+  void applyMotorStateTruth(String? mode) {
+    switch (mode) {
+      case 'boost':
+        update(state.copyWith(isBoost: true, activeMode: () => null));
+      case null:
+        // Speed was frame [2] — fan is in plain speed mode, no special mode active.
+        update(state.copyWith(isBoost: false, activeMode: () => null));
+      default: // 'nature', 'smart', 'reverse'
+        update(state.copyWith(isBoost: false, activeMode: () => mode));
+    }
+  }
+
   void updateLighting({
     required String colorType,
     required double brightness,

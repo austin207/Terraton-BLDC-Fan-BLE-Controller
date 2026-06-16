@@ -96,6 +96,7 @@ assets/commands.yaml
 **Response frame:** same but byte[2] is `0x07`.
 **Checksum:** `(0x55 + 0xAA + packetId + cmd + dataLen + Σdata) & 0xFF` — includes the full header.
 **Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 00]` — do NOT pass through `buildFrame()`.
+**Motor State poll:** non-standard fixed frame `[55 AA 00 01 01 00 01]` — do NOT pass through `buildFrame()`. Response: 3 frames — [1] `0x02` power, [2] `0x04` speed OR `0x21` active mode (mutually exclusive), [3] `0x22` timer. Frame [2] is exclusive truth; clear all other mode/speed highlight state.
 
 **BLE UUIDs (defined only in `ble_constants.dart`):**
 - Scan filter: `00001827-0000-1000-8000-00805f9b34fb` (BLE Mesh Proxy)
@@ -118,6 +119,7 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 | Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 28/2A/2C/30` |
 | Query Power (watts) | `55 AA 06 23 01 00 29` |
 | Query Speed (RPM) | `55 AA 06 24 01 00 2A` |
+| Get Motor State | `55 AA 00 01 01 00 01` |
 
 ### Onboarding flow
 

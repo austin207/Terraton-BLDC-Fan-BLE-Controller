@@ -76,11 +76,12 @@ void main() {
   });
 
   group('AnalyticsScreen — rendering', () {
-    testWidgets('shows "Energy & savings" header', (tester) async {
+    testWidgets('shows "Energy Usage" header', (tester) async {
+      // userName is empty in test env → "Your Energy Usage" fallback.
       await tester.pumpWidget(_buildScreen());
       await tester.pumpAndSettle();
 
-      expect(find.text('Energy & savings'), findsOneWidget);
+      expect(find.textContaining('Energy Usage'), findsOneWidget);
     });
 
     testWidgets('shows CONSUMED label', (tester) async {
@@ -114,17 +115,18 @@ void main() {
   });
 
   group('AnalyticsScreen — empty state', () {
-    testWidgets('shows "Start using your fans" when no logs', (tester) async {
+    testWidgets('shows estimated usage info message', (tester) async {
+      // Analytics are now estimate-based; no log-gated subtitle exists.
       await tester.pumpWidget(_buildScreen(logs: []));
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('Start using your fans'),
+        find.textContaining('estimated usage patterns'),
         findsOneWidget,
       );
     });
 
-    testWidgets('does not show BY FAN section when no logs', (tester) async {
+    testWidgets('does not show BY FAN section (section removed)', (tester) async {
       await tester.pumpWidget(_buildScreen(logs: []));
       await tester.pumpAndSettle();
 
@@ -133,39 +135,37 @@ void main() {
   });
 
   group('AnalyticsScreen — with data', () {
-    testWidgets('shows "No Data Yet" efficiency label when no logs', (tester) async {
+    testWidgets('shows "Moderate Efficiency" (fixed estimate)', (tester) async {
+      // Efficiency is now a fixed 58% estimate — no log data required.
       await tester.pumpWidget(_buildScreen(logs: []));
       await tester.pumpAndSettle();
 
       await tester.drag(find.byType(ListView).first, const Offset(0, -600));
       await tester.pumpAndSettle();
 
-      expect(find.text('No Data Yet'), findsOneWidget);
+      expect(find.text('Moderate Efficiency'), findsOneWidget);
     });
 
-    testWidgets('shows non-zero kWh when logs have watts and gear', (tester) async {
-      // 100 W × 1 h = 0.1 kWh
+    testWidgets('shows estimated weekly kWh regardless of log content', (tester) async {
+      // Weekly estimate: 0.256 × 7 = 1.792, displayed as toStringAsFixed(3).
       final logs = [_log(watts: 100, durationSecs: 3600, gear: 3)];
       await tester.pumpWidget(_buildScreen(logs: logs));
       await tester.pumpAndSettle();
 
-      // kWh value shown as toStringAsFixed(1) → "0.1"
-      expect(find.textContaining('0.1'), findsWidgets);
+      expect(find.textContaining('1.792'), findsWidgets);
     });
 
-    testWidgets('shows BY FAN section when fans + logs are present', (tester) async {
+    testWidgets('BY FAN section is never shown (removed from design)', (tester) async {
       final fans = [_fan('d1', 'Bedroom')];
       final logs = [_log(deviceId: 'd1', watts: 50, durationSecs: 3600)];
 
       await tester.pumpWidget(_buildScreen(logs: logs, fans: fans));
       await tester.pumpAndSettle();
 
-      // BY FAN is below the efficiency card — drag the ListView to scroll it in.
       await tester.drag(find.byType(ListView).first, const Offset(0, -900));
       await tester.pumpAndSettle();
 
-      expect(find.text('BY FAN'), findsOneWidget);
-      expect(find.text('Bedroom'), findsWidgets);
+      expect(find.text('BY FAN'), findsNothing);
     });
   });
 

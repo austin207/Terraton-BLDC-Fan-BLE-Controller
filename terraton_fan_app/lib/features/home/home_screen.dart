@@ -25,7 +25,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _tab = 1; // 0=analytics, 1=home, 2=settings
+  // Client variant: 0=home, 1=settings (no Analytics tab).
+  // Tester variant: 0=analytics, 1=home, 2=settings.
+  int _tab = kIsClientVariant ? 0 : 1;
 
   @override
   void initState() {
@@ -57,11 +59,16 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             IndexedStack(
               index: _tab,
-              children: const [
-                AnalyticsScreen(),
-                _HomeTab(),
-                SettingsScreen(),
-              ],
+              children: kIsClientVariant
+                  ? const [
+                      _HomeTab(),
+                      SettingsScreen(),
+                    ]
+                  : const [
+                      AnalyticsScreen(),
+                      _HomeTab(),
+                      SettingsScreen(),
+                    ],
             ),
             Positioned(
               left: 16, right: 16,
@@ -256,11 +263,16 @@ class _BottomNav extends StatelessWidget {
 
   const _BottomNav({required this.active, required this.onChanged});
 
-  static const _items = [
-    (Icons.bar_chart_rounded, 'Analytics'),
-    (Icons.home_rounded, 'Home'),
-    (Icons.settings_rounded, 'Settings'),
-  ];
+  static const _items = kIsClientVariant
+      ? [
+          (Icons.home_rounded, 'Home'),
+          (Icons.settings_rounded, 'Settings'),
+        ]
+      : [
+          (Icons.bar_chart_rounded, 'Analytics'),
+          (Icons.home_rounded, 'Home'),
+          (Icons.settings_rounded, 'Settings'),
+        ];
 
   static const _innerPadding = 6.0;
 
