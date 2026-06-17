@@ -240,11 +240,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             // mode active. Clear all mode state as source-of-truth.
             notifier.applyMotorStateTruth(null);
           } else {
-            // Regular speed notification (remote or app echo). Smart and Nature
-            // are incompatible with a fixed speed step — if either is active the
-            // hardware has exited the mode; clear it so the UI stays in sync.
+            // Regular speed notification (remote or app echo). Smart, Nature,
+            // and Reverse are all incompatible with a fixed speed step — if any
+            // is active the hardware has exited the mode; clear it so the UI
+            // stays in sync.
             final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            if (s.activeMode == 'smart' || s.activeMode == 'nature') {
+            if (s.activeMode != null) {
               notifier.setActiveMode(null);
             }
             if (s.isBoost) notifier.setBoostActive(false);

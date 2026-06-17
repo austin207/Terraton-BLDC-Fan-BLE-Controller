@@ -166,6 +166,83 @@ void main() {
 
       expect(find.text('BY FAN'), findsNothing);
     });
+
+    testWidgets('derives weekly kWh from firmware runtime — formula test',
+        (tester) async {
+      // Fan added 7 days ago; 7 h total runtime (1 h/day avg); gear 3 = 10 W.
+      // dailyKwh = 10 × (7×3600 / 7) / 3_600_000 = 0.01
+      // weekly   = 0.01 × 7 = 0.07  → displayed as '0.070'.
+      final fr = _MockFanRepo();
+      final lr = _MockLogRepo();
+      final now  = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final fan7 = FanDevice()
+        ..deviceId  = 'd1'
+        ..nickname  = 'Test Fan'
+        ..addedAt   = today.subtract(const Duration(days: 7));
+      final stateWithRuntime = FanState()
+        ..deviceId        = 'd1'
+        ..speed           = 3
+        ..lastRuntimeSecs = 7 * 3600;
+
+      when(() => fr.getAllFans()).thenReturn([fan7]);
+      when(() => fr.getState(any())).thenReturn(stateWithRuntime);
+      when(() => lr.getLogsInRange(any(), any())).thenReturn([]);
+      when(() => lr.getLogsForDevice(any(), any(), any())).thenReturn([]);
+      when(() => lr.allDeviceIds()).thenReturn([]);
+      when(() => lr.addLog(any())).thenReturn(null);
+      when(() => lr.pruneBefore(any())).thenReturn(null);
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          fanRepositoryProvider.overrideWithValue(fr),
+          usageLogRepositoryProvider.overrideWithValue(lr),
+          savedFansProvider.overrideWith((ref) async => [fan7]),
+          connectedFanDeviceIdProvider.overrideWith((ref) => 'd1'),
+        ],
+        child: const MaterialApp(home: Scaffold(body: AnalyticsScreen())),
+      ));
+      await tester.pumpAndSettle();
+
+      // Default range is Week → '0.070'.
+      expect(find.textContaining('0.070'), findsWidgets);
+    });
+
+    testWidgets('shows efficiency percentage when runtime data is present',
+        (tester) async {
+      // gear 3 = 10 W → effPct = ((85-10)/85*100).round() = 88 → Excellent Efficiency.
+      final fr = _MockFanRepo();
+      final lr = _MockLogRepo();
+      final fan = _fan('d1', 'Test Fan');
+      final stateWithRuntime = FanState()
+        ..deviceId        = 'd1'
+        ..speed           = 3
+        ..lastRuntimeSecs = 3600;
+
+      when(() => fr.getAllFans()).thenReturn([fan]);
+      when(() => fr.getState(any())).thenReturn(stateWithRuntime);
+      when(() => lr.getLogsInRange(any(), any())).thenReturn([]);
+      when(() => lr.getLogsForDevice(any(), any(), any())).thenReturn([]);
+      when(() => lr.allDeviceIds()).thenReturn([]);
+      when(() => lr.addLog(any())).thenReturn(null);
+      when(() => lr.pruneBefore(any())).thenReturn(null);
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          fanRepositoryProvider.overrideWithValue(fr),
+          usageLogRepositoryProvider.overrideWithValue(lr),
+          savedFansProvider.overrideWith((ref) async => [fan]),
+          connectedFanDeviceIdProvider.overrideWith((ref) => 'd1'),
+        ],
+        child: const MaterialApp(home: Scaffold(body: AnalyticsScreen())),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Excellent Efficiency'), findsOneWidget);
+    });
   });
 
   group('AnalyticsScreen — range tabs', () {

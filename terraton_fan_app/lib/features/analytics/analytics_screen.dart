@@ -94,16 +94,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return gw * (runtimeSec / daysSince) / 3_600_000;
   }
 
-  static int _effPct(FanState? s) {
+  // Returns null when no runtime data or fan is off (gear 0 / no speed).
+  static int? _effPct(FanState? s) {
+    if (s?.lastRuntimeSecs == null) return null;
     final gw = _gearWatts(s);
-    if (gw == 0) return 0;
+    if (gw == 0) return null; // fan stopped — efficiency undefined
     return ((_kTraditionalW - gw) / _kTraditionalW * 100).round().clamp(0, 100);
   }
 
-  static String _effLabel(int pct) {
-    if (pct == 0)  return 'No Runtime Data';
-    if (pct < 70)  return 'Moderate Efficiency';
-    if (pct < 88)  return 'High Efficiency';
+  static String _effLabel(int? pct) {
+    if (pct == null) return 'No Runtime Data';
+    if (pct < 70)   return 'Moderate Efficiency';
+    if (pct < 88)   return 'High Efficiency';
     return 'Excellent Efficiency';
   }
 
@@ -200,7 +202,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final kwh        = _totalKwh(dailyKwh);
     final cost       = kwh * _tariff;
     final chartPts   = _chartPoints(dailyKwh);
-    final effPct     = _effPct(fanState);
+    final effPct     = _effPct(fanState);   // null = no runtime data or fan off
     final axisLabels = _axisLabels(_range);
 
     final wattDisplay  = gearWatts > 0 ? '$gearWatts' : '—';
@@ -537,7 +539,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _DarkCard(
           child: Row(
             children: [
-              _RingChart(pct: effPct),
+              _RingChart(pct: effPct ?? 0),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
@@ -553,7 +555,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                             color: kText)),
                     const SizedBox(height: 4),
                     Text(
-                      gearWatts > 0
+                      effPct != null
                           ? 'Your fan consumes $gearWatts W at the current '
                             'gear — $effPct% less energy than a traditional '
                             '${_kTraditionalW}W ceiling fan.'
