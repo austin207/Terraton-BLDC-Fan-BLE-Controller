@@ -115,13 +115,12 @@ void main() {
   });
 
   group('AnalyticsScreen — empty state', () {
-    testWidgets('shows estimated usage info message', (tester) async {
-      // Analytics are now estimate-based; no log-gated subtitle exists.
+    testWidgets('shows firmware-runtime info message', (tester) async {
       await tester.pumpWidget(_buildScreen(logs: []));
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('estimated usage patterns'),
+        find.textContaining('firmware-reported cumulative runtime'),
         findsOneWidget,
       );
     });
@@ -135,24 +134,24 @@ void main() {
   });
 
   group('AnalyticsScreen — with data', () {
-    testWidgets('shows "Moderate Efficiency" (fixed estimate)', (tester) async {
-      // Efficiency is now a fixed 58% estimate — no log data required.
+    testWidgets('shows "No Runtime Data" when fan has no runtime', (tester) async {
+      // FanState() has speed=0, lastRuntimeSecs=null → effPct=0 → "No Runtime Data".
       await tester.pumpWidget(_buildScreen(logs: []));
       await tester.pumpAndSettle();
 
       await tester.drag(find.byType(ListView).first, const Offset(0, -600));
       await tester.pumpAndSettle();
 
-      expect(find.text('Moderate Efficiency'), findsOneWidget);
+      expect(find.text('No Runtime Data'), findsOneWidget);
     });
 
-    testWidgets('shows estimated weekly kWh regardless of log content', (tester) async {
-      // Weekly estimate: 0.256 × 7 = 1.792, displayed as toStringAsFixed(3).
+    testWidgets('shows 0.000 kWh when no runtime data available', (tester) async {
+      // No lastRuntimeSecs → dailyKwh=0 → weekly total=0.000.
       final logs = [_log(watts: 100, durationSecs: 3600, gear: 3)];
       await tester.pumpWidget(_buildScreen(logs: logs));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('1.792'), findsWidgets);
+      expect(find.textContaining('0.000'), findsWidgets);
     });
 
     testWidgets('BY FAN section is never shown (removed from design)', (tester) async {

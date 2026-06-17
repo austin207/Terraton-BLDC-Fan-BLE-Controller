@@ -71,6 +71,12 @@ class CommandLoader {
     return List<int>.from((node['frame'] as YamlList));
   }
 
+  static List<int> queryRuntime() {
+    final node = _safeGet(['query_runtime']);
+    if (node == null) throw StateError('query_runtime missing from commands.yaml');
+    return List<int>.from((node['frame'] as YamlList));
+  }
+
   static List<int>? power(String action) {
     final cmd = _safeGet(['commands', 'power']);
     if (cmd == null) return null;

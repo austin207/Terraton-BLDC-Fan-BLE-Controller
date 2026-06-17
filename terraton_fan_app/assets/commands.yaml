@@ -33,6 +33,12 @@ status_poll:
 get_motor_state:
   frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]
 
+# Special case: query cumulative fan runtime uses a fixed non-standard frame.
+# Response: 55 AA 07 08 02 HH LL CRC — runtime seconds = (HH<<8|LL) * 5.
+# Sent once on connect and every 90 s alongside motor-state polling.
+query_runtime:
+  frame: [0x55, 0xAA, 0x00, 0x08, 0x01, 0x00, 0x08]
+
 commands:
 
   power:
@@ -96,6 +102,7 @@ response_commands:
   timer:        0x22
   power_watts:  0x23
   running_rpm:  0x24
+  runtime:      0x08
 
 # ══════════════════════════════════════════════════════════════════════════════════
 # 2. WATER FILTRATION — RO Filter  (commands pending from Terraton)

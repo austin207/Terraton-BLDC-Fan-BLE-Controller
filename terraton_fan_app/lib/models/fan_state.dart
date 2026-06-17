@@ -16,6 +16,7 @@ class FanState {
   bool isPowered = false;
   int? lastWatts;
   int? lastRpm;
+  int? lastRuntimeSecs;    // cumulative runtime from firmware (HH<<8|LL)*5 s
 
   // Lighting UI state — persisted so the panel restores on reconnect.
   String lastLightColorType  = 'warm'; // 'warm' | 'neutral' | 'cool'
@@ -51,6 +52,7 @@ class FanState {
           isPowered == other.isPowered &&
           lastWatts == other.lastWatts &&
           lastRpm == other.lastRpm &&
+          lastRuntimeSecs == other.lastRuntimeSecs &&
           lastLightColorType == other.lastLightColorType &&
           lastLightBrightness == other.lastLightBrightness &&
           lastLightIsOn == other.lastLightIsOn;
@@ -58,7 +60,8 @@ class FanState {
   @override
   int get hashCode => Object.hash(
       deviceId, speed, isBoost, activeMode, activeTimerCode, isPowered,
-      lastWatts, lastRpm, lastLightColorType, lastLightBrightness, lastLightIsOn);
+      lastWatts, lastRpm, lastRuntimeSecs,
+      lastLightColorType, lastLightBrightness, lastLightIsOn);
 }
 
 // Nullable fields that may need explicit null use a getter param: () => null
@@ -71,6 +74,7 @@ extension FanStateCopyWith on FanState {
     bool? isPowered,
     int? Function()? lastWatts,
     int? Function()? lastRpm,
+    int? Function()? lastRuntimeSecs,
     String? lastLightColorType,
     double? lastLightBrightness,
     bool? lastLightIsOn,
@@ -85,6 +89,7 @@ extension FanStateCopyWith on FanState {
         ..isPowered           = isPowered           ?? this.isPowered
         ..lastWatts           = lastWatts           != null ? lastWatts()       : this.lastWatts
         ..lastRpm             = lastRpm             != null ? lastRpm()         : this.lastRpm
+        ..lastRuntimeSecs     = lastRuntimeSecs     != null ? lastRuntimeSecs() : this.lastRuntimeSecs
         ..lastLightColorType  = lastLightColorType  ?? this.lastLightColorType
         ..lastLightBrightness = lastLightBrightness ?? this.lastLightBrightness
         ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn

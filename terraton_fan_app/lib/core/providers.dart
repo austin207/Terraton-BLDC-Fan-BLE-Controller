@@ -65,6 +65,11 @@ final usageLogRepositoryProvider = Provider<UsageLogRepository>(
 final savedFansProvider = FutureProvider<List<FanDevice>>((ref) async =>
     ref.watch(fanRepositoryProvider).getAllFans());
 
+// Tracks the deviceId of the fan the control screen is currently connected to.
+// Set by _ControlScreenState on connect; cleared on dispose. Allows the
+// analytics screen to watch live state without knowing the deviceId up front.
+final connectedFanDeviceIdProvider = StateProvider<String?>((ref) => null);
+
 // ── Active fan state (mirrors ObjectBox + live BLE updates) ──────────────────
 // Uses .family so each fan's notifier is independent and not torn down
 // when navigation or provider watches change.
@@ -121,10 +126,11 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     activeTimerCode: () => timerCode == 0 ? null : timerCode,
   ));
 
-  void updateWatts(int watts) => update(state.copyWith(lastWatts: () => watts));
-  void updateRpm(int rpm)     => update(state.copyWith(lastRpm:   () => rpm));
-  void clearWatts()           => update(state.copyWith(lastWatts: () => null));
-  void clearRpm()             => update(state.copyWith(lastRpm:   () => null));
+  void updateWatts(int watts)       => update(state.copyWith(lastWatts:       () => watts));
+  void updateRpm(int rpm)           => update(state.copyWith(lastRpm:         () => rpm));
+  void updateRuntime(int secs)      => update(state.copyWith(lastRuntimeSecs: () => secs));
+  void clearWatts()                 => update(state.copyWith(lastWatts:       () => null));
+  void clearRpm()                   => update(state.copyWith(lastRpm:         () => null));
 
   /// Toggle boost only — does NOT touch activeMode.
   /// Nature mode blocks boost activation.

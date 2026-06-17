@@ -20,6 +20,8 @@ CircularSpeedDial _dial({
   bool enabled = true,
   bool isBoost = false,
   bool isNature = false,
+  bool isSmart = false,
+  bool isReverse = false,
   Set<int> disabledSpeeds = const {},
   void Function(int)? onSpeedSelected,
 }) =>
@@ -30,6 +32,8 @@ CircularSpeedDial _dial({
       enabled: enabled,
       isBoost: isBoost,
       isNature: isNature,
+      isSmart: isSmart,
+      isReverse: isReverse,
       disabledSpeeds: disabledSpeeds,
       onSpeedSelected: onSpeedSelected ?? (_) {},
     );
@@ -101,6 +105,20 @@ void main() {
       expect(find.text('GEAR'), findsAtLeastNWidgets(1));
       expect(find.text('BOOST'), findsNothing);
     });
+
+    testWidgets('smart mode: shows GEAR label and smart icon, not BOOST', (tester) async {
+      await tester.pumpWidget(_wrap(_dial(isSmart: true, speed: 3, enabled: true)));
+      expect(find.text('GEAR'), findsAtLeastNWidgets(1));
+      expect(find.text('BOOST'), findsNothing);
+      expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
+    });
+
+    testWidgets('reverse mode: shows GEAR label and reverse icon, not BOOST', (tester) async {
+      await tester.pumpWidget(_wrap(_dial(isReverse: true, speed: 3, enabled: true)));
+      expect(find.text('GEAR'), findsAtLeastNWidgets(1));
+      expect(find.text('BOOST'), findsNothing);
+      expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
+    });
   });
 
   group('CircularSpeedDial — callback wiring', () {
@@ -144,6 +162,20 @@ void main() {
       final dial =
           tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
       expect(dial.isNature, isTrue);
+    });
+
+    testWidgets('isSmart flag is set correctly', (tester) async {
+      await tester.pumpWidget(_wrap(_dial(isSmart: true)));
+      final dial =
+          tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
+      expect(dial.isSmart, isTrue);
+    });
+
+    testWidgets('isReverse flag is set correctly', (tester) async {
+      await tester.pumpWidget(_wrap(_dial(isReverse: true)));
+      final dial =
+          tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
+      expect(dial.isReverse, isTrue);
     });
 
     testWidgets('disabledSpeeds are reflected on the widget', (tester) async {

@@ -66,7 +66,7 @@
     },
     {
       "id": "2:6584660752010918141",
-      "lastPropertyId": "20:1038581388731706913",
+      "lastPropertyId": "21:5274440309588345344",
       "name": "FanState",
       "properties": [
         {
@@ -170,6 +170,11 @@
         {
           "id": "20:1038581388731706913",
           "name": "openSegmentRpmCount",
+          "type": 6
+        },
+        {
+          "id": "21:5274440309588345344",
+          "name": "lastRuntimeSecs",
           "type": 6
         }
       ],

@@ -15,8 +15,10 @@ class CircularSpeedDial extends StatelessWidget {
   final int? rpm;
   final bool enabled;
   final bool isBoost;
-  final bool isNature;             // when true: dial fully locked, leaf shown in centre
-  final Set<int> disabledSpeeds;  // speeds blocked by Smart mode ({1,2}) or empty
+  final bool isNature;    // dial fully locked, leaf icon in centre
+  final bool isSmart;     // dial fully locked, smart icon in centre
+  final bool isReverse;   // dial fully locked, reverse icon in centre
+  final Set<int> disabledSpeeds;
   final void Function(int speed) onSpeedSelected;
 
   const CircularSpeedDial({
@@ -28,6 +30,8 @@ class CircularSpeedDial extends StatelessWidget {
     required this.isBoost,
     required this.onSpeedSelected,
     this.isNature = false,
+    this.isSmart = false,
+    this.isReverse = false,
     this.disabledSpeeds = const {},
   });
 
@@ -40,6 +44,8 @@ class CircularSpeedDial extends StatelessWidget {
       enabled: enabled,
       boost: isBoost,
       isNature: isNature,
+      isSmart: isSmart,
+      isReverse: isReverse,
       disabledSpeeds: disabledSpeeds,
       onSpeedTap: (s) {
         // Nature/Smart dim certain dots for visual feedback, but a tap on a
@@ -65,9 +71,11 @@ _DotState _dotStateOf({
   required bool boost,
   required bool enabled,
   bool isNature = false,
+  bool isSmart = false,
+  bool isReverse = false,
   Set<int> disabledSpeeds = const {},
 }) {
-  if (isNature) return _DotState.off;
+  if (isNature || isSmart || isReverse) return _DotState.off;
   if (!enabled) return _DotState.off;
   // Boost overrides disabled-speed dimming so the full ring glows in BOOST+SMART/REVERSE.
   // Hit-target tappability still respects disabledSpeeds (handled separately).
@@ -87,6 +95,8 @@ class _RadialDial extends StatelessWidget {
   final bool enabled;
   final bool boost;
   final bool isNature;
+  final bool isSmart;
+  final bool isReverse;
   final Set<int> disabledSpeeds;
   final void Function(int) onSpeedTap;
 
@@ -97,6 +107,8 @@ class _RadialDial extends StatelessWidget {
     required this.enabled,
     required this.boost,
     required this.isNature,
+    required this.isSmart,
+    required this.isReverse,
     required this.disabledSpeeds,
     required this.onSpeedTap,
   });
@@ -115,7 +127,8 @@ class _RadialDial extends StatelessWidget {
 
   _DotState _stateOf(int i) => _dotStateOf(
     index: i, speed: speed, boost: boost, enabled: enabled,
-    isNature: isNature, disabledSpeeds: disabledSpeeds,
+    isNature: isNature, isSmart: isSmart, isReverse: isReverse,
+    disabledSpeeds: disabledSpeeds,
   );
 
   @override
@@ -137,6 +150,8 @@ class _RadialDial extends StatelessWidget {
               boost: boost,
               enabled: enabled,
               isNature: isNature,
+              isSmart: isSmart,
+              isReverse: isReverse,
               disabledSpeeds: disabledSpeeds,
               pos: _pos,
               r: _r,
@@ -178,7 +193,7 @@ class _RadialDial extends StatelessWidget {
               final ang = i * angStep;
               final pos = _polar(cx, cy, _lblR, ang);
               final lit = _stateOf(i) != _DotState.off;
-              final isUnavailable = isNature || disabledSpeeds.contains(i + 1);
+              final isUnavailable = isNature || isSmart || isReverse || disabledSpeeds.contains(i + 1);
               final color = lit ? kText : (enabled && !isUnavailable ? kTextMut : kTextDim);
               return Positioned(
                 left: pos.dx - 16,
@@ -203,6 +218,8 @@ class _RadialDial extends StatelessWidget {
               rpm: rpm,
               boost: boost,
               isNature: isNature,
+              isSmart: isSmart,
+              isReverse: isReverse,
               enabled: enabled,
             ),
           ),
@@ -219,6 +236,8 @@ class _DialPainter extends CustomPainter {
   final bool boost;
   final bool enabled;
   final bool isNature;
+  final bool isSmart;
+  final bool isReverse;
   final Set<int> disabledSpeeds;
   final int pos;
   final double r;
@@ -230,6 +249,8 @@ class _DialPainter extends CustomPainter {
     required this.boost,
     required this.enabled,
     required this.isNature,
+    required this.isSmart,
+    required this.isReverse,
     required this.disabledSpeeds,
     required this.pos,
     required this.r,
@@ -244,7 +265,8 @@ class _DialPainter extends CustomPainter {
 
   _DotState _stateOf(int i) => _dotStateOf(
     index: i, speed: speed, boost: boost, enabled: enabled,
-    isNature: isNature, disabledSpeeds: disabledSpeeds,
+    isNature: isNature, isSmart: isSmart, isReverse: isReverse,
+    disabledSpeeds: disabledSpeeds,
   );
 
   @override
@@ -270,8 +292,8 @@ class _DialPainter extends CustomPainter {
         ..strokeWidth = 1,
     );
 
-    // Full thin track ring (only when not boost; always when nature to keep ring visible)
-    if (!boost || isNature) {
+    // Full thin track ring (only when not boost; always when locked mode to keep ring visible)
+    if (!boost || isNature || isSmart || isReverse) {
       canvas.drawCircle(
         Offset(cx, cy), r,
         Paint()
@@ -281,8 +303,8 @@ class _DialPainter extends CustomPainter {
       );
     }
 
-    // Boost: glowing closed ring (suppressed during nature)
-    if (enabled && boost && !isNature) {
+    // Boost: glowing closed ring (suppressed during any locked mode)
+    if (enabled && boost && !isNature && !isSmart && !isReverse) {
       final paint = Paint()
         ..color = kYellow
         ..style = PaintingStyle.stroke
@@ -298,8 +320,8 @@ class _DialPainter extends CustomPainter {
       );
     }
 
-    // Active arc: suppressed during nature mode
-    if (enabled && !boost && !isNature && speed > 1) {
+    // Active arc: suppressed during any locked mode
+    if (enabled && !boost && !isNature && !isSmart && !isReverse && speed > 1) {
       final startRad = (0 - 90) * math.pi / 180;
       final sweepRad = (speed - 1) * angStep * math.pi / 180;
       canvas.drawArc(
@@ -368,7 +390,7 @@ class _DialPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DialPainter old) =>
       old.speed != speed || old.boost != boost || old.enabled != enabled
-      || old.isNature != isNature
+      || old.isNature != isNature || old.isSmart != isSmart || old.isReverse != isReverse
       || !setEquals(old.disabledSpeeds, disabledSpeeds);
 }
 
@@ -380,6 +402,8 @@ class _CenterReadout extends StatelessWidget {
   final int? rpm;
   final bool boost;
   final bool isNature;
+  final bool isSmart;
+  final bool isReverse;
   final bool enabled;
 
   const _CenterReadout({
@@ -388,6 +412,8 @@ class _CenterReadout extends StatelessWidget {
     required this.rpm,
     required this.boost,
     required this.isNature,
+    required this.isSmart,
+    required this.isReverse,
     required this.enabled,
   });
 
@@ -409,6 +435,22 @@ class _CenterReadout extends StatelessWidget {
             color: kNatureGreen,
             colorBlendMode: BlendMode.srcIn,
           ),
+        ] else if (isSmart) ...[
+          Text('GEAR',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.2,
+              )),
+          const SizedBox(height: 8),
+          const Icon(Icons.auto_awesome_outlined, size: 60, color: kYellow),
+        ] else if (isReverse) ...[
+          Text('GEAR',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11, fontWeight: FontWeight.w700,
+                color: kTextMut, letterSpacing: 2.2,
+              )),
+          const SizedBox(height: 8),
+          const Icon(Icons.sync_rounded, size: 60, color: kYellow),
         ] else if (boost) ...[
           Text('BOOST',
               style: GoogleFonts.jetBrainsMono(
@@ -446,12 +488,12 @@ class _CenterReadout extends StatelessWidget {
           children: [
             _Stat(
               label: 'RPM',
-              value: (enabled && (speed > 0 || boost || isNature)) ? (rpm != null ? '$rpm' : '—') : '—',
+              value: (enabled && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (rpm != null ? '$rpm' : '—') : '—',
             ),
             Container(width: 1, height: 28, color: kHairline, margin: const EdgeInsets.symmetric(horizontal: 18)),
             _Stat(
               label: 'WATTS',
-              value: (enabled && (speed > 0 || boost || isNature)) ? (watts != null ? '$watts' : '—') : '—',
+              value: (enabled && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (watts != null ? '$watts' : '—') : '—',
             ),
           ],
         ),

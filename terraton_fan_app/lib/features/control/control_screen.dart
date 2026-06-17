@@ -52,8 +52,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   Timer? _expiryTimer;
   Timer? _expiryOnceTimer;
   Timer? _motorStateTimer;
+  Timer? _runtimeTimer;
   StreamSubscription<List<int>>? _notifySub;
   late BleService _ble;
+  // Cached to allow clearing connectedFanDeviceIdProvider in dispose()
+  // (ref.read() is forbidden inside dispose() in Riverpod 2.x).
+  late StateController<String?> _connectedFanCtrl;
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
   Duration  _serviceRemaining = Duration.zero;
@@ -75,6 +79,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
+    _connectedFanCtrl = ref.read(connectedFanDeviceIdProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     _resolvedMac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
     if (!_isDemo) {
@@ -171,12 +176,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
       _lastWattsAt = null;
       _lastRpmAt   = null;
+      _connectedFanCtrl.state = widget.fan.deviceId;
       _startTelemetry();
       _subscribeNotify();
+      _startRuntimePoll();
       try {
         await _ble.writeFrame(BleFrameBuilder.getMotorState());
+        await _ble.writeFrame(BleFrameBuilder.queryRuntime());
       } on Object catch (_) {
-        // Fan disconnected before motor-state sync; reconnection retries cover it.
+        // Fan disconnected before initial sync; reconnection retries cover it.
       }
     } on Object catch (_) {
       // Expected connection Exception — connectionStateStream emits disconnected,
@@ -231,9 +239,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             // Motor State frame [2] = speed → fan is in plain speed, no special
             // mode active. Clear all mode state as source-of-truth.
             notifier.applyMotorStateTruth(null);
-          } else if (ref.read(activeFanStateProvider(widget.fan.deviceId)).isBoost) {
-            // Status-poll speed: hardware exited boost (e.g. remote changed speed).
-            notifier.setBoostActive(false);
+          } else {
+            // Regular speed notification (remote or app echo). Smart and Nature
+            // are incompatible with a fixed speed step — if either is active the
+            // hardware has exited the mode; clear it so the UI stays in sync.
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            if (s.activeMode == 'smart' || s.activeMode == 'nature') {
+              notifier.setActiveMode(null);
+            }
+            if (s.isBoost) notifier.setBoostActive(false);
           }
           continue;
         }
@@ -273,7 +287,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           continue;
         }
         final rpm = BleResponseParser.parseRpm(response);
-        if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); }
+        if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); continue; }
+        final runtimeSecs = BleResponseParser.parseRuntimeSeconds(response);
+        if (runtimeSecs != null) { notifier.updateRuntime(runtimeSecs); }
       }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
@@ -317,6 +333,23 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       }
       try {
         await _ble.writeFrame(BleFrameBuilder.getMotorState());
+      } on Object catch (_) {
+        // Fan disconnected mid-poll; connection state stream handles recovery.
+      }
+    });
+  }
+
+  void _startRuntimePoll() {
+    _runtimeTimer?.cancel();
+    _runtimeTimer = Timer.periodic(const Duration(seconds: 90), (_) async {
+      if (!mounted) { _runtimeTimer?.cancel(); return; }
+      if (_ble.currentState != BleConnectionState.connected) {
+        _runtimeTimer?.cancel();
+        _runtimeTimer = null;
+        return;
+      }
+      try {
+        await _ble.writeFrame(BleFrameBuilder.queryRuntime());
       } on Object catch (_) {
         // Fan disconnected mid-poll; connection state stream handles recovery.
       }
@@ -368,6 +401,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _telemetryTimer?.cancel();
         _motorStateTimer?.cancel();
         _motorStateTimer = null;
+        _runtimeTimer?.cancel();
+        _runtimeTimer = null;
         unawaited(BleForegroundService.stop());
         unawaited(_ble.disconnect());
       case AppLifecycleState.resumed:
@@ -389,8 +424,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _connecting = false;
+    _connectedFanCtrl.state = null;
     _telemetryTimer?.cancel();
     _motorStateTimer?.cancel();
+    _runtimeTimer?.cancel();
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
@@ -1148,7 +1185,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
               enabled: enabled,
               isBoost: fanState.isBoost,
               isNature: fanState.activeMode == 'nature',
-              disabledSpeeds: fanState.activeMode == 'smart' ? const {1, 2} : const {},
+              isSmart: fanState.activeMode == 'smart',
+              isReverse: fanState.activeMode == 'reverse',
+              disabledSpeeds: const {},
               onSpeedSelected: (s) {
                 _ensurePoweredOn();
                 final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);

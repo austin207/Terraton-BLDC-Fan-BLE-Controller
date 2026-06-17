@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
+import 'package:terraton_fan_app/models/fan_device.dart';
+import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
@@ -24,14 +26,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   late final TextEditingController _tariffCtrl;
   int _monthRangeN = 1;
 
-  // Fixed estimate constants: 32W × 8h ÷ 1000 = 0.256 kWh/day.
-  static const _kDailyKwh       = 0.256;
-  static const _kAvgWatts       = 32;
-  static const _kAvgRpm         = 400;
-  static const _kEffPct         = 58;    // smart-mode saving vs 85W baseline
-  static const _kPerfRpmPerWatt = 12.5;  // 400 ÷ 32
-  static const _kTraditionalW   = 85;
-  static const _kWattSavePct    = 62;    // ((85−32)÷85×100).round()
+  // Power profile per gear step (index = gear, 0 unused).
+  static const _kGearWatts    = [0, 4, 7, 10, 15, 21, 28];
+  static const _kBoostWatts   = 33;
+  static const _kTraditionalW = 85;
 
   @override
   void initState() {
@@ -63,28 +61,71 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   ];
   static String _monthAbbrev(int month) => _monthNames[month - 1];
 
-  // ── Estimate helpers ──────────────────────────────────────────────────────
+  // ── Runtime-based helpers ──────────────────────────────────────────────────
 
-  double _estimatedKwh() {
+  // Returns the deviceId of the most recently connected fan, or null.
+  static String? _mostRecentFanId(List<FanDevice> fans) {
+    if (fans.isEmpty) return null;
+    final sorted = [...fans]..sort((a, b) {
+      final at = a.lastConnectedAt;
+      final bt = b.lastConnectedAt;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return bt.compareTo(at);
+    });
+    return sorted.first.deviceId;
+  }
+
+  static int _gearWatts(FanState? s) {
+    if (s == null) return 0;
+    if (s.isBoost) return _kBoostWatts;
+    final g = s.speed.clamp(0, 6);
+    return g == 0 ? 0 : _kGearWatts[g];
+  }
+
+  double _dailyKwhFrom(FanState? s, FanDevice? device) {
+    final gw         = _gearWatts(s);
+    final runtimeSec = s?.lastRuntimeSecs ?? 0;
+    if (gw == 0 || runtimeSec == 0) return 0.0;
+    final daysSince = device != null
+        ? math.max(1, DateTime.now().difference(device.addedAt).inDays)
+        : 1;
+    return gw * (runtimeSec / daysSince) / 3_600_000;
+  }
+
+  static int _effPct(FanState? s) {
+    final gw = _gearWatts(s);
+    if (gw == 0) return 0;
+    return ((_kTraditionalW - gw) / _kTraditionalW * 100).round().clamp(0, 100);
+  }
+
+  static String _effLabel(int pct) {
+    if (pct == 0)  return 'No Runtime Data';
+    if (pct < 70)  return 'Moderate Efficiency';
+    if (pct < 88)  return 'High Efficiency';
+    return 'Excellent Efficiency';
+  }
+
+  double _totalKwh(double dailyKwh) {
     final now   = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    if (_range == 'Day')  return _kDailyKwh;
-    if (_range == 'Week') return _kDailyKwh * 7;
+    if (_range == 'Day')  return dailyKwh;
+    if (_range == 'Week') return dailyKwh * 7;
     final start = DateTime(now.year, now.month - (_monthRangeN - 1), 1);
-    final nDays = today.difference(start).inDays;
-    return _kDailyKwh * nDays;
+    return dailyKwh * today.difference(start).inDays;
   }
 
   // One chart point per bucket: Day=6 (4-hour buckets), Week=7 days, Month=nDays.
-  List<double> _estimatedChartPoints() {
+  List<double> _chartPoints(double dailyKwh) {
     final now   = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    if (_range == 'Day')  return List.generate(6, (_) => _kDailyKwh / 6);
-    if (_range == 'Week') return List.generate(7, (_) => _kDailyKwh);
+    if (_range == 'Day')  return List.generate(6, (_) => dailyKwh / 6);
+    if (_range == 'Week') return List.generate(7, (_) => dailyKwh);
     final start = DateTime(now.year, now.month - (_monthRangeN - 1), 1);
     final nDays = today.difference(start).inDays;
     if (nDays <= 0) return const [];
-    return List.generate(nDays, (_) => _kDailyKwh);
+    return List.generate(nDays, (_) => dailyKwh);
   }
 
   // ── Sparse X-axis labels ──────────────────────────────────────────────────
@@ -141,11 +182,33 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final userName   = ref.watch(userNameProvider).valueOrNull ?? '';
-    final kwh        = _estimatedKwh();
+    final userName    = ref.watch(userNameProvider).valueOrNull ?? '';
+    final connectedId = ref.watch(connectedFanDeviceIdProvider);
+    final allFans     = ref.watch(savedFansProvider).valueOrNull ?? <FanDevice>[];
+
+    final targetId  = connectedId ?? _mostRecentFanId(allFans);
+    final fanState  = targetId != null
+        ? ref.watch(activeFanStateProvider(targetId)) : null;
+    final activeFan = targetId != null
+        ? allFans.cast<FanDevice?>().firstWhere(
+            (f) => f?.deviceId == targetId, orElse: () => null)
+        : null;
+
+    final gearWatts  = _gearWatts(fanState);
+    final lastRpm    = fanState?.lastRpm ?? 0;
+    final dailyKwh   = _dailyKwhFrom(fanState, activeFan);
+    final kwh        = _totalKwh(dailyKwh);
     final cost       = kwh * _tariff;
-    final chartPts   = _estimatedChartPoints();
+    final chartPts   = _chartPoints(dailyKwh);
+    final effPct     = _effPct(fanState);
     final axisLabels = _axisLabels(_range);
+
+    final wattDisplay  = gearWatts > 0 ? '$gearWatts' : '—';
+    final rpmDisplay   = lastRpm  > 0  ? '$lastRpm'   : '—';
+    final perfDisplay  = lastRpm  > 0 && gearWatts > 0
+        ? (lastRpm / gearWatts).toStringAsFixed(1) : '—';
+    final wattSavePct  = gearWatts > 0
+        ? ((_kTraditionalW - gearWatts) / _kTraditionalW * 100).round() : 0;
 
     return RefreshIndicator(
       onRefresh: _loadTariff,
@@ -169,9 +232,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'ⓘ Analytics are based on estimated usage patterns (8 hours/day, 32W average '
-          'power, 400 RPM average speed) and may not reflect all real-world fan activity, '
-          'including changes made using a remote or while the app is disconnected.',
+          'ⓘ Energy figures use firmware-reported cumulative runtime and the '
+          'active gear\'s power profile. Readings may not reflect activity '
+          'while the app was disconnected.',
           style: GoogleFonts.manrope(fontSize: 11, color: kTextMut, height: 1.4),
         ),
 
@@ -385,7 +448,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text('$_kAvgWatts',
+                  Text(wattDisplay,
                       style: kMonoStyle(size: 36, weight: FontWeight.w600,
                           letterSpacing: -0.5)),
                   const SizedBox(width: 6),
@@ -394,7 +457,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '$_kWattSavePct% lower than a typical ${_kTraditionalW}W fan',
+                gearWatts > 0
+                    ? '$wattSavePct% lower than a typical ${_kTraditionalW}W fan'
+                    : 'Connect to your fan to see power draw',
                 style: GoogleFonts.manrope(fontSize: 12, color: kTextMut),
               ),
             ],
@@ -420,7 +485,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Text('$_kAvgRpm',
+                        Text(rpmDisplay,
                             style: kMonoStyle(size: 36,
                                 weight: FontWeight.w600,
                                 letterSpacing: -0.5)),
@@ -449,7 +514,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       textBaseline: TextBaseline.alphabetic,
                       children: [
                         Text(
-                          _kPerfRpmPerWatt.toStringAsFixed(1),
+                          perfDisplay,
                           style: kMonoStyle(size: 36,
                               weight: FontWeight.w600,
                               letterSpacing: -0.5),
@@ -472,7 +537,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _DarkCard(
           child: Row(
             children: [
-              const _RingChart(pct: _kEffPct),
+              _RingChart(pct: effPct),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
@@ -482,15 +547,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         style: kMonoStyle(size: 10, color: kTextMut,
                             letterSpacing: 2.0)),
                     const SizedBox(height: 6),
-                    Text('Moderate Efficiency',
+                    Text(_effLabel(effPct),
                         style: GoogleFonts.manrope(
                             fontSize: 16, fontWeight: FontWeight.w700,
                             color: kText)),
                     const SizedBox(height: 4),
                     Text(
-                      'Your fan is estimated to consume $_kEffPct% less energy than '
-                      'a traditional ${_kTraditionalW}W ceiling fan over the same '
-                      '8-hour operating period.',
+                      gearWatts > 0
+                          ? 'Your fan consumes $gearWatts W at the current '
+                            'gear — $effPct% less energy than a traditional '
+                            '${_kTraditionalW}W ceiling fan.'
+                          : 'Connect to your fan to see real-time efficiency '
+                            'based on firmware-reported runtime.',
                       style: GoogleFonts.manrope(
                           fontSize: 12, color: kTextMut, height: 1.4),
                     ),

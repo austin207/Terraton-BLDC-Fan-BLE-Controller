@@ -120,6 +120,7 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 | Query Power (watts) | `55 AA 06 23 01 00 29` |
 | Query Speed (RPM) | `55 AA 06 24 01 00 2A` |
 | Get Motor State | `55 AA 00 01 01 00 01` |
+| Query Runtime | `55 AA 00 08 01 00 08` — response: `55 AA 07 08 02 HH LL CRC`; runtime = `(HH<<8\|LL) × 5` seconds. Sent on connect + every 90 s via `_runtimeTimer`. Updates `FanState.lastRuntimeSecs`. |
 
 ### Onboarding flow
 
@@ -152,7 +153,8 @@ Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`).
 - `fanRepositoryProvider` — singleton `FanRepositoryImpl` (ObjectBox)
 - `usageLogRepositoryProvider` — singleton `UsageLogRepositoryImpl` (ObjectBox)
 - `savedFansProvider` — `FutureProvider` returning `getAllFans()`; call `ref.invalidate(savedFansProvider)` after any write
-- `activeFanStateProvider` — `NotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>`; keyed by `deviceId`; mutate only through named `update*` / `set*` methods
+- `connectedFanDeviceIdProvider` — `StateProvider<String?>`; set by `_ControlScreenState` on connect, cleared on dispose; lets `AnalyticsScreen` watch live state without knowing the deviceId up front
+- `activeFanStateProvider` — `NotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>`; keyed by `deviceId`; mutate only through named `update*` / `set*` methods; exposes `updateRuntime(int secs)` which persists `lastRuntimeSecs` to ObjectBox
 - `userNameProvider` — `AsyncNotifierProvider<UserNameNotifier, String>`; persisted to `app_settings.json`
 - `packageInfoProvider` — `FutureProvider<PackageInfo>`
 

@@ -97,6 +97,13 @@ class BleResponseParser {
     return r.data[0];
   }
 
+  /// Response: `55 AA 07 08 02 HH LL CRC` — runtime = (HH<<8|LL) × 5 seconds.
+  static int? parseRuntimeSeconds(FanResponse r) {
+    final cmd = CommandLoader.responseCommand('runtime');
+    if (r.command != cmd || r.data.length < 2) return null;
+    return ((r.data[0] << 8) | r.data[1]) * 5;
+  }
+
   // Converts mode response byte to mode name string.
   // Mode data values (0x01–0x04) come from commands.yaml modes.actions.
   static String? parseModeString(FanResponse r) {
