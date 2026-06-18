@@ -122,8 +122,22 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     }
   }
 
-  void updateTimer(int timerCode) => update(state.copyWith(
-    activeTimerCode: () => timerCode == 0 ? null : timerCode,
+  // activatedAt should be passed only from the UI (when the user taps a timer
+  // button). BLE response handlers leave it null so the existing start time is
+  // preserved — the fan only reports which duration is active, not time remaining.
+  void updateTimer(int timerCode, {DateTime? activatedAt}) => update(state.copyWith(
+    activeTimerCode:  () => timerCode == 0 ? null : timerCode,
+    timerActivatedAt: () => timerCode == 0 ? null : (activatedAt ?? state.timerActivatedAt),
+  ));
+
+  /// Clears volatile connection-state fields so reconnects don't show stale data.
+  /// Motor state response updates them back to actual values within ~100 ms.
+  void resetOnConnect() => update(state.copyWith(
+    isPowered:  false,
+    isBoost:    false,
+    activeMode: () => null,
+    lastWatts:  () => null,
+    lastRpm:    () => null,
   ));
 
   void updateWatts(int watts)       => update(state.copyWith(lastWatts:       () => watts));

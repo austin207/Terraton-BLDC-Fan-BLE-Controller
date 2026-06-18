@@ -66,7 +66,7 @@
     },
     {
       "id": "2:6584660752010918141",
-      "lastPropertyId": "21:5274440309588345344",
+      "lastPropertyId": "22:1685620198763572186",
       "name": "FanState",
       "properties": [
         {
@@ -176,6 +176,11 @@
           "id": "21:5274440309588345344",
           "name": "lastRuntimeSecs",
           "type": 6
+        },
+        {
+          "id": "22:1685620198763572186",
+          "name": "timerActivatedAt",
+          "type": 10
         }
       ],
       "relations": []

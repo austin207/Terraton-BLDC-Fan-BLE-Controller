@@ -177,6 +177,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _lastWattsAt = null;
       _lastRpmAt   = null;
       _connectedFanCtrl.state = widget.fan.deviceId;
+      // Reset volatile state so stale data from the previous session doesn't
+      // persist. Motor state response corrects to actual values within ~100 ms.
+      ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).resetOnConnect();
       _startTelemetry();
       _subscribeNotify();
       _startRuntimePoll();
@@ -960,6 +963,13 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     _    => '',
   };
 
+  static int _timerCodeToHours(int? code) => switch (code) {
+    0x02 => 2,
+    0x04 => 4,
+    0x08 => 8,
+    _    => 0,
+  };
+
   /// If the fan is connected but powered off, power it on (optimistically and
   /// over BLE) before executing the requested control action. Mirrors the
   /// manual power-button flow so any control interaction "wakes" the fan.
@@ -990,18 +1000,24 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       }
       if (m == 'nature') {
         // Restore the speed that was active before Nature was enabled.
-        final restore = _preNatureSpeed > 0 ? _preNatureSpeed : fanState.speed;
+        // Fall back to 3 when speed is unknown — always send a speed frame so
+        // the hardware actually exits Nature mode.
+        final restore = _preNatureSpeed > 0
+            ? _preNatureSpeed
+            : (fanState.speed > 0 ? fanState.speed : 3);
         _flushSegment(newGear: restore, newMode: null);
         notifier.setActiveMode(null);
-        if (restore > 0) {
-          notifier.updateSpeed(restore);
-          unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
-        }
+        notifier.updateSpeed(restore);
+        unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
         return;
       }
       if (m == 'smart') {
         // Restore the speed that was active before Smart was enabled.
-        final restore = _preSmartSpeed > 0 ? _preSmartSpeed : fanState.speed;
+        // Fall back to 3 when speed is unknown — always send a speed frame so
+        // the hardware actually exits Smart mode.
+        final restore = _preSmartSpeed > 0
+            ? _preSmartSpeed
+            : (fanState.speed > 0 ? fanState.speed : 3);
         _flushSegment(newGear: restore, newMode: null);
         notifier.setActiveMode(null);
         notifier.updateSpeed(restore);
@@ -1101,11 +1117,14 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   }
 
   void _onBoost() {
-    final fan      = widget.fan;
+    final fan = widget.fan;
+
+    // Ensure power on BEFORE reading state so isBoost/activeMode reflect the
+    // current session (not stale ObjectBox values from a previous disconnect).
+    _ensurePoweredOn();
+
     final fanState = ref.read(activeFanStateProvider(fan.deviceId));
     final notifier = ref.read(activeFanStateProvider(fan.deviceId).notifier);
-
-    _ensurePoweredOn();
 
     // Nature → Boost: clear Nature, activate Boost, skip speed restore.
     if (fanState.activeMode == 'nature') {
@@ -1117,15 +1136,19 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     }
 
     if (fanState.isBoost) {
+      // Toggle off — exit boost by restoring the active mode or a fixed speed.
       _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
       notifier.setBoostActive(false);
-      final restoreFrame = switch (fanState.activeMode) {
-        'reverse' => BleFrameBuilder.setReverse(),
-        'smart'   => BleFrameBuilder.setSmart(),
-        _         => null,
-      };
-      if (restoreFrame != null) {
-        unawaited(widget.send(restoreFrame, label: 'Mode: ${fanState.activeMode}'));
+      if (fanState.activeMode == 'reverse') {
+        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
+      } else if (fanState.activeMode == 'smart') {
+        unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
+      } else {
+        // No special mode — send a speed frame so the hardware exits boost.
+        final restoreSpeed = fanState.speed > 0 ? fanState.speed : 3;
+        notifier.updateSpeed(restoreSpeed);
+        unawaited(widget.send(BleFrameBuilder.setSpeed(restoreSpeed),
+            label: 'Speed $restoreSpeed'));
       }
     } else {
       _flushSegment(newGear: fanState.speed, newMode: 'boost');
@@ -1247,13 +1270,20 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         if (_has('timer')) ...[
           _SectionHeader(
             'SLEEP TIMER',
-            trailing: fanState.activeTimerCode != null && fanState.activeTimerCode != 0
-                ? Text(
-                    '${_timerLabel(fanState.activeTimerCode)} REMAINING',
-                    style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10, color: kYellow,
-                        fontWeight: FontWeight.w700, letterSpacing: 1.6),
-                  )
+            trailing: (fanState.activeTimerCode != null && fanState.activeTimerCode != 0)
+                ? (fanState.timerActivatedAt != null
+                    ? _TimerCountdown(
+                        activatedAt:   fanState.timerActivatedAt!,
+                        durationHours: _timerCodeToHours(fanState.activeTimerCode),
+                      )
+                    // No start time (timer was set while app was disconnected) —
+                    // fall back to the static label.
+                    : Text(
+                        '${_timerLabel(fanState.activeTimerCode)} REMAINING',
+                        style: GoogleFonts.jetBrainsMono(
+                            fontSize: 10, color: kYellow,
+                            fontWeight: FontWeight.w700, letterSpacing: 1.6),
+                      ))
                 : null,
           ),
           const SizedBox(height: 10),
@@ -1268,7 +1298,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                 '8h' => 0x08,
                 _    => 0x00,
               };
-              ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(code);
+              ref.read(activeFanStateProvider(fan.deviceId).notifier).updateTimer(
+                code,
+                // Record start time when activating so the countdown can compute
+                // remaining time. Pass null when cancelling (timer off).
+                activatedAt: code != 0 ? DateTime.now() : null,
+              );
               final frame = switch (a) {
                 '2h' => BleFrameBuilder.timer2h(),
                 '4h' => BleFrameBuilder.timer4h(),
@@ -1596,6 +1631,66 @@ class _DisconnectAlertOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Timer countdown ───────────────────────────────────────────────────────────
+// Displays a live reverse countdown from the moment the timer was activated.
+// Owns a 1-second ticker so only this widget rebuilds per tick, not the whole panel.
+
+class _TimerCountdown extends StatefulWidget {
+  final DateTime activatedAt;
+  final int durationHours; // 2, 4, or 8; 0 = unknown (shows static label)
+
+  const _TimerCountdown({required this.activatedAt, required this.durationHours});
+
+  @override
+  State<_TimerCountdown> createState() => _TimerCountdownState();
+}
+
+class _TimerCountdownState extends State<_TimerCountdown> {
+  late Timer _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.durationHours == 0) {
+      return Text('ACTIVE',
+          style: GoogleFonts.jetBrainsMono(
+              fontSize: 10, color: kYellow,
+              fontWeight: FontWeight.w700, letterSpacing: 1.6));
+    }
+
+    final elapsed   = DateTime.now().difference(widget.activatedAt);
+    final total     = Duration(hours: widget.durationHours);
+    final remaining = total - elapsed;
+
+    final String label;
+    if (remaining.isNegative || remaining.inSeconds <= 0) {
+      label = '0m REMAINING';
+    } else {
+      final h = remaining.inHours;
+      final m = remaining.inMinutes.remainder(60);
+      label = h > 0 ? '${h}h ${m}m REMAINING' : '${m}m REMAINING';
+    }
+
+    return Text(label,
+        style: GoogleFonts.jetBrainsMono(
+            fontSize: 10, color: kYellow,
+            fontWeight: FontWeight.w700, letterSpacing: 1.6));
   }
 }
 

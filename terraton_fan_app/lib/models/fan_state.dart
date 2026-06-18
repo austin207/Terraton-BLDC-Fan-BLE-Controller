@@ -13,6 +13,10 @@ class FanState {
   bool isBoost = false;
   String? activeMode;      // "nature" | "smart" | "reverse" | null
   int? activeTimerCode;    // 0x02 | 0x04 | 0x08 | null
+  // When the active timer was started (app-side; used for countdown display).
+  // null when no timer is active or when the timer was set before app was connected.
+  @Property(type: PropertyType.date)
+  DateTime? timerActivatedAt;
   bool isPowered = false;
   int? lastWatts;
   int? lastRpm;
@@ -49,6 +53,7 @@ class FanState {
           isBoost == other.isBoost &&
           activeMode == other.activeMode &&
           activeTimerCode == other.activeTimerCode &&
+          timerActivatedAt == other.timerActivatedAt &&
           isPowered == other.isPowered &&
           lastWatts == other.lastWatts &&
           lastRpm == other.lastRpm &&
@@ -59,8 +64,8 @@ class FanState {
 
   @override
   int get hashCode => Object.hash(
-      deviceId, speed, isBoost, activeMode, activeTimerCode, isPowered,
-      lastWatts, lastRpm, lastRuntimeSecs,
+      deviceId, speed, isBoost, activeMode, activeTimerCode, timerActivatedAt,
+      isPowered, lastWatts, lastRpm, lastRuntimeSecs,
       lastLightColorType, lastLightBrightness, lastLightIsOn);
 }
 
@@ -71,6 +76,7 @@ extension FanStateCopyWith on FanState {
     bool? isBoost,
     String? Function()? activeMode,
     int? Function()? activeTimerCode,
+    DateTime? Function()? timerActivatedAt,
     bool? isPowered,
     int? Function()? lastWatts,
     int? Function()? lastRpm,
@@ -84,12 +90,13 @@ extension FanStateCopyWith on FanState {
         ..deviceId            = deviceId
         ..speed               = speed               ?? this.speed
         ..isBoost             = isBoost             ?? this.isBoost
-        ..activeMode          = activeMode          != null ? activeMode()      : this.activeMode
-        ..activeTimerCode     = activeTimerCode     != null ? activeTimerCode() : this.activeTimerCode
+        ..activeMode          = activeMode          != null ? activeMode()           : this.activeMode
+        ..activeTimerCode     = activeTimerCode     != null ? activeTimerCode()      : this.activeTimerCode
+        ..timerActivatedAt    = timerActivatedAt    != null ? timerActivatedAt()     : this.timerActivatedAt
         ..isPowered           = isPowered           ?? this.isPowered
-        ..lastWatts           = lastWatts           != null ? lastWatts()       : this.lastWatts
-        ..lastRpm             = lastRpm             != null ? lastRpm()         : this.lastRpm
-        ..lastRuntimeSecs     = lastRuntimeSecs     != null ? lastRuntimeSecs() : this.lastRuntimeSecs
+        ..lastWatts           = lastWatts           != null ? lastWatts()            : this.lastWatts
+        ..lastRpm             = lastRpm             != null ? lastRpm()              : this.lastRpm
+        ..lastRuntimeSecs     = lastRuntimeSecs     != null ? lastRuntimeSecs()      : this.lastRuntimeSecs
         ..lastLightColorType  = lastLightColorType  ?? this.lastLightColorType
         ..lastLightBrightness = lastLightBrightness ?? this.lastLightBrightness
         ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn

@@ -95,7 +95,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 6584660752010918141),
     name: 'FanState',
-    lastPropertyId: const obx_int.IdUid(21, 5274440309588345344),
+    lastPropertyId: const obx_int.IdUid(22, 1685620198763572186),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -223,6 +223,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(21, 5274440309588345344),
         name: 'lastRuntimeSecs',
         type: 6,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(22, 1685620198763572186),
+        name: 'timerActivatedAt',
+        type: 10,
         flags: 0,
       ),
     ],
@@ -443,7 +449,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final openSegmentModeOffset = object.openSegmentMode == null
             ? null
             : fbb.writeString(object.openSegmentMode!);
-        fbb.startTable(22);
+        fbb.startTable(23);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.speed);
@@ -465,13 +471,18 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(18, object.openSegmentRpmSum);
         fbb.addInt64(19, object.openSegmentRpmCount);
         fbb.addInt64(20, object.lastRuntimeSecs);
+        fbb.addInt64(21, object.timerActivatedAt?.millisecondsSinceEpoch);
         fbb.finish(fbb.endTable());
         return object.id;
       },
       objectFromFB: (obx.Store store, ByteData fbData) {
         final buffer = fb.BufferContext(fbData);
         final rootOffset = buffer.derefObject(0);
-
+        final timerActivatedAtValue = const fb.Int64Reader().vTableGetNullable(
+          buffer,
+          rootOffset,
+          46,
+        );
         final object = FanState()
           ..id = const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0)
           ..deviceId = const fb.StringReader(
@@ -568,7 +579,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
             buffer,
             rootOffset,
             44,
-          );
+          )
+          ..timerActivatedAt = timerActivatedAtValue == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(timerActivatedAtValue);
 
         return object;
       },
@@ -824,6 +838,11 @@ class FanState_ {
   /// See [FanState.lastRuntimeSecs].
   static final lastRuntimeSecs = obx.QueryIntegerProperty<FanState>(
     _entities[1].properties[20],
+  );
+
+  /// See [FanState.timerActivatedAt].
+  static final timerActivatedAt = obx.QueryDateProperty<FanState>(
+    _entities[1].properties[21],
   );
 }
 
