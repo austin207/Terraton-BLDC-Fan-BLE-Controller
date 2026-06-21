@@ -61,6 +61,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   DateTime? _lastWattsAt;
   DateTime? _lastRpmAt;
   Duration  _serviceRemaining = Duration.zero;
+  // Suppresses incoming power=false BLE frames for 1.5 s after the app sends a
+  // powerOn command. Prevents the initial motor-state response (queued at connect
+  // time, before the powerOn frame reaches the fan) from overriding the
+  // user-initiated optimistic isPowered=true back to false.
+  bool   _recentlyPoweredOn      = false;
+  Timer? _recentlyPoweredOnTimer;
 
   // Tracks the resolved MAC without mutating widget.fan (which is immutable).
   // Populated from widget.fan.macAddress on init; updated after first discovery.
@@ -221,6 +227,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       for (final response in responses) {
         final power = BleResponseParser.parsePowerState(response);
         if (power != null) {
+          // Ignore power=false frames while _recentlyPoweredOn is set — a stale
+          // motor-state response (sent before the fan received powerOn) must not
+          // race back and cancel the user-initiated power-on.
+          if (power == false && _recentlyPoweredOn) { continue; }
           notifier.updatePower(power);
           if (!_isDemo) {
             if (power) {
@@ -434,6 +444,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _runtimeTimer?.cancel();
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
+    _recentlyPoweredOnTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     unawaited(BleForegroundService.stop());
     _debug.dispose();
@@ -479,6 +490,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
+    // Suppress incoming power=false for 1.5 s after any powerOn command so the
+    // initial motor-state response (queued before the fan receives powerOn) cannot
+    // race back and override the user-initiated isPowered=true.
+    if (label.startsWith('Power ON')) {
+      _recentlyPoweredOn = true;
+      _recentlyPoweredOnTimer?.cancel();
+      _recentlyPoweredOnTimer = Timer(const Duration(milliseconds: 1500), () {
+        _recentlyPoweredOn = false;
+      });
+    }
     if (_isDemo) {
       _applyDemoFrame(frame);
       return;
@@ -987,7 +1008,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
 
     _ensurePoweredOn();
 
-    // Tapping the already-active mode toggles it off.
+    // Reverse toggles off on second tap (hardware toggle model).
+    // Nature and Smart are activation-only — tapping their active button has no effect.
     if (fanState.activeMode == m) {
       if (m == 'reverse') {
         // Hardware toggle: second Reverse command exits reverse mode.
@@ -996,39 +1018,6 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         // Speed is preserved as-is — exiting Reverse only flips direction.
         _flushSegment(newGear: fanState.speed, newMode: null);
         unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: forward (toggle)'));
-        return;
-      }
-      if (m == 'nature') {
-        // Restore the speed that was active before Nature was enabled.
-        // Fall back to 3 when speed is unknown — always send a speed frame so
-        // the hardware actually exits Nature mode.
-        final restore = _preNatureSpeed > 0
-            ? _preNatureSpeed
-            : (fanState.speed > 0 ? fanState.speed : 3);
-        _flushSegment(newGear: restore, newMode: null);
-        notifier.setActiveMode(null);
-        notifier.updateSpeed(restore);
-        unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
-        return;
-      }
-      if (m == 'smart') {
-        // Restore the speed that was active before Smart was enabled.
-        // Fall back to 3 when speed is unknown — always send a speed frame so
-        // the hardware actually exits Smart mode.
-        final restore = _preSmartSpeed > 0
-            ? _preSmartSpeed
-            : (fanState.speed > 0 ? fanState.speed : 3);
-        _flushSegment(newGear: restore, newMode: null);
-        notifier.setActiveMode(null);
-        notifier.updateSpeed(restore);
-        unawaited(widget.send(BleFrameBuilder.setSpeed(restore), label: 'Speed $restore'));
-        return;
-      }
-      _flushSegment(newGear: fanState.speed, newMode: null);
-      notifier.setActiveMode(null);
-      if (fanState.speed > 0) {
-        unawaited(widget.send(BleFrameBuilder.setSpeed(fanState.speed),
-            label: 'Speed ${fanState.speed}'));
       }
       return;
     }
@@ -1135,26 +1124,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       return;
     }
 
-    if (fanState.isBoost) {
-      // Toggle off — exit boost by restoring the active mode or a fixed speed.
-      _flushSegment(newGear: fanState.speed, newMode: fanState.activeMode);
-      notifier.setBoostActive(false);
-      if (fanState.activeMode == 'reverse') {
-        unawaited(widget.send(BleFrameBuilder.setReverse(), label: 'Mode: reverse'));
-      } else if (fanState.activeMode == 'smart') {
-        unawaited(widget.send(BleFrameBuilder.setSmart(), label: 'Mode: smart'));
-      } else {
-        // No special mode — send a speed frame so the hardware exits boost.
-        final restoreSpeed = fanState.speed > 0 ? fanState.speed : 3;
-        notifier.updateSpeed(restoreSpeed);
-        unawaited(widget.send(BleFrameBuilder.setSpeed(restoreSpeed),
-            label: 'Speed $restoreSpeed'));
-      }
-    } else {
-      _flushSegment(newGear: fanState.speed, newMode: 'boost');
-      notifier.setBoostActive(true);
-      unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
-    }
+    // Boost is activation-only — tapping active boost has no effect.
+    if (fanState.isBoost) return;
+
+    _flushSegment(newGear: fanState.speed, newMode: 'boost');
+    notifier.setBoostActive(true);
+    unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
   }
 
   @override
