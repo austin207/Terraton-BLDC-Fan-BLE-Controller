@@ -231,14 +231,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           // motor-state response (sent before the fan received powerOn) must not
           // race back and cancel the user-initiated power-on.
           if (power == false && _recentlyPoweredOn) { continue; }
-          notifier.updatePower(power);
-          if (!_isDemo) {
-            if (power) {
-              final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-              final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
-              unawaited(BleForegroundService.start(label));
-            } else {
-              unawaited(BleForegroundService.stop());
+          if (isMotorStateResponse && power == false) {
+            // Motor State frame [1] = OFF: fan is powered down.
+            // Clear ALL operating state — speed, mode, and boost are undefined
+            // when the fan is off; do not show any stale previous-session values.
+            notifier.applyMotorStatePowerOff();
+            if (!_isDemo) unawaited(BleForegroundService.stop());
+          } else {
+            notifier.updatePower(power);
+            if (!_isDemo) {
+              if (power) {
+                final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+                final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
+                unawaited(BleForegroundService.start(label));
+              } else {
+                unawaited(BleForegroundService.stop());
+              }
             }
           }
           _updateMotorStatePoll();
@@ -246,21 +254,25 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         }
         final speed = BleResponseParser.parseSpeed(response);
         if (speed != null) {
-          notifier.updateSpeed(speed);
-          if (speed > 0) notifier.updatePower(true);
           if (isMotorStateResponse) {
-            // Motor State frame [2] = speed → fan is in plain speed, no special
-            // mode active. Clear all mode state as source-of-truth.
+            // Motor State frame [2] = speed. Only apply when frame [1]
+            // confirmed the fan is ON. If OFF, this speed is the hardware's
+            // last stored value — it must not re-light a speed dot on an
+            // inactive fan (and must not call updatePower(true)).
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            if (!s.isPowered) { continue; }
+            // Fan is ON: speed is the exclusive active state — clear mode flags.
             notifier.applyMotorStateTruth(null);
+            notifier.updateSpeed(speed);
           } else {
             // Regular speed notification (remote or app echo). Smart, Nature,
             // and Reverse are all incompatible with a fixed speed step — if any
             // is active the hardware has exited the mode; clear it so the UI
             // stays in sync.
+            notifier.updateSpeed(speed);
+            if (speed > 0) notifier.updatePower(true);
             final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            if (s.activeMode != null) {
-              notifier.setActiveMode(null);
-            }
+            if (s.activeMode != null) notifier.setActiveMode(null);
             if (s.isBoost) notifier.setBoostActive(false);
           }
           continue;
@@ -268,8 +280,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         final mode = BleResponseParser.parseModeString(response);
         if (mode != null) {
           if (isMotorStateResponse) {
-            // Motor State frame [2] = mode → this mode is the exclusive active
-            // state. Apply as truth and clear all other mode state.
+            // Motor State frame [2] = mode. Only apply when frame [1]
+            // confirmed the fan is ON — same gate as the speed case above.
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            if (!s.isPowered) { continue; }
+            // Fan is ON: this mode is the exclusive active state.
             notifier.applyMotorStateTruth(mode);
           } else if (mode == 'reverse' &&
                      ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {

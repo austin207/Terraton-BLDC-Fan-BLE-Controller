@@ -136,6 +136,19 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     isPowered:  false,
     isBoost:    false,
     activeMode: () => null,
+    speed:      0,
+    lastWatts:  () => null,
+    lastRpm:    () => null,
+  ));
+
+  /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.
+  /// Clears all operating state atomically — speed, mode, and boost are
+  /// undefined when the fan is off; do not preserve previous-session values.
+  void applyMotorStatePowerOff() => update(state.copyWith(
+    isPowered:  false,
+    isBoost:    false,
+    activeMode: () => null,
+    speed:      0,
     lastWatts:  () => null,
     lastRpm:    () => null,
   ));
