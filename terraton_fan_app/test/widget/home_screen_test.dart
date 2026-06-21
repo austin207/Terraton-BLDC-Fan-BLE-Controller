@@ -8,16 +8,19 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/daily_runtime_repository.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/home/home_screen.dart';
+import 'package:terraton_fan_app/models/daily_runtime.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
 
-class _MockFanRepo      extends Mock implements FanRepository {}
-class _MockUsageLogRepo extends Mock implements UsageLogRepository {}
+class _MockFanRepo         extends Mock implements FanRepository {}
+class _MockUsageLogRepo    extends Mock implements UsageLogRepository {}
+class _MockDailyRuntimeRepo extends Mock implements DailyRuntimeRepository {}
 
 // Minimal UserNameNotifier that avoids file I/O.
 class _FakeUserNameNotifier extends UserNameNotifier {
@@ -27,7 +30,11 @@ class _FakeUserNameNotifier extends UserNameNotifier {
   Future<void> save(String name) async { state = AsyncData(name); }
 }
 
-Widget _buildScreen(_MockFanRepo fanRepo, _MockUsageLogRepo logRepo) {
+Widget _buildScreen(_MockFanRepo fanRepo, _MockUsageLogRepo logRepo,
+    [_MockDailyRuntimeRepo? dailyRepo]) {
+  final dr = dailyRepo ?? _MockDailyRuntimeRepo();
+  when(() => dr.getRange(any(), any(), any())).thenReturn([]);
+  when(() => dr.upsertForDate(any(), any(), any())).thenReturn(null);
   final router = GoRouter(
     initialLocation: AppRoutes.home,
     routes: [
@@ -51,6 +58,7 @@ Widget _buildScreen(_MockFanRepo fanRepo, _MockUsageLogRepo logRepo) {
       savedFansProvider.overrideWith((ref) async => []),
       fanRepositoryProvider.overrideWithValue(fanRepo),
       usageLogRepositoryProvider.overrideWithValue(logRepo),
+      dailyRuntimeRepositoryProvider.overrideWithValue(dr),
       packageInfoProvider.overrideWith((ref) async => PackageInfo(
         appName: 'Terraton', packageName: 'com.terraton.fan',
         version: '1.0.0', buildNumber: '1',
@@ -69,6 +77,9 @@ void main() {
     registerFallbackValue(FanDevice());
     registerFallbackValue(UsageLog(
       deviceId: '', startTime: DateTime(0), durationSecs: 0, gear: 0, watts: 0,
+    ));
+    registerFallbackValue(DailyRuntime(
+      deviceId: '', date: DateTime(0), runtimeSecs: 0,
     ));
     registerFallbackValue(DateTime.now());
   });

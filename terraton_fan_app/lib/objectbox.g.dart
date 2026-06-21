@@ -14,6 +14,7 @@ import 'package:objectbox/internal.dart'
 import 'package:objectbox/objectbox.dart' as obx;
 import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
+import 'models/daily_runtime.dart';
 import 'models/fan_device.dart';
 import 'models/fan_state.dart';
 import 'models/usage_log.dart';
@@ -299,6 +300,41 @@ final _entities = <obx_int.ModelEntity>[
     relations: <obx_int.ModelRelation>[],
     backlinks: <obx_int.ModelBacklink>[],
   ),
+  obx_int.ModelEntity(
+    id: const obx_int.IdUid(4, 2470709627713998816),
+    name: 'DailyRuntime',
+    lastPropertyId: const obx_int.IdUid(4, 5546424932460234879),
+    flags: 0,
+    properties: <obx_int.ModelProperty>[
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(1, 6104834735616334756),
+        name: 'id',
+        type: 6,
+        flags: 1,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(2, 676857629466920669),
+        name: 'deviceId',
+        type: 9,
+        flags: 2048,
+        indexId: const obx_int.IdUid(3, 1660928695828496553),
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(3, 7260161115577292521),
+        name: 'date',
+        type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 5546424932460234879),
+        name: 'runtimeSecs',
+        type: 6,
+        flags: 0,
+      ),
+    ],
+    relations: <obx_int.ModelRelation>[],
+    backlinks: <obx_int.ModelBacklink>[],
+  ),
 ];
 
 /// Shortcut for [obx.Store.new] that passes [getObjectBoxModel] and for Flutter
@@ -339,8 +375,8 @@ Future<obx.Store> openStore({
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
     entities: _entities,
-    lastEntityId: const obx_int.IdUid(3, 7745722999259312107),
-    lastIndexId: const obx_int.IdUid(2, 2741298653888021969),
+    lastEntityId: const obx_int.IdUid(4, 2470709627713998816),
+    lastIndexId: const obx_int.IdUid(3, 1660928695828496553),
     lastRelationId: const obx_int.IdUid(0, 0),
     lastSequenceId: const obx_int.IdUid(0, 0),
     retiredEntityUids: const [],
@@ -675,6 +711,55 @@ obx_int.ModelDefinition getObjectBoxModel() {
         return object;
       },
     ),
+    DailyRuntime: obx_int.EntityDefinition<DailyRuntime>(
+      model: _entities[3],
+      toOneRelations: (DailyRuntime object) => [],
+      toManyRelations: (DailyRuntime object) => {},
+      getId: (DailyRuntime object) => object.id,
+      setId: (DailyRuntime object, int id) {
+        object.id = id;
+      },
+      objectToFB: (DailyRuntime object, fb.Builder fbb) {
+        final deviceIdOffset = fbb.writeString(object.deviceId);
+        fbb.startTable(5);
+        fbb.addInt64(0, object.id);
+        fbb.addOffset(1, deviceIdOffset);
+        fbb.addInt64(2, object.date.millisecondsSinceEpoch);
+        fbb.addInt64(3, object.runtimeSecs);
+        fbb.finish(fbb.endTable());
+        return object.id;
+      },
+      objectFromFB: (obx.Store store, ByteData fbData) {
+        final buffer = fb.BufferContext(fbData);
+        final rootOffset = buffer.derefObject(0);
+        final idParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          4,
+          0,
+        );
+        final deviceIdParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 6, '');
+        final dateParam = DateTime.fromMillisecondsSinceEpoch(
+          const fb.Int64Reader().vTableGet(buffer, rootOffset, 8, 0),
+        );
+        final runtimeSecsParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          10,
+          0,
+        );
+        final object = DailyRuntime(
+          id: idParam,
+          deviceId: deviceIdParam,
+          date: dateParam,
+          runtimeSecs: runtimeSecsParam,
+        );
+
+        return object;
+      },
+    ),
   };
 
   return obx_int.ModelDefinition(model, bindings);
@@ -891,5 +976,28 @@ class UsageLog_ {
   /// See [UsageLog.smartBaselineGear].
   static final smartBaselineGear = obx.QueryIntegerProperty<UsageLog>(
     _entities[2].properties[8],
+  );
+}
+
+/// [DailyRuntime] entity fields to define ObjectBox queries.
+class DailyRuntime_ {
+  /// See [DailyRuntime.id].
+  static final id = obx.QueryIntegerProperty<DailyRuntime>(
+    _entities[3].properties[0],
+  );
+
+  /// See [DailyRuntime.deviceId].
+  static final deviceId = obx.QueryStringProperty<DailyRuntime>(
+    _entities[3].properties[1],
+  );
+
+  /// See [DailyRuntime.date].
+  static final date = obx.QueryDateProperty<DailyRuntime>(
+    _entities[3].properties[2],
+  );
+
+  /// See [DailyRuntime.runtimeSecs].
+  static final runtimeSecs = obx.QueryIntegerProperty<DailyRuntime>(
+    _entities[3].properties[3],
   );
 }

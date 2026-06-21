@@ -4,26 +4,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/daily_runtime_repository.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/analytics/analytics_screen.dart';
+import 'package:terraton_fan_app/models/daily_runtime.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:mocktail/mocktail.dart';
 
-class _MockFanRepo      extends Mock implements FanRepository {}
-class _MockLogRepo      extends Mock implements UsageLogRepository {}
+class _MockFanRepo         extends Mock implements FanRepository {}
+class _MockLogRepo         extends Mock implements UsageLogRepository {}
+class _MockDailyRuntimeRepo extends Mock implements DailyRuntimeRepository {}
 
 // Builds an AnalyticsScreen with the given log data and optional fan list.
 Widget _buildScreen({
   List<UsageLog> logs = const [],
   List<FanDevice> fans = const [],
+  List<DailyRuntime> dailyRuntimes = const [],
   _MockFanRepo? fanRepo,
   _MockLogRepo? logRepo,
+  _MockDailyRuntimeRepo? dailyRepo,
 }) {
   final fr = fanRepo ?? _MockFanRepo();
   final lr = logRepo ?? _MockLogRepo();
+  final dr = dailyRepo ?? _MockDailyRuntimeRepo();
 
   when(() => fr.getAllFans()).thenReturn(fans);
   when(() => fr.getState(any())).thenReturn(FanState());
@@ -34,10 +40,14 @@ Widget _buildScreen({
   when(() => lr.addLog(any())).thenReturn(null);
   when(() => lr.pruneBefore(any())).thenReturn(null);
 
+  when(() => dr.getRange(any(), any(), any())).thenReturn(dailyRuntimes);
+  when(() => dr.upsertForDate(any(), any(), any())).thenReturn(null);
+
   return ProviderScope(
     overrides: [
       fanRepositoryProvider.overrideWithValue(fr),
       usageLogRepositoryProvider.overrideWithValue(lr),
+      dailyRuntimeRepositoryProvider.overrideWithValue(dr),
       savedFansProvider.overrideWith((ref) async => fans),
     ],
     child: const MaterialApp(home: Scaffold(body: AnalyticsScreen())),
@@ -71,6 +81,9 @@ void main() {
     registerFallbackValue(FanDevice());
     registerFallbackValue(UsageLog(
       deviceId: '', startTime: DateTime(0), durationSecs: 0, gear: 0, watts: 0,
+    ));
+    registerFallbackValue(DailyRuntime(
+      deviceId: '', date: DateTime(0), runtimeSecs: 0,
     ));
     registerFallbackValue(DateTime.now());
   });
@@ -120,7 +133,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining('firmware-reported cumulative runtime'),
+        find.textContaining('actual daily runtime'),
         findsOneWidget,
       );
     });
@@ -167,14 +180,14 @@ void main() {
       expect(find.text('BY FAN'), findsNothing);
     });
 
-    testWidgets('derives weekly kWh from firmware runtime — formula test',
+    testWidgets('derives weekly kWh from daily runtime records — formula test',
         (tester) async {
-      // Fan added 7 days ago; 7 h total runtime (1 h/day avg); gear 3 = 10 W.
-      // dailyKwh = 10 × (7×3600 / 7) / 3_600_000 = 0.01
-      // weekly   = 0.01 × 7 = 0.07  → displayed as '0.070'.
+      // 7 daily records, each with 3600 s runtime; gear 3 = 10 W.
+      // rangeKwh = 10 × 3600 / 3_600_000 × 7 days = 0.07 → displayed as '0.070'.
       final fr = _MockFanRepo();
       final lr = _MockLogRepo();
-      final now  = DateTime.now();
+      final dr = _MockDailyRuntimeRepo();
+      final now   = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final fan7 = FanDevice()
         ..deviceId  = 'd1'
@@ -183,7 +196,13 @@ void main() {
       final stateWithRuntime = FanState()
         ..deviceId        = 'd1'
         ..speed           = 3
-        ..lastRuntimeSecs = 7 * 3600;
+        ..lastRuntimeSecs = 3600;
+
+      final records = List.generate(7, (i) => DailyRuntime(
+        deviceId:    'd1',
+        date:        today.subtract(Duration(days: 6 - i)),
+        runtimeSecs: 3600,
+      ));
 
       when(() => fr.getAllFans()).thenReturn([fan7]);
       when(() => fr.getState(any())).thenReturn(stateWithRuntime);
@@ -192,11 +211,14 @@ void main() {
       when(() => lr.allDeviceIds()).thenReturn([]);
       when(() => lr.addLog(any())).thenReturn(null);
       when(() => lr.pruneBefore(any())).thenReturn(null);
+      when(() => dr.getRange(any(), any(), any())).thenReturn(records);
+      when(() => dr.upsertForDate(any(), any(), any())).thenReturn(null);
 
       await tester.pumpWidget(ProviderScope(
         overrides: [
           fanRepositoryProvider.overrideWithValue(fr),
           usageLogRepositoryProvider.overrideWithValue(lr),
+          dailyRuntimeRepositoryProvider.overrideWithValue(dr),
           savedFansProvider.overrideWith((ref) async => [fan7]),
           connectedFanDeviceIdProvider.overrideWith((ref) => 'd1'),
         ],
@@ -213,6 +235,7 @@ void main() {
       // gear 3 = 10 W → effPct = ((85-10)/85*100).round() = 88 → Excellent Efficiency.
       final fr = _MockFanRepo();
       final lr = _MockLogRepo();
+      final dr = _MockDailyRuntimeRepo();
       final fan = _fan('d1', 'Test Fan');
       final stateWithRuntime = FanState()
         ..deviceId        = 'd1'
@@ -226,11 +249,14 @@ void main() {
       when(() => lr.allDeviceIds()).thenReturn([]);
       when(() => lr.addLog(any())).thenReturn(null);
       when(() => lr.pruneBefore(any())).thenReturn(null);
+      when(() => dr.getRange(any(), any(), any())).thenReturn([]);
+      when(() => dr.upsertForDate(any(), any(), any())).thenReturn(null);
 
       await tester.pumpWidget(ProviderScope(
         overrides: [
           fanRepositoryProvider.overrideWithValue(fr),
           usageLogRepositoryProvider.overrideWithValue(lr),
+          dailyRuntimeRepositoryProvider.overrideWithValue(dr),
           savedFansProvider.overrideWith((ref) async => [fan]),
           connectedFanDeviceIdProvider.overrideWith((ref) => 'd1'),
         ],

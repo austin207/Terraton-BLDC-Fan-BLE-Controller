@@ -238,10 +238,41 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "4:2470709627713998816",
+      "lastPropertyId": "4:5546424932460234879",
+      "name": "DailyRuntime",
+      "properties": [
+        {
+          "id": "1:6104834735616334756",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:676857629466920669",
+          "name": "deviceId",
+          "type": 9,
+          "flags": 2048,
+          "indexId": "3:1660928695828496553"
+        },
+        {
+          "id": "3:7260161115577292521",
+          "name": "date",
+          "type": 10
+        },
+        {
+          "id": "4:5546424932460234879",
+          "name": "runtimeSecs",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "3:7745722999259312107",
-  "lastIndexId": "2:2741298653888021969",
+  "lastEntityId": "4:2470709627713998816",
+  "lastIndexId": "3:1660928695828496553",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

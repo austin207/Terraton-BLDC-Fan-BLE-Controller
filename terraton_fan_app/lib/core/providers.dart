@@ -7,6 +7,7 @@ import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
+import 'package:terraton_fan_app/core/storage/daily_runtime_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/core/storage/objectbox_store.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
@@ -59,6 +60,9 @@ final fanRepositoryProvider = Provider<FanRepository>(
 
 final usageLogRepositoryProvider = Provider<UsageLogRepository>(
     (_) => UsageLogRepositoryImpl(store));
+
+final dailyRuntimeRepositoryProvider = Provider<DailyRuntimeRepository>(
+    (_) => DailyRuntimeRepositoryImpl(store));
 
 // ObjectBox queries are synchronous by design and run in microseconds.
 // FutureProvider keeps the query off the build-call stack.

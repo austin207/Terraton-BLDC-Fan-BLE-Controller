@@ -318,7 +318,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         final rpm = BleResponseParser.parseRpm(response);
         if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); continue; }
         final runtimeSecs = BleResponseParser.parseRuntimeSeconds(response);
-        if (runtimeSecs != null) { notifier.updateRuntime(runtimeSecs); }
+        if (runtimeSecs != null) {
+          notifier.updateRuntime(runtimeSecs);
+          final now = DateTime.now();
+          ref.read(dailyRuntimeRepositoryProvider).upsertForDate(
+            widget.fan.deviceId,
+            DateTime(now.year, now.month, now.day),
+            runtimeSecs,
+          );
+        }
       }
     });
     unawaited(old?.cancel() ?? Future<void>.value());

@@ -2,7 +2,8 @@
 //
 // Pure aggregation math for the Analytics screen, extracted so the formulas
 // can be pinned with table-driven unit tests (the screen's State class is not
-// unit-testable). No Flutter imports — operates only on UsageLog lists.
+// unit-testable). No Flutter imports — operates only on model lists.
+import 'package:terraton_fan_app/models/daily_runtime.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 
 abstract final class AnalyticsCalculations {
@@ -98,5 +99,54 @@ abstract final class AnalyticsCalculations {
     if (pct >= 40) return 'Moderate Efficiency';
     if (pct > 0)   return 'Low Efficiency';
     return 'No Data Yet';
+  }
+
+  // ── Daily-runtime based kWh ──────────────────────────────────────────────
+
+  /// Normalises [records] across every day in [[from]..[to]] (both inclusive).
+  /// Days without a record are filled with the average of days that have data.
+  /// Returns one runtime value in seconds per day (real or estimated).
+  static List<double> normalizeDailyRuntimes(
+      List<DailyRuntime> records, DateTime from, DateTime to) {
+    final n = to.difference(from).inDays + 1;
+    if (n <= 0) return const [];
+    final avg = records.isEmpty
+        ? 0.0
+        : records.fold(0.0, (s, r) => s + r.runtimeSecs) / records.length;
+    return List.generate(n, (i) {
+      final day = DateTime(from.year, from.month, from.day + i);
+      final matches = records.where((r) => _sameDay(r.date, day));
+      return matches.isEmpty ? avg : matches.first.runtimeSecs.toDouble();
+    });
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Total kWh for [records] in [[from]..[to]] at [gearWatts] watts.
+  /// Missing days are estimated with the historical average.
+  static double rangeKwh(
+      List<DailyRuntime> records, DateTime from, DateTime to, int gearWatts) {
+    if (gearWatts == 0) return 0.0;
+    return normalizeDailyRuntimes(records, from, to)
+        .fold(0.0, (s, secs) => s + gearWatts * secs / 3_600_000);
+  }
+
+  /// Per-point kWh list for chart rendering at [gearWatts] watts.
+  ///
+  /// When [splitDay] is true (Day range: a single [from] == [to] day) the
+  /// day's total kWh is split into 6 equal 4-hour buckets so the chart has
+  /// the same number of points as Week/Month charts.
+  static List<double> chartKwh(
+      List<DailyRuntime> records, DateTime from, DateTime to, int gearWatts,
+      {bool splitDay = false}) {
+    final daily = normalizeDailyRuntimes(records, from, to)
+        .map((secs) => gearWatts * secs / 3_600_000)
+        .toList();
+    if (splitDay && daily.length == 1) {
+      final v = daily.first / 6;
+      return List.filled(6, v);
+    }
+    return daily;
   }
 }

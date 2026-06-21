@@ -8,6 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
+import 'package:terraton_fan_app/core/storage/daily_runtime_repository.dart';
+import 'package:terraton_fan_app/features/analytics/analytics_calculations.dart';
+import 'package:terraton_fan_app/models/daily_runtime.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/shared/brand_mark.dart';
@@ -24,6 +27,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   String _range = 'Week';
   double _tariff = 5.4;
   late final TextEditingController _tariffCtrl;
+  late final DailyRuntimeRepository _dailyRuntimeRepo;
   int _monthRangeN = 1;
 
   // Power profile per gear step (index = gear, 0 unused).
@@ -35,6 +39,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   void initState() {
     super.initState();
     _tariffCtrl = TextEditingController(text: _tariff.toStringAsFixed(1));
+    _dailyRuntimeRepo = ref.read(dailyRuntimeRepositoryProvider);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => unawaited(_loadTariff()),
     );
@@ -84,14 +89,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return g == 0 ? 0 : _kGearWatts[g];
   }
 
-  double _dailyKwhFrom(FanState? s, FanDevice? device) {
-    final gw         = _gearWatts(s);
-    final runtimeSec = s?.lastRuntimeSecs ?? 0;
-    if (gw == 0 || runtimeSec == 0) return 0.0;
-    final daysSince = device != null
-        ? math.max(1, DateTime.now().difference(device.addedAt).inDays)
-        : 1;
-    return gw * (runtimeSec / daysSince) / 3_600_000;
+  /// Date range for the current [_range] / [_monthRangeN] selection.
+  (DateTime, DateTime) _rangeFromTo() {
+    final now   = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_range == 'Day')  return (today, today);
+    if (_range == 'Week') return (today.subtract(const Duration(days: 6)), today);
+    return (DateTime(now.year, now.month - (_monthRangeN - 1), 1), today);
   }
 
   // Returns null when no runtime data or fan is off (gear 0 / no speed).
@@ -107,27 +111,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     if (pct < 70)   return 'Moderate Efficiency';
     if (pct < 88)   return 'High Efficiency';
     return 'Excellent Efficiency';
-  }
-
-  double _totalKwh(double dailyKwh) {
-    final now   = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    if (_range == 'Day')  return dailyKwh;
-    if (_range == 'Week') return dailyKwh * 7;
-    final start = DateTime(now.year, now.month - (_monthRangeN - 1), 1);
-    return dailyKwh * today.difference(start).inDays;
-  }
-
-  // One chart point per bucket: Day=6 (4-hour buckets), Week=7 days, Month=nDays.
-  List<double> _chartPoints(double dailyKwh) {
-    final now   = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    if (_range == 'Day')  return List.generate(6, (_) => dailyKwh / 6);
-    if (_range == 'Week') return List.generate(7, (_) => dailyKwh);
-    final start = DateTime(now.year, now.month - (_monthRangeN - 1), 1);
-    final nDays = today.difference(start).inDays;
-    if (nDays <= 0) return const [];
-    return List.generate(nDays, (_) => dailyKwh);
   }
 
   // ── Sparse X-axis labels ──────────────────────────────────────────────────
@@ -191,19 +174,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final targetId  = connectedId ?? _mostRecentFanId(allFans);
     final fanState  = targetId != null
         ? ref.watch(activeFanStateProvider(targetId)) : null;
-    final activeFan = targetId != null
-        ? allFans.cast<FanDevice?>().firstWhere(
-            (f) => f?.deviceId == targetId, orElse: () => null)
-        : null;
 
-    final gearWatts  = _gearWatts(fanState);
-    final lastRpm    = fanState?.lastRpm ?? 0;
-    final dailyKwh   = _dailyKwhFrom(fanState, activeFan);
-    final kwh        = _totalKwh(dailyKwh);
-    final cost       = kwh * _tariff;
-    final chartPts   = _chartPoints(dailyKwh);
-    final effPct     = _effPct(fanState);   // null = no runtime data or fan off
-    final axisLabels = _axisLabels(_range);
+    final gearWatts     = _gearWatts(fanState);
+    final lastRpm       = fanState?.lastRpm ?? 0;
+    final (from, to)    = _rangeFromTo();
+    final dailyRecords  = targetId != null
+        ? _dailyRuntimeRepo.getRange(targetId, from, to)
+        : <DailyRuntime>[];
+    final kwh           = AnalyticsCalculations.rangeKwh(dailyRecords, from, to, gearWatts);
+    final cost          = kwh * _tariff;
+    final chartPts      = AnalyticsCalculations.chartKwh(
+        dailyRecords, from, to, gearWatts, splitDay: _range == 'Day');
+    final effPct        = _effPct(fanState);   // null = no runtime data or fan off
+    final axisLabels    = _axisLabels(_range);
 
     final wattDisplay  = gearWatts > 0 ? '$gearWatts' : '—';
     final rpmDisplay   = lastRpm  > 0  ? '$lastRpm'   : '—';
@@ -234,9 +217,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'ⓘ Energy figures use firmware-reported cumulative runtime and the '
-          'active gear\'s power profile. Readings may not reflect activity '
-          'while the app was disconnected.',
+          'ⓘ Energy figures use actual daily runtime reported by the fan '
+          'firmware. Days without data are estimated using the historical '
+          'daily average.',
           style: GoogleFonts.manrope(fontSize: 11, color: kTextMut, height: 1.4),
         ),
 
