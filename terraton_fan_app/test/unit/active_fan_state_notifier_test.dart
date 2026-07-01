@@ -105,15 +105,48 @@ void main() {
       expect(s.activeMode, isNull); // nature cleared; boost won
     });
 
-    test('updateMode boost preserves smart activeMode (coexistence)', () {
+    test('updateMode boost clears smart activeMode (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
-      n.updateMode('smart'); // smart + boost can coexist
+      n.updateMode('smart'); // smart and boost are mutually exclusive
       n.updateMode('boost');
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.isBoost, true);
-      expect(s.activeMode, 'smart'); // smart preserved
+      expect(s.activeMode, isNull); // smart cleared; boost won
+    });
+
+    test('updateMode boost preserves reverse activeMode (coexistence)', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('reverse'); // reverse + boost may coexist
+      n.updateMode('boost');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.isBoost, true);
+      expect(s.activeMode, 'reverse'); // reverse preserved
+    });
+
+    test('updateMode smart clears isBoost (mutually exclusive)', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('boost'); // boost active first
+      n.updateMode('smart'); // smart must clear boost
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, 'smart');
+      expect(s.isBoost, false);
+    });
+
+    test('updateMode reverse preserves isBoost (coexistence)', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updateMode('boost'); // boost active first
+      n.updateMode('reverse'); // reverse may coexist with boost
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeMode, 'reverse');
+      expect(s.isBoost, true);
     });
 
     test('updateMode nature sets isBoost=false and activeMode=nature', () {
@@ -221,22 +254,26 @@ void main() {
       expect(c.read(activeFanStateProvider(deviceId)).isBoost, false);
     });
 
-    test('setBoostActive(true) allowed when activeMode is smart', () {
+    test('setBoostActive(true) clears smart activeMode (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       n.updateMode('smart');
       n.setBoostActive(true);
-      expect(c.read(activeFanStateProvider(deviceId)).isBoost, true);
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.isBoost, true);
+      expect(s.activeMode, isNull); // smart cleared
     });
 
-    test('setBoostActive(true) does not change activeMode', () {
+    test('setBoostActive(true) preserves reverse activeMode (coexistence)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
-      n.updateMode('smart');
+      n.updateMode('reverse');
       n.setBoostActive(true);
-      expect(c.read(activeFanStateProvider(deviceId)).activeMode, 'smart');
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.isBoost, true);
+      expect(s.activeMode, 'reverse'); // reverse preserved
     });
   });
 
@@ -252,7 +289,7 @@ void main() {
       expect(s.isBoost, false);
     });
 
-    test('setActiveMode(smart) sets activeMode and preserves isBoost', () {
+    test('setActiveMode(smart) sets activeMode and clears isBoost (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
@@ -260,7 +297,7 @@ void main() {
       n.setActiveMode('smart');
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeMode, 'smart');
-      expect(s.isBoost, true);
+      expect(s.isBoost, false); // boost cleared — Smart and Boost are exclusive
     });
 
     test('setActiveMode(reverse) sets activeMode and preserves isBoost', () {
@@ -279,7 +316,7 @@ void main() {
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       n.setBoostActive(true);
-      n.setActiveMode('smart');
+      n.setActiveMode('reverse'); // reverse coexists with boost
       n.setActiveMode(null);
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeMode, isNull);

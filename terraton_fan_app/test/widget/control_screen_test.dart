@@ -244,4 +244,112 @@ void main() {
       () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]),
     ).called(1);
   });
+
+  // ── Machine State restore on reconnect (after mains power-cycle) ─────────────
+  // After connecting, _scheduleConnectPolls() sends getMotorState and sets
+  // _awaitingMotorState, so the reply is routed through the atomic assembler.
+  // These tests emit the 3-frame reply in the delivery patterns a freshly-rebooted
+  // MCU can produce and assert the dial restores Power + Speed/Mode + Timer,
+  // independent of frame ordering or notification-splitting.
+  //
+  // Response frames (packet id 0x07):
+  //   Power ON  : 55 AA 07 02 01 01 0A      Power OFF : 55 AA 07 02 01 00 09
+  //   Speed 5   : 55 AA 07 04 01 05 10      Mode Smart: 55 AA 07 21 01 04 2C
+  //   Timer OFF : 55 AA 07 22 01 00 29      Timer 2H  : 55 AA 07 22 01 02 2B
+  group('machine state restore on reconnect', () {
+    const powerOn  = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A];
+    const powerOff = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x00, 0x09];
+    const speed5   = [0x55, 0xAA, 0x07, 0x04, 0x01, 0x05, 0x10];
+    const modeSmart= [0x55, 0xAA, 0x07, 0x21, 0x01, 0x04, 0x2C];
+    const timerOff = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29];
+    const timer2h  = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x02, 0x2B];
+
+    FanState stateOf(WidgetTester tester) => ProviderScope
+        .containerOf(tester.element(find.byType(ControlScreen)))
+        .read(activeFanStateProvider('TT-001'));
+
+    testWidgets('concatenated, in order [power][speed][timer] → power ON, speed 5',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOn, ...speed5, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.speed, 5);
+      expect(s.activeTimerCode, 0x02);
+    });
+
+    testWidgets('split across notifications [speed][timer] then [power] → speed 5 restored',
+        (tester) async {
+      await pumpConnected(tester);
+      // The bug case: speed+timer arrive first, power in a later notification.
+      notifyCtrl.add([...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+      // Not applied yet — power unknown, so the assembler holds the buffer.
+      expect(stateOf(tester).speed, 0);
+
+      notifyCtrl.add(powerOn);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.speed, 5);
+    });
+
+    testWidgets('reordered within one notification [speed][power][timer] → speed 5',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...speed5, ...powerOn, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.speed, 5);
+    });
+
+    testWidgets('powered, no timer frame → restored via debounce', (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOn, ...speed5]); // no timer → not immediately complete
+      await tester.pump();
+      // Debounce window (300 ms) fires the flush.
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.speed, 5);
+    });
+
+    testWidgets('mode reply [power][smart][timer] → power ON, activeMode smart',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.isBoost, false);
+      expect(s.speed, 0); // a mode is frame [2], not a fixed speed
+    });
+
+    testWidgets('power OFF reply → fan off, dial blank (no stored speed shown)',
+        (tester) async {
+      await pumpConnected(tester);
+      // Frame [2] carries the hardware's last stored speed even while OFF; it
+      // must not light a dot.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.speed, 0);
+    });
+  });
 }

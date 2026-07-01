@@ -100,31 +100,36 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void updateSpeed(int speed) => update(state.copyWith(speed: speed));
 
   // Accepts the mode name string from BleResponseParser.parseModeString.
-  // Boost and activeMode are independent: receiving a 'smart'/'reverse'
-  // notification preserves isBoost, and receiving 'boost' preserves activeMode.
-  // This allows BOOST + SMART/REVERSE to coexist in UI state even when the
-  // hardware can only execute one mode at a time.
+  // Boost is mutually exclusive with Nature and Smart, but may coexist with
+  // Reverse. So a 'boost' notification clears an active Nature/Smart mode (but
+  // keeps Reverse), and a 'smart' notification clears isBoost. A 'reverse'
+  // notification preserves isBoost (BOOST + REVERSE is allowed).
   void updateMode(String? modeName) {
     switch (modeName) {
       case 'boost':
         // Hardware confirmed boost — set isBoost. An active mode means the fan
         // is running, so mark it powered (a Boost from the remote must ungrey
         // the UI and turn the power button green).
-        // Nature is mutually exclusive with boost; clear it.
-        // Smart/reverse can coexist (BOOST + SMART, BOOST + REVERSE).
+        // Boost is mutually exclusive with Nature and Smart; clear either.
+        // Reverse may coexist (BOOST + REVERSE).
         update(state.copyWith(
           isPowered: true,
           isBoost: true,
-          activeMode: () => state.activeMode == 'nature' ? null : state.activeMode,
+          activeMode: () => (state.activeMode == 'nature' || state.activeMode == 'smart')
+              ? null
+              : state.activeMode,
         ));
       case 'nature':
         // Nature is mutually exclusive with boost. Active mode ⇒ powered.
         update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'nature'));
+      case 'smart':
+        // Smart is mutually exclusive with boost; clear isBoost. Active mode ⇒ powered.
+        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'smart'));
       case null:
         // Fan reported no active mode — clear both. No power assumption here.
         update(state.copyWith(isBoost: false, activeMode: () => null));
       default:
-        // 'smart' or 'reverse' — preserve isBoost so boost UI stays active.
+        // 'reverse' — preserve isBoost so boost UI stays active (coexists).
         // Active mode ⇒ powered.
         update(state.copyWith(isPowered: true, activeMode: () => modeName));
     }
@@ -139,14 +144,18 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   ));
 
   /// Clears volatile connection-state fields so reconnects don't show stale data.
-  /// Motor state response updates them back to actual values within ~100 ms.
+  /// The Machine State response updates them back to actual values within ~100 ms.
+  /// The timer is cleared too so a stale persisted value can't flash before the
+  /// Machine State timer frame (0x22) lands — firmware is authoritative on connect.
   void resetOnConnect() => update(state.copyWith(
-    isPowered:  false,
-    isBoost:    false,
-    activeMode: () => null,
-    speed:      0,
-    lastWatts:  () => null,
-    lastRpm:    () => null,
+    isPowered:        false,
+    isBoost:          false,
+    activeMode:       () => null,
+    speed:            0,
+    lastWatts:        () => null,
+    lastRpm:          () => null,
+    activeTimerCode:  () => null,
+    timerActivatedAt: () => null,
   ));
 
   /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.
@@ -167,17 +176,21 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void clearWatts()                 => update(state.copyWith(lastWatts:       () => null));
   void clearRpm()                   => update(state.copyWith(lastRpm:         () => null));
 
-  /// Toggle boost only — does NOT touch activeMode.
-  /// Nature mode blocks boost activation.
+  /// Toggle boost. Nature mode blocks boost activation (the UI clears Nature
+  /// first). Activating boost also exits Smart — Smart and Boost are mutually
+  /// exclusive — but leaves Reverse untouched (BOOST + REVERSE may coexist).
   void setBoostActive(bool on) {
     if (on && state.activeMode == 'nature') return;
-    update(state.copyWith(isBoost: on));
+    update(state.copyWith(
+      isBoost: on,
+      activeMode: () => (on && state.activeMode == 'smart') ? null : state.activeMode,
+    ));
   }
 
-  /// Activate or clear a non-boost mode without disturbing isBoost,
-  /// EXCEPT nature which explicitly clears boost.
+  /// Activate or clear a non-boost mode. Nature and Smart both clear boost
+  /// (mutually exclusive with it); Reverse preserves isBoost (may coexist).
   void setActiveMode(String? mode) => update(state.copyWith(
-    isBoost: mode == 'nature' ? false : state.isBoost,
+    isBoost: (mode == 'nature' || mode == 'smart') ? false : state.isBoost,
     activeMode: () => mode,
   ));
 

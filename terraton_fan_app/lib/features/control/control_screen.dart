@@ -91,6 +91,19 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   int    _connectPollAttempts = 0;
   bool   _motorStateReceived  = false;
 
+  // Machine State response assembler. A getMotorState reply is always 3 frames —
+  // power (0x02), speed (0x04) OR mode (0x21), and timer (0x22) — but the BLE60
+  // bridge may split or reorder them across notifications, especially from a
+  // freshly-rebooted MCU after a mains power-cycle. Applying frames live then
+  // makes the speed/mode gate (which needs power first) drop the speed. Instead,
+  // while _awaitingMotorState we buffer these frames and apply them atomically
+  // once complete (or after a short debounce), independent of arrival order.
+  bool?   _msPower;
+  int?    _msSpeed;
+  String? _msMode;
+  int?    _msTimer;
+  Timer?  _msFlushTimer;
+
   // Tracks the resolved MAC without mutating widget.fan (which is immutable).
   // Populated from widget.fan.macAddress on init; updated after first discovery.
   String? _resolvedMac;
@@ -264,6 +277,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   void _scheduleWakePolls() {
     _wakePollTimer?.cancel();
     _wakePollAttempts = 0;
+    _resetMachineStateBuffer();
     _requestMotorState();
     _wakePollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
       if (!mounted || _ble.currentState != BleConnectionState.connected) {
@@ -303,6 +317,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _connectPollTimer?.cancel();
     _connectPollAttempts = 0;
     _motorStateReceived  = false;
+    _resetMachineStateBuffer();
     _requestMotorState();
     _connectPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
       if (!mounted || _ble.currentState != BleConnectionState.connected) {
@@ -340,6 +355,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       if (responses.isEmpty) return;
 
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+
+      // While awaiting the reply to a getMotorState poll WE sent, assemble its
+      // frames atomically (see _bufferMachineState) instead of applying them live.
+      // A Machine State reply is always 3 frames (power, speed-or-mode, timer) but
+      // the BLE60 bridge — especially a freshly-rebooted MCU after a mains cycle —
+      // may split or reorder them across notifications, which would defeat the
+      // live speed/mode gate below (it needs the power frame applied first).
+      if (_awaitingMotorState) {
+        _bufferMachineState(responses, notifier);
+        return;
+      }
 
       // A getMotorState response always contains a timer frame (0x22) alongside
       // the power and speed/mode frames. Status-poll responses only contain
@@ -481,6 +507,130 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     unawaited(old?.cancel() ?? Future<void>.value());
   }
 
+  /// Collects the frames of a Machine State (getMotorState) reply we are awaiting
+  /// into the _ms* buffer, then flushes them atomically. Power/speed/mode/timer
+  /// frames are buffered (frame [2] is speed OR mode — mutually exclusive, so the
+  /// latest of the two wins); watts/RPM/runtime frames are applied live because
+  /// they are status-poll telemetry that interleaves during the connect burst.
+  void _bufferMachineState(List<FanResponse> responses, ActiveFanStateNotifier notifier) {
+    var gotMachineFrame = false;
+    for (final r in responses) {
+      final power = BleResponseParser.parsePowerState(r);
+      if (power != null) {
+        // Respect the post-power-on suppression window: a stale power=OFF frame
+        // must not cancel a user-initiated power-on.
+        if (!(power == false && _recentlyPoweredOn)) _msPower = power;
+        gotMachineFrame = true;
+        continue;
+      }
+      final speed = BleResponseParser.parseSpeed(r);
+      if (speed != null) { _msSpeed = speed; _msMode = null; gotMachineFrame = true; continue; }
+      final mode = BleResponseParser.parseModeString(r);
+      if (mode != null) { _msMode = mode; _msSpeed = null; gotMachineFrame = true; continue; }
+      final timer = BleResponseParser.parseTimer(r);
+      if (timer != null) { _msTimer = timer; gotMachineFrame = true; continue; }
+
+      // Telemetry frames stay live so watts/RPM/runtime don't stall mid-burst.
+      final watts = BleResponseParser.parsePowerWatts(r);
+      if (watts != null) { notifier.updateWatts(watts); _lastWattsAt = DateTime.now(); continue; }
+      final rpm = BleResponseParser.parseRpm(r);
+      if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); continue; }
+      final runtimeSecs = BleResponseParser.parseRuntimeSeconds(r);
+      if (runtimeSecs != null) {
+        notifier.updateRuntime(runtimeSecs);
+        final now = DateTime.now();
+        ref.read(dailyRuntimeRepositoryProvider).upsertForDate(
+          widget.fan.deviceId,
+          DateTime(now.year, now.month, now.day),
+          runtimeSecs,
+        );
+      }
+    }
+    if (!gotMachineFrame) return;
+
+    // All three frames present → apply now. Otherwise debounce briefly to let
+    // split/out-of-order frames from the same reply catch up.
+    if (_machineStateComplete) {
+      _flushMachineState();
+    } else {
+      _msFlushTimer?.cancel();
+      _msFlushTimer = Timer(const Duration(milliseconds: 300), _flushMachineState);
+    }
+  }
+
+  /// True once the buffered reply carries enough to apply immediately: a power
+  /// frame, and — when powered — the frame [2] state (speed or mode) plus a timer.
+  bool get _machineStateComplete {
+    if (_msPower == null) return false;
+    if (_msPower == false) return true;
+    return (_msSpeed != null || _msMode != null) && _msTimer != null;
+  }
+
+  /// Applies the assembled Machine State atomically, independent of the order or
+  /// notification-splitting of the frames that built it.
+  void _flushMachineState() {
+    _msFlushTimer?.cancel();
+    _msFlushTimer = null;
+    if (!mounted) { _resetMachineStateBuffer(); return; }
+
+    final power = _msPower;
+    // No power frame yet — cannot decide. Keep the buffer so a later power frame
+    // in the same retry burst completes it; leave the retry polls running.
+    if (power == null) return;
+
+    final speed = _msSpeed;
+    final mode  = _msMode;
+    final timer = _msTimer;
+    final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+    var received = false;
+
+    if (power == false) {
+      // Machine State frame [1] = OFF: clear ALL operating state.
+      notifier.applyMotorStatePowerOff();
+      if (!_isDemo) unawaited(BleForegroundService.stop());
+      received = true; // OFF is complete, authoritative truth.
+    } else {
+      notifier.updatePower(true);
+      if (mode != null) {
+        // Frame [2] = mode: the exclusive active state.
+        notifier.applyMotorStateTruth(mode);
+      } else if (speed != null) {
+        // Frame [2] = speed: plain speed mode, clear any special mode.
+        notifier.applyMotorStateTruth(null);
+        notifier.updateSpeed(speed);
+      }
+      if (timer != null) notifier.updateTimer(timer);
+      // Complete only when the operating state (speed or mode) is known. A bare
+      // power=ON (MCU still booting) leaves the retry polls running to fill it in.
+      received = speed != null || mode != null;
+      if (received && !_isDemo) {
+        final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+        unawaited(BleForegroundService.start(
+          s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running',
+        ));
+      }
+    }
+
+    _resetMachineStateBuffer();
+    _updateMotorStatePoll();
+
+    if (received) {
+      _awaitingMotorState = false;
+      _awaitingMotorStateTimer?.cancel();
+      // Stops _scheduleConnectPolls / _scheduleWakePolls — the truth has landed.
+      _motorStateReceived = true;
+    }
+  }
+
+  void _resetMachineStateBuffer() {
+    _msFlushTimer?.cancel();
+    _msFlushTimer = null;
+    _msPower = null;
+    _msSpeed = null;
+    _msMode  = null;
+    _msTimer = null;
+  }
+
   // Starts or stops the 90-second Motor State poll based on whether the fan
   // is in Smart, Nature, or Reverse mode. Called whenever mode or power state
   // changes so the timer tracks the actual firmware state.
@@ -517,11 +667,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _motorStateTimer = null;
         return;
       }
-      try {
-        await _ble.writeFrame(BleFrameBuilder.getMotorState());
-      } on Object catch (_) {
-        // Fan disconnected mid-poll; connection state stream handles recovery.
-      }
+      // Route through _requestMotorState so the reply is assembled atomically
+      // (see _bufferMachineState) rather than hitting the ordering-sensitive
+      // live gate — these autonomous modes change speed, so a dropped frame 2
+      // would leave the dial stale.
+      _requestMotorState();
     });
   }
 
@@ -593,6 +743,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _wakePollTimer = null;
         _connectPollTimer?.cancel();
         _connectPollTimer = null;
+        _awaitingMotorState = false;
+        _awaitingMotorStateTimer?.cancel();
+        _resetMachineStateBuffer();
         unawaited(BleForegroundService.stop());
         unawaited(_ble.disconnect());
       case AppLifecycleState.resumed:
@@ -624,6 +777,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _awaitingMotorStateTimer?.cancel();
     _wakePollTimer?.cancel();
     _connectPollTimer?.cancel();
+    _msFlushTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     unawaited(BleForegroundService.stop());
     _debug.dispose();
@@ -1306,6 +1460,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     // Boost is activation-only — tapping active boost has no effect.
     if (fanState.isBoost) return;
 
+    // Smart → Boost: setBoostActive(true) clears Smart (mutually exclusive), so
+    // only the Boost command is sent. Reverse is preserved (may coexist).
     _flushSegment(newGear: fanState.speed, newMode: 'boost');
     notifier.setBoostActive(true);
     unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
