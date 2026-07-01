@@ -121,6 +121,12 @@ Manually verified against real hardware.
 | `0x24` | RPM (2 bytes) | `parseRpm` |
 | `0x08` | Runtime (2 bytes) — `(HH << 8 \| LL) × 5` seconds | `parseRuntimeSeconds` |
 
+**Mode coexistence (app-side, not a firmware constraint):** Boost is mutually
+exclusive with Nature and with Smart — activating one clears the other. Boost and
+Reverse may both be active at once. On a Motor State poll, however, frame [2] is
+always the firmware's single exclusive truth (a speed or one mode), overriding any
+live-toggle coexistence.
+
 ---
 
 ## Status poll: 2-frame vs 4-frame response
@@ -141,10 +147,11 @@ unconditionally, so no special-casing is needed.
 
 ---
 
-## Motor State poll: always 3 frames
+## Motor State poll (a.k.a. Machine State poll): always 3 frames
 
 Sent once immediately after connecting and again every 90 s when the fan is ON and
-in Smart / Nature / Reverse mode (those modes can change speed autonomously).
+in Smart / Nature / Reverse mode (those modes can change speed autonomously). Also
+retried on a spontaneous remote power-ON so a bare wake frame gets its full state.
 
 | Frame | Command byte | Meaning |
 | --- | --- | --- |
@@ -155,8 +162,21 @@ in Smart / Nature / Reverse mode (those modes can change speed autonomously).
 **Detection rule:** a Motor State response always includes a `0x22` timer frame.
 Status-poll responses never do. `isMotorStateResponse = responses.any((r) => BleResponseParser.parseTimer(r) != null)`.
 
-**Frame 2 gate:** if frame 1 reported power = OFF, frame 2 holds the hardware's last
-stored value — **skip** it. Only apply speed/mode when `isPowered == true`.
+**Frames may arrive split or reordered.** The BLE60/MCU does not guarantee all 3
+frames land in one notification or in order 1→2→3 — most notably right after a
+mains power-cycle, when the fan MCU has just rebooted. Rather than assume
+same-notification ordering, the app **buffers** power/speed/mode/timer frames while
+a poll reply is pending and applies them **atomically** once complete (or after a
+short debounce if a frame is still in flight):
+
+- If frame [1] (power) has not arrived yet, nothing is applied — the buffer holds
+  until it does, and retry polling continues.
+- If power = OFF, everything is cleared (speed/mode are the hardware's stale last
+  value and must not be shown).
+- If power = ON but no speed/mode has arrived yet (MCU still booting), the reply is
+  treated as incomplete and polling keeps retrying until the real state lands.
+- Watts/RPM/runtime frames are applied live throughout, since status-poll telemetry
+  interleaves with the connect burst independently of the Machine State reply.
 
 ---
 

@@ -96,7 +96,7 @@ assets/commands.yaml
 **Response frame:** same but byte[2] is `0x07`.
 **Checksum:** `(0x55 + 0xAA + packetId + cmd + dataLen + Σdata) & 0xFF` — includes the full header.
 **Status poll:** non-standard fixed frame `[55 AA 00 00 01 00 00]` — do NOT pass through `buildFrame()`.
-**Motor State poll:** non-standard fixed frame `[55 AA 00 01 01 00 01]` — do NOT pass through `buildFrame()`. Response: 3 frames — [1] `0x02` power, [2] `0x04` speed OR `0x21` active mode (mutually exclusive), [3] `0x22` timer. Frame [2] is exclusive truth; clear all other mode/speed highlight state.
+**Motor State poll:** non-standard fixed frame `[55 AA 00 01 01 00 01]` — do NOT pass through `buildFrame()`. Response: 3 frames — [1] `0x02` power, [2] `0x04` speed OR `0x21` active mode (mutually exclusive), [3] `0x22` timer. Frame [2] is exclusive truth; clear all other mode/speed highlight state. The BLE60/MCU may split or reorder these 3 frames across notifications (especially right after a mains power-cycle reboot) — the app assembles them atomically rather than assuming same-notification order; see "Machine State assembly on reconnect" below.
 
 **BLE UUIDs (defined only in `ble_constants.dart`):**
 - Scan filter: `00001827-0000-1000-8000-00805f9b34fb` (BLE Mesh Proxy)
@@ -152,6 +152,7 @@ Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`).
 - `bleConnectionStateProvider` — `StreamProvider<BleConnectionState>`
 - `fanRepositoryProvider` — singleton `FanRepositoryImpl` (ObjectBox)
 - `usageLogRepositoryProvider` — singleton `UsageLogRepositoryImpl` (ObjectBox)
+- `dailyRuntimeRepositoryProvider` — singleton `DailyRuntimeRepositoryImpl` (ObjectBox); backs per-day firmware runtime tracking
 - `savedFansProvider` — `FutureProvider` returning `getAllFans()`; call `ref.invalidate(savedFansProvider)` after any write
 - `connectedFanDeviceIdProvider` — `StateProvider<String?>`; set by `_ControlScreenState` on connect, cleared on dispose; lets `AnalyticsScreen` watch live state without knowing the deviceId up front
 - `activeFanStateProvider` — `NotifierProvider.autoDispose.family<ActiveFanStateNotifier, FanState, String>`; keyed by `deviceId`; mutate only through named `update*` / `set*` methods; exposes `updateRuntime(int secs)` which persists `lastRuntimeSecs` to ObjectBox
@@ -162,9 +163,10 @@ Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`).
 
 ### Storage
 
-ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known control state), `UsageLog` (energy segment per mode/speed change).
+ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known control state), `UsageLog` (energy segment per mode/speed change), `DailyRuntime` (one record per fan per calendar day; upserted from the runtime-query response every 90 s).
 `FanDevice.deviceId` is the stable primary key. `macAddress` starts empty; filled by `FanRepository.updateMac()` on first successful BLE connection.
 `FanState.==` and `hashCode` include `deviceId`.
+`DailyRuntime` keyed by `(deviceId, date)` (local midnight); never treat a missing day as zero — `AnalyticsCalculations.normalizeDailyRuntimes` fills gaps with the average of available days.
 `objectbox.g.dart` is generated — run `build_runner` after changing any model.
 
 ### BLE service implementation notes (`lib/core/ble/ble_service.dart`)
@@ -195,6 +197,20 @@ Three paths out of Nature — **BLE frame order is critical** (mode frame must g
 3. **Toggle off (tap same mode):** send speed frame only, no mode frame
 
 Mode callbacks (`_onMode`, `_onBoost`) are named methods on `_FanControlsPanelState` — not inline lambdas in `build()`. They use `ref.read` (correct for event handlers, not `ref.watch`).
+
+### Mode mutual exclusivity (Boost / Nature / Smart / Reverse)
+
+Enforced in `ActiveFanStateNotifier` (`setBoostActive`, `setActiveMode`, `updateMode` — `lib/core/providers.dart`), not in the UI handlers, so both the live-toggle path and the remote-notification path stay consistent:
+- **Boost ↔ Nature** — mutually exclusive (Nature blocks Boost activation; Boost clears Nature).
+- **Boost ↔ Smart** — mutually exclusive (activating either clears the other).
+- **Boost ↔ Reverse** — may coexist (both can be active at once).
+- `applyMotorStateTruth` (the Machine State frame [2] path) is always fully exclusive regardless of the above — the firmware reports exactly one state (a speed or a single mode) at a time.
+
+### Machine State assembly on reconnect (`control_screen.dart`)
+
+A getMotorState reply is always 3 frames (power, speed-or-mode, timer), but the BLE60/MCU may split or reorder them across separate notifications — most commonly right after a mains power-cycle, when the fan MCU has just rebooted. Applying frames live as they arrive is unsafe: the speed/mode gate needs the power frame applied first, so a split reply could silently drop the restored speed.
+
+Fix: while awaiting a reply we sent (`_awaitingMotorState`), frames are buffered (`_msPower`/`_msSpeed`/`_msMode`/`_msTimer`) instead of applied live, then flushed atomically by `_flushMachineState()` — either immediately once complete, or after a 300 ms debounce (`_msFlushTimer`) if a later frame is still in flight. A power=ON reply with no speed/mode yet (MCU still booting) is treated as incomplete, so the existing retry loops (`_scheduleConnectPolls`, `_scheduleWakePolls`) keep polling until the real state arrives. Watts/RPM/runtime frames are applied live even during this window (status-poll telemetry interleaves with the connect burst). The 90 s Smart/Nature/Reverse poll (`_updateMotorStatePoll`) also routes through this path via `_requestMotorState()`. `resetOnConnect()` clears the persisted timer too, so a stale value can't flash before the real one lands.
 
 ### CircularSpeedDial (`lib/features/control/circular_speed_dial.dart`)
 
