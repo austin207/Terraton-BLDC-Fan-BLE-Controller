@@ -68,6 +68,29 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   bool   _recentlyPoweredOn      = false;
   Timer? _recentlyPoweredOnTimer;
 
+  // Set while we are waiting for the response to a getMotorState poll WE sent
+  // (on connect or via _requestMotorState). Lets the notify handler tell our own
+  // poll's echo apart from a spontaneous power frame broadcast by the remote, so
+  // the rescue poll fires for the latter but never loops on the former. Cleared
+  // when a motor-state response arrives, with a timeout as a safety net.
+  bool   _awaitingMotorState     = false;
+  Timer? _awaitingMotorStateTimer;
+
+  // Drives the post-wake motor-state poll retries (see _scheduleWakePolls).
+  // A single rescue poll is not enough when the fan was woken right after a
+  // mains power-cycle: its MCU has just rebooted and isn't ready to answer the
+  // first query, so we retry until the gear/mode is known.
+  Timer? _wakePollTimer;
+  int    _wakePollAttempts = 0;
+
+  // Drives the on-(re)connect motor-state poll retries (see _scheduleConnectPolls).
+  // Set true the moment a real motor-state response lands, so the connect poll
+  // can stop. A single connect poll is lost if the reconnect happens while the
+  // fan MCU is still booting after a mains power-cycle, leaving the dial blank.
+  Timer? _connectPollTimer;
+  int    _connectPollAttempts = 0;
+  bool   _motorStateReceived  = false;
+
   // Tracks the resolved MAC without mutating widget.fan (which is immutable).
   // Populated from widget.fan.macAddress on init; updated after first discovery.
   String? _resolvedMac;
@@ -189,8 +212,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _startTelemetry();
       _subscribeNotify();
       _startRuntimePoll();
+      // Pull full motor state so the dial reflects the fan's real gear/mode the
+      // moment the app reopens and reconnects. Retrying (not a single poll):
+      // if the reconnect lands while the fan MCU is still booting after a mains
+      // power-cycle, the first query is dropped and the dial would stay blank.
+      _scheduleConnectPolls();
       try {
-        await _ble.writeFrame(BleFrameBuilder.getMotorState());
         await _ble.writeFrame(BleFrameBuilder.queryRuntime());
       } on Object catch (_) {
         // Fan disconnected before initial sync; reconnection retries cover it.
@@ -201,6 +228,102 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     } finally {
       if (mounted) _connecting = false;
     }
+  }
+
+  /// Fire-and-forget request for the fan's full motor state (power/speed/mode/
+  /// timer). Used to refresh the dial when the fan is woken via the remote and
+  /// the spontaneous frame lacks speed/mode. Errors are swallowed — the
+  /// connection state stream surfaces any real disconnect.
+  void _requestMotorState() {
+    _markAwaitingMotorState();
+    unawaited(_ble.writeFrame(BleFrameBuilder.getMotorState()).catchError((Object _) {}));
+  }
+
+  /// Marks that we are expecting a motor-state response to a poll we just sent,
+  /// so its echo can't re-trigger another poll. The timeout is a safety net in
+  /// case the response never arrives (e.g. fan dropped mid-poll).
+  void _markAwaitingMotorState() {
+    _awaitingMotorState = true;
+    _awaitingMotorStateTimer?.cancel();
+    _awaitingMotorStateTimer = Timer(const Duration(milliseconds: 1500), () {
+      _awaitingMotorState = false;
+    });
+  }
+
+  /// Polls motor state after the fan is woken by the remote, retrying until the
+  /// gear/mode is actually known.
+  ///
+  /// When mains is cut and restored, the fan MCU reboots. Pressing ON on the
+  /// remote makes the fan broadcast a bare power-ON frame (→ power button turns
+  /// green) but the just-booted MCU is not yet ready to answer a motor-state
+  /// query, so the very first rescue poll comes back without a usable speed.
+  /// A single-shot poll then leaves the dial blank forever, because the only
+  /// recurring poll (the 3 s status poll) carries watts/RPM, never speed.
+  /// Poll immediately, then retry every 1.5 s until the gear or an active mode
+  /// resolves (or the fan is switched back off), giving the MCU time to wake.
+  void _scheduleWakePolls() {
+    _wakePollTimer?.cancel();
+    _wakePollAttempts = 0;
+    _requestMotorState();
+    _wakePollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
+      if (!mounted || _ble.currentState != BleConnectionState.connected) {
+        t.cancel();
+        _wakePollTimer = null;
+        return;
+      }
+      final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+      // Resolved (gear or mode known) or fan turned back off — stop polling.
+      if (!s.isPowered || s.speed > 0 || s.activeMode != null) {
+        t.cancel();
+        _wakePollTimer = null;
+        return;
+      }
+      // Give the rebooted MCU ~6 s (4 retries) to become responsive, then stop.
+      if (++_wakePollAttempts > 4) {
+        t.cancel();
+        _wakePollTimer = null;
+        return;
+      }
+      _requestMotorState();
+    });
+  }
+
+  /// Fetches motor state on (re)connect, retrying until a real response lands.
+  ///
+  /// Called once per successful connect (app reopen, resume, Retry). A single
+  /// poll is fragile: if the reconnect happens right after a mains power-cycle
+  /// the fan MCU may still be booting and won't answer the first query, leaving
+  /// the dial blank until the user touches the remote. Unlike _scheduleWakePolls
+  /// we cannot use the dial state as the stop signal here — resetOnConnect() has
+  /// just blanked it to isPowered=false/speed=0, which is indistinguishable from
+  /// a genuine "fan off" until a response actually arrives. So stop on the
+  /// dedicated _motorStateReceived flag (set when any motor-state frame lands,
+  /// powered or off — either is the truth), or after a ~6 s cap.
+  void _scheduleConnectPolls() {
+    _connectPollTimer?.cancel();
+    _connectPollAttempts = 0;
+    _motorStateReceived  = false;
+    _requestMotorState();
+    _connectPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
+      if (!mounted || _ble.currentState != BleConnectionState.connected) {
+        t.cancel();
+        _connectPollTimer = null;
+        return;
+      }
+      // A motor-state response (on or off) has landed — we have the truth.
+      if (_motorStateReceived) {
+        t.cancel();
+        _connectPollTimer = null;
+        return;
+      }
+      // Give the rebooted MCU ~6 s (4 retries) to become responsive, then stop.
+      if (++_connectPollAttempts > 4) {
+        t.cancel();
+        _connectPollTimer = null;
+        return;
+      }
+      _requestMotorState();
+    });
   }
 
   void _subscribeNotify() {
@@ -238,6 +361,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             notifier.applyMotorStatePowerOff();
             if (!_isDemo) unawaited(BleForegroundService.stop());
           } else {
+            final wasPowered =
+                ref.read(activeFanStateProvider(widget.fan.deviceId)).isPowered;
             notifier.updatePower(power);
             if (!_isDemo) {
               if (power) {
@@ -248,6 +373,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
                 unawaited(BleForegroundService.stop());
               }
             }
+            // A spontaneous power-ON frame from the remote may carry no speed/
+            // mode (sometimes just power, sometimes power + timer) — the dial
+            // would render blank. Pull full state so the gear/mode is restored
+            // regardless of which remote button woke the fan, or whether the
+            // frame happened to include a timer. Gated on !_awaitingMotorState
+            // (not !isMotorStateResponse) so it fires for spontaneous remote
+            // frames even when they include a timer, while the echo of our own
+            // poll is suppressed; !wasPowered independently breaks any loop.
+            // Use a retrying burst (not a single poll): when the fan was woken
+            // right after a mains power-cycle its MCU has just rebooted and
+            // won't answer the first query, so one poll leaves the dial blank.
+            if (power && !wasPowered && !_awaitingMotorState) _scheduleWakePolls();
           }
           _updateMotorStatePoll();
           continue;
@@ -327,6 +464,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             runtimeSecs,
           );
         }
+      }
+
+      // The response to a poll we sent has now been fully applied — stop
+      // suppressing the rescue poll so a later spontaneous remote frame is
+      // honoured. (Done after the loop so the echo's own power frame, processed
+      // above, still saw the flag set.)
+      if (isMotorStateResponse) {
+        _awaitingMotorState = false;
+        _awaitingMotorStateTimer?.cancel();
+        // Tells _scheduleConnectPolls the fan's real state has arrived, so the
+        // on-connect retry loop can stop.
+        _motorStateReceived = true;
       }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
@@ -440,6 +589,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _motorStateTimer = null;
         _runtimeTimer?.cancel();
         _runtimeTimer = null;
+        _wakePollTimer?.cancel();
+        _wakePollTimer = null;
+        _connectPollTimer?.cancel();
+        _connectPollTimer = null;
         unawaited(BleForegroundService.stop());
         unawaited(_ble.disconnect());
       case AppLifecycleState.resumed:
@@ -468,6 +621,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
     _recentlyPoweredOnTimer?.cancel();
+    _awaitingMotorStateTimer?.cancel();
+    _wakePollTimer?.cancel();
+    _connectPollTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     unawaited(BleForegroundService.stop());
     _debug.dispose();

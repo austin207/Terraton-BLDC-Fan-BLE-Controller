@@ -105,6 +105,8 @@ Manually verified against real hardware.
 | Query power (watts) | `55 AA 06 23 01 00 29` | `55 AA 07 23 01 WW cs` — `WW` = watts byte |
 | Query speed (RPM) | `55 AA 06 24 01 00 2A` | `55 AA 07 24 02 HH LL cs` — RPM = `(HH << 8) \| LL` |
 | Status poll | `55 AA 00 00 01 00 00` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below |
+| Motor State poll | `55 AA 00 01 01 00 01` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below — always 3 frames |
+| Query runtime | `55 AA 00 08 01 00 08` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | `55 AA 07 08 02 HH LL cs` — runtime = `(HH << 8) \| LL) × 5` seconds |
 | Lighting ON/OFF/colour temp | *Pending — bytes not yet provided by Terraton* | *Pending* |
 
 ### Response byte → handler
@@ -117,6 +119,7 @@ Manually verified against real hardware.
 | `0x22` | Timer code | `parseTimer` |
 | `0x23` | Watts | `parsePowerWatts` |
 | `0x24` | RPM (2 bytes) | `parseRpm` |
+| `0x08` | Runtime (2 bytes) — `(HH << 8 \| LL) × 5` seconds | `parseRuntimeSeconds` |
 
 ---
 
@@ -135,6 +138,43 @@ mains **and** turned on via the app — so the fan can restore complete state th
 may have reset while it was disconnected from power. Subsequent polls in the same
 session return 2 frames. The notify handler dispatches all frame types
 unconditionally, so no special-casing is needed.
+
+---
+
+## Motor State poll: always 3 frames
+
+Sent once immediately after connecting and again every 90 s when the fan is ON and
+in Smart / Nature / Reverse mode (those modes can change speed autonomously).
+
+| Frame | Command byte | Meaning |
+| --- | --- | --- |
+| 1 | `0x02` | Power state — `data[0] == 0x01` = on |
+| 2 | `0x04` **or** `0x21` | Speed (1–6) **or** active mode — mutually exclusive; this frame is the **exclusive truth** for the current speed/mode; clear all other highlight state |
+| 3 | `0x22` | Timer code |
+
+**Detection rule:** a Motor State response always includes a `0x22` timer frame.
+Status-poll responses never do. `isMotorStateResponse = responses.any((r) => BleResponseParser.parseTimer(r) != null)`.
+
+**Frame 2 gate:** if frame 1 reported power = OFF, frame 2 holds the hardware's last
+stored value — **skip** it. Only apply speed/mode when `isPowered == true`.
+
+---
+
+## Runtime query
+
+Sent once on connect and every 90 s via `_runtimeTimer`.
+
+```text
+Request:  55 AA 00 08 01 00 08
+Response: 55 AA 07 08 02 HH LL cs
+```
+
+`runtime seconds = (HH << 8 | LL) × 5`
+
+The firmware reports cumulative daily runtime (resets at midnight). Each response is
+upserted to `DailyRuntimeRepository` keyed by `(deviceId, localDate)` — the latest
+value for the day overwrites the previous one. Never treat a missing day as zero;
+fill gaps with the average of available days (`AnalyticsCalculations.normalizeDailyRuntimes`).
 
 ---
 

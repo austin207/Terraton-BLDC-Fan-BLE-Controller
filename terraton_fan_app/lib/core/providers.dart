@@ -107,22 +107,26 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void updateMode(String? modeName) {
     switch (modeName) {
       case 'boost':
-        // Hardware confirmed boost — set isBoost.
+        // Hardware confirmed boost — set isBoost. An active mode means the fan
+        // is running, so mark it powered (a Boost from the remote must ungrey
+        // the UI and turn the power button green).
         // Nature is mutually exclusive with boost; clear it.
         // Smart/reverse can coexist (BOOST + SMART, BOOST + REVERSE).
         update(state.copyWith(
+          isPowered: true,
           isBoost: true,
           activeMode: () => state.activeMode == 'nature' ? null : state.activeMode,
         ));
       case 'nature':
-        // Nature is mutually exclusive with boost.
-        update(state.copyWith(isBoost: false, activeMode: () => 'nature'));
+        // Nature is mutually exclusive with boost. Active mode ⇒ powered.
+        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'nature'));
       case null:
-        // Fan reported no active mode — clear both.
+        // Fan reported no active mode — clear both. No power assumption here.
         update(state.copyWith(isBoost: false, activeMode: () => null));
       default:
         // 'smart' or 'reverse' — preserve isBoost so boost UI stays active.
-        update(state.copyWith(activeMode: () => modeName));
+        // Active mode ⇒ powered.
+        update(state.copyWith(isPowered: true, activeMode: () => modeName));
     }
   }
 
