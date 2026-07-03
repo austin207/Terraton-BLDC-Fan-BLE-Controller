@@ -100,24 +100,21 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void updateSpeed(int speed) => update(state.copyWith(speed: speed));
 
   // Accepts the mode name string from BleResponseParser.parseModeString.
-  // Boost is mutually exclusive with Nature and Smart, but may coexist with
-  // Reverse. So a 'boost' notification clears an active Nature/Smart mode (but
-  // keeps Reverse), and a 'smart' notification clears isBoost. A 'reverse'
-  // notification preserves isBoost (BOOST + REVERSE is allowed).
+  // Boost is mutually exclusive with ALL modes (Nature, Smart, Reverse) —
+  // matching the firmware's Machine-State model where frame [2] reports exactly
+  // one active state. A 'boost' notification clears any active mode; any mode
+  // notification clears isBoost.
   void updateMode(String? modeName) {
     switch (modeName) {
       case 'boost':
         // Hardware confirmed boost — set isBoost. An active mode means the fan
         // is running, so mark it powered (a Boost from the remote must ungrey
-        // the UI and turn the power button green).
-        // Boost is mutually exclusive with Nature and Smart; clear either.
-        // Reverse may coexist (BOOST + REVERSE).
+        // the UI and turn the power button green). Boost replaces any active
+        // mode highlight — including Reverse.
         update(state.copyWith(
           isPowered: true,
           isBoost: true,
-          activeMode: () => (state.activeMode == 'nature' || state.activeMode == 'smart')
-              ? null
-              : state.activeMode,
+          activeMode: () => null,
         ));
       case 'nature':
         // Nature is mutually exclusive with boost. Active mode ⇒ powered.
@@ -129,34 +126,76 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
         // Fan reported no active mode — clear both. No power assumption here.
         update(state.copyWith(isBoost: false, activeMode: () => null));
       default:
-        // 'reverse' — preserve isBoost so boost UI stays active (coexists).
-        // Active mode ⇒ powered.
-        update(state.copyWith(isPowered: true, activeMode: () => modeName));
+        // 'reverse' — clears isBoost (symmetric exclusivity). Active mode ⇒ powered.
+        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => modeName));
     }
   }
 
-  // activatedAt should be passed only from the UI (when the user taps a timer
-  // button). BLE response handlers leave it null so the existing start time is
-  // preserved — the fan only reports which duration is active, not time remaining.
-  void updateTimer(int timerCode, {DateTime? activatedAt}) => update(state.copyWith(
-    activeTimerCode:  () => timerCode == 0 ? null : timerCode,
-    timerActivatedAt: () => timerCode == 0 ? null : (activatedAt ?? state.timerActivatedAt),
-  ));
+  // Timer start time stashed by resetOnConnect() so a reconnect (which clears
+  // the visible timer to avoid a stale flash) doesn't destroy the countdown's
+  // start timestamp. Restored by updateTimer when the Machine State reply
+  // reports the same duration code is still active.
+  int?      _stashedTimerCode;
+  DateTime? _stashedTimerActivatedAt;
+
+  // The fan only reports WHICH duration is active (2H/4H/8H), never the time
+  // remaining, so the countdown start timestamp is app-side. Resolution order:
+  //   1. explicit [activatedAt] — the UI passes DateTime.now() on a user tap;
+  //   2. the current start time, when the reported code hasn't changed;
+  //   3. the stash from resetOnConnect(), when the code survived a reconnect;
+  //   4. DateTime.now() — timer discovered mid-flight (e.g. set from the IR
+  //      remote while disconnected): count down from detection (upper bound).
+  void updateTimer(int timerCode, {DateTime? activatedAt}) {
+    if (timerCode == 0) {
+      _stashedTimerCode = null;
+      _stashedTimerActivatedAt = null;
+      update(state.copyWith(
+        activeTimerCode:  () => null,
+        timerActivatedAt: () => null,
+      ));
+      return;
+    }
+    var resolved = activatedAt
+        ?? (state.activeTimerCode == timerCode ? state.timerActivatedAt : null)
+        ?? (_stashedTimerCode == timerCode ? _stashedTimerActivatedAt : null)
+        ?? DateTime.now();
+    // Sanity: the firmware says this timer is ACTIVE, so a start time implying
+    // it already expired is wrong (e.g. a stale stash from a previous run of
+    // the same duration) — fall back to counting from detection.
+    final durationHours = switch (timerCode) { 0x02 => 2, 0x04 => 4, _ => 8 };
+    if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
+      resolved = DateTime.now();
+    }
+    _stashedTimerCode = null;
+    _stashedTimerActivatedAt = null;
+    update(state.copyWith(
+      activeTimerCode:  () => timerCode,
+      timerActivatedAt: () => resolved,
+    ));
+  }
 
   /// Clears volatile connection-state fields so reconnects don't show stale data.
   /// The Machine State response updates them back to actual values within ~100 ms.
   /// The timer is cleared too so a stale persisted value can't flash before the
   /// Machine State timer frame (0x22) lands — firmware is authoritative on connect.
-  void resetOnConnect() => update(state.copyWith(
-    isPowered:        false,
-    isBoost:          false,
-    activeMode:       () => null,
-    speed:            0,
-    lastWatts:        () => null,
-    lastRpm:          () => null,
-    activeTimerCode:  () => null,
-    timerActivatedAt: () => null,
-  ));
+  /// The start timestamp is stashed first so updateTimer can restore the running
+  /// countdown when the reply confirms the same duration code is still active.
+  void resetOnConnect() {
+    if (state.activeTimerCode != null) {
+      _stashedTimerCode        = state.activeTimerCode;
+      _stashedTimerActivatedAt = state.timerActivatedAt;
+    }
+    update(state.copyWith(
+      isPowered:        false,
+      isBoost:          false,
+      activeMode:       () => null,
+      speed:            0,
+      lastWatts:        () => null,
+      lastRpm:          () => null,
+      activeTimerCode:  () => null,
+      timerActivatedAt: () => null,
+    ));
+  }
 
   /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.
   /// Clears all operating state atomically — speed, mode, and boost are
@@ -177,20 +216,20 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void clearRpm()                   => update(state.copyWith(lastRpm:         () => null));
 
   /// Toggle boost. Nature mode blocks boost activation (the UI clears Nature
-  /// first). Activating boost also exits Smart — Smart and Boost are mutually
-  /// exclusive — but leaves Reverse untouched (BOOST + REVERSE may coexist).
+  /// first). Activating boost exits ANY active mode — Boost is mutually
+  /// exclusive with Nature, Smart, and Reverse.
   void setBoostActive(bool on) {
     if (on && state.activeMode == 'nature') return;
     update(state.copyWith(
       isBoost: on,
-      activeMode: () => (on && state.activeMode == 'smart') ? null : state.activeMode,
+      activeMode: () => on ? null : state.activeMode,
     ));
   }
 
-  /// Activate or clear a non-boost mode. Nature and Smart both clear boost
-  /// (mutually exclusive with it); Reverse preserves isBoost (may coexist).
+  /// Activate or clear a non-boost mode. Every mode (Nature, Smart, Reverse)
+  /// clears boost — Boost is mutually exclusive with all of them.
   void setActiveMode(String? mode) => update(state.copyWith(
-    isBoost: (mode == 'nature' || mode == 'smart') ? false : state.isBoost,
+    isBoost: mode != null ? false : state.isBoost,
     activeMode: () => mode,
   ));
 

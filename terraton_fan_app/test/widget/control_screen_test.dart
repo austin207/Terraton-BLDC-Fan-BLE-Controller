@@ -351,5 +351,159 @@ void main() {
       expect(s.isPowered, false);
       expect(s.speed, 0);
     });
+
+    // ── Power-on memory restore (Issue: app Power ON must mirror IR remote ON) ──
+    // Frame [2] of an OFF Machine State reply is the firmware's stored last
+    // state. The app keeps it and re-sends it after Power ON, because a bare
+    // BLE powerOn does not trigger the firmware's own memory restore.
+
+    Finder powerButton() => find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_PowerButton');
+
+    testWidgets('OFF reply stores speed memory; Power ON re-sends it',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+      expect(stateOf(tester).speed, 0); // dial blank while OFF
+
+      clearInteractions(mockBle);
+      await tester.tap(powerButton());
+      await tester.pump();
+
+      // Power ON + the remembered speed 5, mirroring the IR remote's restore.
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
+          .called(1);
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x04, 0x01, 0x05, 0x0F]))
+          .called(1);
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.speed, 5);
+    });
+
+    testWidgets('OFF reply stores mode memory; Power ON re-sends the mode frame',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOff, ...modeSmart, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      clearInteractions(mockBle);
+      await tester.tap(powerButton());
+      await tester.pump();
+
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
+          .called(1);
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x04, 0x2B]))
+          .called(1);
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+    });
+
+    testWidgets('split OFF reply still captures the speed memory',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOff, ...timerOff]); // incomplete → debounce holds
+      await tester.pump();
+      notifyCtrl.add(speed5); // stored speed lands in a later notification
+      await tester.pump();
+      await tester.pump();
+      expect(stateOf(tester).isPowered, false);
+
+      clearInteractions(mockBle);
+      await tester.tap(powerButton());
+      await tester.pump();
+
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x04, 0x01, 0x05, 0x0F]))
+          .called(1);
+      expect(stateOf(tester).speed, 5);
+    });
+
+    // ── Boost ↔ Reverse mutual exclusivity (remote-originated boost) ──────────
+
+    testWidgets('remote Boost while Reverse highlighted → Boost replaces Reverse',
+        (tester) async {
+      await pumpConnected(tester);
+      // Complete the connect Machine-State reply so later frames are spontaneous.
+      notifyCtrl.add([...powerOn, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      // Remote presses Reverse (spontaneous 0x21 0x03 — no timer frame).
+      notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x21, 0x01, 0x03, 0x2B]);
+      await tester.pump();
+      expect(stateOf(tester).activeMode, 'reverse');
+
+      // Remote presses Boost (spontaneous 0x21 0x01).
+      notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x21, 0x01, 0x01, 0x29]);
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isBoost, true);
+      expect(s.activeMode, isNull); // reverse highlight replaced by boost
+    });
+
+    // ── Sleep-timer countdown ─────────────────────────────────────────────────
+
+    testWidgets('timer discovered via Machine State shows a live countdown',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOn, ...speed5, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      // No app-side start time existed, so updateTimer resolves it to the
+      // detection moment and the live h/m/s countdown renders — NOT the
+      // static '2H REMAINING' fallback (the pre-fix frozen display).
+      // (DateTime.now() is wall time, not the test's fake clock, so the tick
+      // itself can't be observed here; the per-second maths is unit-tested.)
+      final label = tester.widget<Text>(find.textContaining('REMAINING')).data!;
+      expect(label, isNot('2H REMAINING'));
+      expect(label, matches(RegExp(r'^1h 59m \d{1,2}s REMAINING$')));
+    });
+
+    // ── Mid-frame notification splits (BLE60 UART chunking) ──────────────────
+    // The BLE60 chunks the MCU's UART stream into notifications at ARBITRARY
+    // byte boundaries — a 21-byte Machine-State burst is routinely cut inside
+    // a frame. The stateless parser dropped the split frame (field bug
+    // 2026-07-03: Smart mode + sleep timer lost on every reconnect).
+
+    testWidgets(
+        'reply split mid-TIMER-frame across notifications → Smart AND countdown restored',
+        (tester) async {
+      await pumpConnected(tester);
+      final burst = [...powerOn, ...modeSmart, ...timer2h];
+      notifyCtrl.add(burst.sublist(0, 18)); // cut inside the timer frame
+      await tester.pump();
+      notifyCtrl.add(burst.sublist(18)); // remaining 3 bytes of the timer frame
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      final label = tester.widget<Text>(find.textContaining('REMAINING')).data!;
+      expect(label, matches(RegExp(r'^1h 59m \d{1,2}s REMAINING$')));
+    });
+
+    testWidgets(
+        'reply split mid-MODE-frame across notifications → Smart restored',
+        (tester) async {
+      await pumpConnected(tester);
+      final burst = [...powerOn, ...modeSmart, ...timer2h];
+      notifyCtrl.add(burst.sublist(0, 10)); // cut inside the mode frame
+      await tester.pump();
+      notifyCtrl.add(burst.sublist(10));
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+    });
   });
 }

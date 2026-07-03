@@ -117,3 +117,71 @@ class BleResponseParser {
     }[r.data[0]];
   }
 }
+
+/// Reassembles fan response frames from the raw BLE notification byte stream.
+///
+/// The BLE60 is a transparent UART→BLE bridge: it forwards the MCU's UART
+/// output in notification-sized chunks cut at ARBITRARY byte boundaries (its
+/// internal buffer flushes per connection event), not at frame boundaries. A
+/// multi-frame burst — e.g. the 3-frame getMotorState reply plus a runtime
+/// frame, ~29 bytes — is therefore routinely split MID-frame across two
+/// notifications. Stateless per-notification parsing (parseAll) drops both
+/// halves of such a frame silently.
+///
+/// This assembler buffers unconsumed tail bytes across chunks: a frame whose
+/// end lies beyond the current buffer is retained until the next notification
+/// completes it. Junk that is not a valid response frame (BLE60 AT strings,
+/// 0xFF padding, \r\n separators) is skipped a byte at a time, exactly like
+/// parseAll. Call [reset] whenever the stream context changes (new connection)
+/// so a stale partial frame cannot merge with the next session's bytes.
+class FrameStreamAssembler {
+  // A retained tail is bounded by one max frame (~14 bytes); the cap is pure
+  // insurance against a pathological byte stream.
+  static const int _maxBuffer = 64;
+  // Real frames carry at most 2 data bytes; anything larger is a corrupt
+  // length byte and must not make the assembler wait for bytes that will
+  // never come.
+  static const int _maxDataLen = 8;
+
+  final List<int> _buf = [];
+
+  void reset() => _buf.clear();
+
+  /// Adds one notification's bytes and returns every frame completed by them.
+  List<FanResponse> addChunk(List<int> bytes) {
+    _buf.addAll(bytes);
+    final header = CommandLoader.frameHeader;
+    final rspId  = CommandLoader.responsePacketId;
+    final results = <FanResponse>[];
+    var i = 0;
+    while (i < _buf.length) {
+      if (_buf[i] != header[0]) { i++; continue; }
+      // Possible frame start. If the buffer ends before the frame can be
+      // judged complete, stop and retain the tail for the next chunk.
+      if (i + 1 >= _buf.length) break; // lone header byte at the tail
+      if (_buf[i + 1] != header[1]) { i++; continue; }
+      if (i + 5 >= _buf.length) break; // header seen, dataLen not yet arrived
+      if (_buf[i + 2] != rspId) { i++; continue; }
+      final dataLen = _buf[i + 4];
+      if (dataLen > _maxDataLen) { i++; continue; } // corrupt length — junk
+      final end = i + 5 + dataLen + 1;
+      if (end > _buf.length) break; // frame split mid-frame — retain
+      var sum = _buf[i] + _buf[i + 1] + _buf[i + 2] + _buf[i + 3] + _buf[i + 4];
+      for (var j = i + 5; j < i + 5 + dataLen; j++) { sum += _buf[j]; }
+      if (BleResponseParser._checksumOk(sum, _buf[end - 1])) {
+        results.add(FanResponse(
+          command: _buf[i + 3],
+          data: _buf.sublist(i + 5, i + 5 + dataLen),
+        ));
+        i = end;
+      } else {
+        i++; // false header inside other data — rescan from the next byte
+      }
+    }
+    _buf.removeRange(0, i);
+    if (_buf.length > _maxBuffer) {
+      _buf.removeRange(0, _buf.length - _maxBuffer);
+    }
+    return results;
+  }
+}

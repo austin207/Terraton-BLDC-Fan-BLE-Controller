@@ -78,6 +78,20 @@ AT-AB -BypassMode-\r\n          ← transparent mode starts here
 **MCU firmware must scan for the `55 AA` header and skip all other bytes** —
 including these AT strings and the trailing `0D 0A` after each frame.
 
+**The same rule applies in the phone direction — with reassembly.** The BLE60
+forwards the MCU's UART output in notification-sized chunks cut at **arbitrary
+byte boundaries**, not frame boundaries. A multi-frame burst (e.g. the 3-frame
+Motor State reply plus a runtime frame on connect, ~29 bytes) is routinely
+split **mid-frame** across two notifications. The app therefore never parses a
+notification in isolation: `FrameStreamAssembler`
+(`lib/core/ble/ble_response_parser.dart`) buffers unconsumed tail bytes across
+notifications, completes split frames when the next chunk arrives, and skips
+junk (AT strings, `FF` padding, `\r\n`) while scanning for `55 AA`. Stateless
+per-notification parsing silently drops any mid-frame-split frame — that was
+the root cause of Smart mode and the sleep timer being lost on reconnect
+(fixed 2026-07-03). The assembler is reset on every (re)connect so a stale
+partial frame can't merge with the next session's bytes.
+
 ---
 
 ## Command table
@@ -121,11 +135,11 @@ Manually verified against real hardware.
 | `0x24` | RPM (2 bytes) | `parseRpm` |
 | `0x08` | Runtime (2 bytes) — `(HH << 8 \| LL) × 5` seconds | `parseRuntimeSeconds` |
 
-**Mode coexistence (app-side, not a firmware constraint):** Boost is mutually
-exclusive with Nature and with Smart — activating one clears the other. Boost and
-Reverse may both be active at once. On a Motor State poll, however, frame [2] is
-always the firmware's single exclusive truth (a speed or one mode), overriding any
-live-toggle coexistence.
+**Mode exclusivity (app-side):** Boost is mutually exclusive with ALL modes —
+Nature, Smart, and Reverse. Activating Boost clears any active mode highlight and
+activating any mode clears Boost, matching the firmware's Motor State model where
+frame [2] reports exactly one active state. (An IR-remote Boost press must replace
+the Reverse highlight in the app — coexistence was removed 2026-07-02.)
 
 ---
 
@@ -162,21 +176,37 @@ retried on a spontaneous remote power-ON so a bare wake frame gets its full stat
 **Detection rule:** a Motor State response always includes a `0x22` timer frame.
 Status-poll responses never do. `isMotorStateResponse = responses.any((r) => BleResponseParser.parseTimer(r) != null)`.
 
-**Frames may arrive split or reordered.** The BLE60/MCU does not guarantee all 3
-frames land in one notification or in order 1→2→3 — most notably right after a
-mains power-cycle, when the fan MCU has just rebooted. Rather than assume
-same-notification ordering, the app **buffers** power/speed/mode/timer frames while
-a poll reply is pending and applies them **atomically** once complete (or after a
-short debounce if a frame is still in flight):
+**Frames may arrive split across notifications — even mid-frame.** The BLE60
+chunks the MCU's UART stream at arbitrary byte boundaries (see "BLE60 bridge
+behaviour" above), so the 3 frames need not land in one notification, and a
+frame may be cut in half. Byte-level reassembly (`FrameStreamAssembler`)
+recovers mid-frame splits first; then, rather than assume same-notification
+ordering, the app **buffers** power/speed/mode/timer frames while a poll reply
+is pending and applies them **atomically** once complete (or after a short
+debounce if a frame is still in flight):
 
 - If frame [1] (power) has not arrived yet, nothing is applied — the buffer holds
   until it does, and retry polling continues.
-- If power = OFF, everything is cleared (speed/mode are the hardware's stale last
-  value and must not be shown).
+- If power = OFF, the visible state is cleared (no speed dot may light on an
+  inactive fan) — but frame [2] is **retained as the power-on memory**: it is the
+  firmware's stored last speed/mode (EEPROM). The IR remote's ON button restores
+  that memory in firmware; a bare BLE powerOn (`0x02 0x01`) does not. So when the
+  user taps Power ON in the app, the captured speed/mode is re-sent right after the
+  powerOn frame, mirroring the remote's behaviour, then a wake-poll burst confirms.
 - If power = ON but no speed/mode has arrived yet (MCU still booting), the reply is
-  treated as incomplete and polling keeps retrying until the real state lands.
+  treated as incomplete and polling keeps retrying until the real state lands. The
+  same applies when the timer frame is still missing — a Motor State reply always
+  carries `0x22`, so the connect polls only stop once power, frame [2] AND the
+  timer have all been applied (insurance against a lost frame).
 - Watts/RPM/runtime frames are applied live throughout, since status-poll telemetry
   interleaves with the connect burst independently of the Machine State reply.
+
+**Sleep-timer note:** frame [3] reports only WHICH duration is active (2H/4H/8H),
+never the remaining time. The app keeps the countdown start timestamp itself and,
+for timers set from the remote while the app was disconnected, counts down from
+detection (an upper bound). A firmware "remaining seconds" query would make
+remote-set countdowns exact — recommended for a future firmware revision, along
+with making BLE powerOn trigger the same EEPROM restore as IR ON.
 
 ---
 

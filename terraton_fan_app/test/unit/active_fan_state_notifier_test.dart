@@ -93,7 +93,7 @@ void main() {
       expect(c.read(activeFanStateProvider(deviceId)).speed, 4);
     });
 
-    // updateMode — boost clears nature (mutually exclusive) but preserves smart/reverse
+    // updateMode — boost is mutually exclusive with ALL modes (nature/smart/reverse)
     test('updateMode boost sets isBoost=true and clears nature activeMode', () {
       final c = makeContainer();
       addTearDown(c.dispose);
@@ -116,15 +116,15 @@ void main() {
       expect(s.activeMode, isNull); // smart cleared; boost won
     });
 
-    test('updateMode boost preserves reverse activeMode (coexistence)', () {
+    test('updateMode boost clears reverse activeMode (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
-      n.updateMode('reverse'); // reverse + boost may coexist
-      n.updateMode('boost');
+      n.updateMode('reverse');
+      n.updateMode('boost'); // boost replaces the reverse highlight
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.isBoost, true);
-      expect(s.activeMode, 'reverse'); // reverse preserved
+      expect(s.activeMode, isNull); // reverse cleared; boost won
     });
 
     test('updateMode smart clears isBoost (mutually exclusive)', () {
@@ -138,15 +138,15 @@ void main() {
       expect(s.isBoost, false);
     });
 
-    test('updateMode reverse preserves isBoost (coexistence)', () {
+    test('updateMode reverse clears isBoost (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       n.updateMode('boost'); // boost active first
-      n.updateMode('reverse'); // reverse may coexist with boost
+      n.updateMode('reverse'); // reverse replaces the boost highlight
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeMode, 'reverse');
-      expect(s.isBoost, true);
+      expect(s.isBoost, false);
     });
 
     test('updateMode nature sets isBoost=false and activeMode=nature', () {
@@ -265,7 +265,7 @@ void main() {
       expect(s.activeMode, isNull); // smart cleared
     });
 
-    test('setBoostActive(true) preserves reverse activeMode (coexistence)', () {
+    test('setBoostActive(true) clears reverse activeMode (mutually exclusive)', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
@@ -273,7 +273,7 @@ void main() {
       n.setBoostActive(true);
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.isBoost, true);
-      expect(s.activeMode, 'reverse'); // reverse preserved
+      expect(s.activeMode, isNull); // reverse cleared — boost excludes all modes
     });
   });
 
@@ -300,15 +300,15 @@ void main() {
       expect(s.isBoost, false); // boost cleared — Smart and Boost are exclusive
     });
 
-    test('setActiveMode(reverse) sets activeMode and preserves isBoost', () {
+    test('setActiveMode(reverse) sets activeMode and clears isBoost', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       n.setBoostActive(true);
-      n.setActiveMode('reverse');
+      n.setActiveMode('reverse'); // reverse replaces the boost highlight
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeMode, 'reverse');
-      expect(s.isBoost, true);
+      expect(s.isBoost, false);
     });
 
     test('setActiveMode(null) clears activeMode and preserves isBoost', () {
@@ -316,8 +316,7 @@ void main() {
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       n.setBoostActive(true);
-      n.setActiveMode('reverse'); // reverse coexists with boost
-      n.setActiveMode(null);
+      n.setActiveMode(null); // clearing a mode never touches boost
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeMode, isNull);
       expect(s.isBoost, true);
@@ -368,6 +367,99 @@ void main() {
       addTearDown(c.dispose);
       c.read(activeFanStateProvider(deviceId).notifier).updateTimer(0x02);
       expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, 0x02);
+    });
+  });
+
+  // ── Sleep-timer start-timestamp resolution ─────────────────────────────────
+  // The fan only reports WHICH duration is active, never the time remaining, so
+  // the countdown start timestamp is app-side. updateTimer resolves it as:
+  // explicit → current (same code) → stash from resetOnConnect (same code) →
+  // DateTime.now() (count down from detection).
+
+  group('ActiveFanStateNotifier — timer start timestamp', () {
+    test('explicit activatedAt wins (user tap)', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updateTimer(0x04, activatedAt: tap);
+      expect(c.read(activeFanStateProvider(deviceId)).timerActivatedAt, tap);
+    });
+
+    test('echo with same code preserves the existing start time', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updateTimer(0x04, activatedAt: tap);
+      n.updateTimer(0x04); // BLE echo / Machine State frame, no timestamp
+      expect(c.read(activeFanStateProvider(deviceId)).timerActivatedAt, tap);
+    });
+
+    test('same code after resetOnConnect restores the stashed start time', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updateTimer(0x04, activatedAt: tap);
+      n.resetOnConnect(); // reconnect clears the visible timer…
+      expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, isNull);
+      n.updateTimer(0x04); // …Machine State reply confirms the same duration
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeTimerCode, 0x04);
+      expect(s.timerActivatedAt, tap); // countdown continues, not restarted
+    });
+
+    test('different code after resetOnConnect counts down from detection', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updateTimer(0x04, activatedAt: tap);
+      n.resetOnConnect();
+      final before = DateTime.now();
+      n.updateTimer(0x02); // remote changed the timer while disconnected
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt!.isBefore(before), isFalse); // ≈ now, not tap
+    });
+
+    test('unknown timer (set from remote) counts down from detection', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final before = DateTime.now();
+      n.updateTimer(0x08); // no prior knowledge, no explicit timestamp
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.timerActivatedAt, isNotNull);
+      expect(s.timerActivatedAt!.isBefore(before), isFalse);
+    });
+
+    test('start time implying the timer already expired is discarded', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final stale = DateTime.now().subtract(const Duration(hours: 3));
+      n.updateTimer(0x02, activatedAt: stale); // 2H timer "started" 3 h ago
+      final s = c.read(activeFanStateProvider(deviceId));
+      // Firmware says ACTIVE, so the stale timestamp is wrong → detection time.
+      expect(
+        DateTime.now().difference(s.timerActivatedAt!),
+        lessThan(const Duration(hours: 2)),
+      );
+    });
+
+    test('updateTimer(0) clears the start time and the stash', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updateTimer(0x04, activatedAt: tap);
+      n.resetOnConnect();      // stashes (0x04, tap)
+      n.updateTimer(0);        // fan reports timer OFF — stash must die too
+      n.updateTimer(0x04);     // same code again later
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.timerActivatedAt, isNot(tap)); // fresh detection time, not stash
     });
   });
 }
