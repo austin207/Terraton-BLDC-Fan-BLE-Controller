@@ -18,6 +18,7 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:terraton_fan_app/core/ble/ble_constants.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart' as app;
+import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 
 class DiscoveredFan {
   final String macAddress;
@@ -197,6 +198,7 @@ class BleServiceImpl implements BleService {
       _setState(app.BleConnectionState.connecting);
       _connectStatus = 'attempt $attempt/$_maxRetries';
       _writeCharStatus = 'pending';
+      ConnectionLogService.event('connect $mac attempt $attempt/$_maxRetries');
 
       try {
         await device.connect(
@@ -251,7 +253,10 @@ class BleServiceImpl implements BleService {
         if (_notifyChar != null) {
           await _notifyChar!.setNotifyValue(true);
           await _notifyValueSub?.cancel();
-          _notifyValueSub = _notifyChar!.onValueReceived.listen(_notifyCtrl.add);
+          _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
+            ConnectionLogService.rx(bytes);
+            _notifyCtrl.add(bytes);
+          });
         }
 
         _device = device;
@@ -260,6 +265,7 @@ class BleServiceImpl implements BleService {
         await _connStateSub?.cancel();
         _connStateSub = device.connectionState.listen((state) {
           if (state == BluetoothConnectionState.disconnected && !_disposed) {
+            ConnectionLogService.event('link dropped $mac');
             _writeChar  = null;
             _notifyChar = null;
             _device     = null;
@@ -268,6 +274,7 @@ class BleServiceImpl implements BleService {
         });
 
         _connectStatus = 'connected';
+        ConnectionLogService.event('connected $mac | write char: $_writeCharStatus');
         _setState(app.BleConnectionState.connected);
         return mac;
 
@@ -281,6 +288,7 @@ class BleServiceImpl implements BleService {
         _connectStatus = isInUse
             ? 'in use by another device (attempt $attempt/$_maxRetries)'
             : 'attempt $attempt failed: ${msg.split('\n').first}';
+        ConnectionLogService.event('connect failed: $_connectStatus');
 
         // Disconnect the partial GATT before retrying — avoids "already
         // connected" errors on the next attempt. Timeout so we don't hang
@@ -311,6 +319,7 @@ class BleServiceImpl implements BleService {
 
   @override
   Future<void> disconnect() async {
+    if (_device != null) ConnectionLogService.event('disconnect() requested');
     await _connStateSub?.cancel();
     _connStateSub = null;
     try { await _device?.disconnect(); } on Object catch (_) {}
@@ -328,6 +337,7 @@ class BleServiceImpl implements BleService {
   Future<void> writeFrame(List<int> frame) async {
     final char = _writeChar;
     if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
+    ConnectionLogService.tx(frame);
     // BLE60 is a BLE-to-UART bridge: buffers incoming BLE data and only
     // flushes to the MCU UART when it receives \r\n (0x0D 0x0A).
     final payload = Uint8List.fromList([...frame, 0x0D, 0x0A]);

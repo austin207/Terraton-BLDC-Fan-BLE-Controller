@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:terraton_fan_app/core/config/app_feature_config.dart';
+import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 import 'package:terraton_fan_app/core/diagnostics/crash_log_service.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/core/storage/app_settings.dart';
@@ -179,7 +180,16 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.bug_report_outlined,
             label: 'Crash Log',
             chevron: true,
+            divider: true,
             onTap: () => unawaited(_showCrashLog(context)),
+          ),
+          _SettingRow(
+            iconBg: kBlueFill,
+            iconColor: kBlue,
+            icon: Icons.receipt_long_rounded,
+            label: 'Connection Log',
+            chevron: true,
+            onTap: () => unawaited(_showConnectionLog(context)),
           ),
         ]),
 
@@ -297,6 +307,78 @@ class SettingsScreen extends ConsumerWidget {
                       child: ElevatedButton(
                         onPressed: () => unawaited(
                           Share.share(log, subject: 'Terraton Fan crash log'),
+                        ),
+                        child: const Text('Share'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows the BLE traffic log (frames sent/received + connection events,
+  /// recorded by ConnectionLogService). Lets a tester share exactly what the
+  /// fan reported around a reconnect; nothing is uploaded automatically.
+  Future<void> _showConnectionLog(BuildContext context) async {
+    final log = await ConnectionLogService.read();
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Connection Log',
+                  style: GoogleFonts.manrope(
+                    fontSize: 18, fontWeight: FontWeight.w700, color: kText,
+                  )),
+              const SizedBox(height: 12),
+              if (log == null)
+                Text('No BLE traffic recorded yet.',
+                    style: GoogleFonts.manrope(fontSize: 14, color: kTextMut))
+              else ...[
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(sheetCtx).height * 0.5,
+                  ),
+                  child: SingleChildScrollView(
+                    reverse: true, // newest entries are at the bottom
+                    child: Text(log,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10, color: kTextMut, height: 1.4,
+                        )),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          await ConnectionLogService.clear();
+                          if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => unawaited(
+                          Share.share(log, subject: 'Terraton Fan connection log'),
                         ),
                         child: const Text('Share'),
                       ),

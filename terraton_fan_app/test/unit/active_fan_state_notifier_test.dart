@@ -373,8 +373,9 @@ void main() {
   // ── Sleep-timer start-timestamp resolution ─────────────────────────────────
   // The fan only reports WHICH duration is active, never the time remaining, so
   // the countdown start timestamp is app-side. updateTimer resolves it as:
-  // explicit → current (same code) → stash from resetOnConnect (same code) →
-  // DateTime.now() (count down from detection).
+  // explicit → current (same code) → DateTime.now() (count down from
+  // detection). resetOnConnect never touches the timer, so the countdown keeps
+  // ticking across reconnects and the current-state rule confirms it.
 
   group('ActiveFanStateNotifier — timer start timestamp', () {
     test('explicit activatedAt wins (user tap)', () {
@@ -396,14 +397,16 @@ void main() {
       expect(c.read(activeFanStateProvider(deviceId)).timerActivatedAt, tap);
     });
 
-    test('same code after resetOnConnect restores the stashed start time', () {
+    test('resetOnConnect preserves the running timer; same-code reply keeps it', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       final tap = DateTime.now().subtract(const Duration(minutes: 5));
       n.updateTimer(0x04, activatedAt: tap);
-      n.resetOnConnect(); // reconnect clears the visible timer…
-      expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, isNull);
+      n.resetOnConnect(); // reconnect keeps the countdown ticking…
+      final blanked = c.read(activeFanStateProvider(deviceId));
+      expect(blanked.activeTimerCode, 0x04);
+      expect(blanked.timerActivatedAt, tap);
       n.updateTimer(0x04); // …Machine State reply confirms the same duration
       final s = c.read(activeFanStateProvider(deviceId));
       expect(s.activeTimerCode, 0x04);
@@ -449,17 +452,80 @@ void main() {
       );
     });
 
-    test('updateTimer(0) clears the start time and the stash', () {
+    test('updateTimer(0) clears the start time for good', () {
       final c = makeContainer();
       addTearDown(c.dispose);
       final n = c.read(activeFanStateProvider(deviceId).notifier);
       final tap = DateTime.now().subtract(const Duration(minutes: 5));
       n.updateTimer(0x04, activatedAt: tap);
-      n.resetOnConnect();      // stashes (0x04, tap)
-      n.updateTimer(0);        // fan reports timer OFF — stash must die too
+      n.resetOnConnect();
+      n.updateTimer(0);        // fan reports timer OFF — countdown is gone
+      expect(c.read(activeFanStateProvider(deviceId)).activeTimerCode, isNull);
       n.updateTimer(0x04);     // same code again later
       final s = c.read(activeFanStateProvider(deviceId));
-      expect(s.timerActivatedAt, isNot(tap)); // fresh detection time, not stash
+      expect(s.timerActivatedAt, isNot(tap)); // fresh detection time
+    });
+  });
+
+  // ── resetOnConnect persistence semantics ────────────────────────────────────
+  // The connect-time blank is in-memory only: the DB keeps the last-known-good
+  // state so an app kill mid-connect (before the Machine State reply lands)
+  // loses nothing — in particular the sleep-timer start timestamp.
+
+  group('ActiveFanStateNotifier — resetOnConnect persistence', () {
+    test('resetOnConnect blanks the UI state but does not persist the blank', () {
+      final repo = _FakeRepo();
+      final c = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updatePower(true);
+      n.updateSpeed(4);
+      n.updateMode('smart');
+      n.updateTimer(0x02, activatedAt: tap);
+      n.resetOnConnect();
+
+      final visible = c.read(activeFanStateProvider(deviceId));
+      expect(visible.isPowered, false);
+      expect(visible.speed, 0);
+      expect(visible.activeMode, isNull);
+
+      final persisted = repo.getState(deviceId);
+      expect(persisted.isPowered, true);
+      expect(persisted.speed, 4);
+      expect(persisted.activeMode, 'smart');
+      expect(persisted.activeTimerCode, 0x02);
+      expect(persisted.timerActivatedAt, tap);
+    });
+
+    test('timer countdown survives an app kill and relaunch', () {
+      final repo = _FakeRepo();
+      final tap = DateTime.now().subtract(const Duration(minutes: 30));
+
+      final c1 = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      c1
+          .read(activeFanStateProvider(deviceId).notifier)
+          .updateTimer(0x02, activatedAt: tap);
+      c1.dispose(); // app killed — the notifier and any in-memory state die
+
+      final c2 = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      addTearDown(c2.dispose);
+      // Relaunch: build() loads the persisted timer, so the chip ticks at once.
+      final loaded = c2.read(activeFanStateProvider(deviceId));
+      expect(loaded.activeTimerCode, 0x02);
+      expect(loaded.timerActivatedAt, tap);
+
+      final n2 = c2.read(activeFanStateProvider(deviceId).notifier);
+      n2.resetOnConnect();
+      n2.updateTimer(0x02); // Machine State reply confirms the same duration
+      final s = c2.read(activeFanStateProvider(deviceId));
+      expect(s.timerActivatedAt, tap); // original start time, not detection
     });
   });
 }

@@ -131,24 +131,16 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     }
   }
 
-  // Timer start time stashed by resetOnConnect() so a reconnect (which clears
-  // the visible timer to avoid a stale flash) doesn't destroy the countdown's
-  // start timestamp. Restored by updateTimer when the Machine State reply
-  // reports the same duration code is still active.
-  int?      _stashedTimerCode;
-  DateTime? _stashedTimerActivatedAt;
-
   // The fan only reports WHICH duration is active (2H/4H/8H), never the time
   // remaining, so the countdown start timestamp is app-side. Resolution order:
   //   1. explicit [activatedAt] — the UI passes DateTime.now() on a user tap;
-  //   2. the current start time, when the reported code hasn't changed;
-  //   3. the stash from resetOnConnect(), when the code survived a reconnect;
-  //   4. DateTime.now() — timer discovered mid-flight (e.g. set from the IR
+  //   2. the current start time, when the reported code hasn't changed —
+  //      resetOnConnect() never touches the timer, so this also confirms the
+  //      running countdown across reconnects;
+  //   3. DateTime.now() — timer discovered mid-flight (e.g. set from the IR
   //      remote while disconnected): count down from detection (upper bound).
   void updateTimer(int timerCode, {DateTime? activatedAt}) {
     if (timerCode == 0) {
-      _stashedTimerCode = null;
-      _stashedTimerActivatedAt = null;
       update(state.copyWith(
         activeTimerCode:  () => null,
         timerActivatedAt: () => null,
@@ -157,44 +149,38 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     }
     var resolved = activatedAt
         ?? (state.activeTimerCode == timerCode ? state.timerActivatedAt : null)
-        ?? (_stashedTimerCode == timerCode ? _stashedTimerActivatedAt : null)
         ?? DateTime.now();
     // Sanity: the firmware says this timer is ACTIVE, so a start time implying
-    // it already expired is wrong (e.g. a stale stash from a previous run of
-    // the same duration) — fall back to counting from detection.
+    // it already expired is wrong (e.g. a stale persisted value from a previous
+    // run of the same duration) — fall back to counting from detection.
     final durationHours = switch (timerCode) { 0x02 => 2, 0x04 => 4, _ => 8 };
     if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
       resolved = DateTime.now();
     }
-    _stashedTimerCode = null;
-    _stashedTimerActivatedAt = null;
     update(state.copyWith(
       activeTimerCode:  () => timerCode,
       timerActivatedAt: () => resolved,
     ));
   }
 
-  /// Clears volatile connection-state fields so reconnects don't show stale data.
-  /// The Machine State response updates them back to actual values within ~100 ms.
-  /// The timer is cleared too so a stale persisted value can't flash before the
-  /// Machine State timer frame (0x22) lands — firmware is authoritative on connect.
-  /// The start timestamp is stashed first so updateTimer can restore the running
-  /// countdown when the reply confirms the same duration code is still active.
+  /// Blanks volatile connection-state fields so reconnects don't show stale
+  /// data; the Machine State response restores the actual values within ~100 ms.
+  /// In-memory only (no persist): the DB keeps the last-known-good state, so an
+  /// app kill mid-connect — before the Machine State reply lands — loses
+  /// nothing. The sleep timer is deliberately NOT cleared: the countdown keeps
+  /// ticking from the persisted start time across the reconnect, and the
+  /// Machine State timer frame (0x22) then confirms it (same code keeps the
+  /// start time via updateTimer's current-state rule) or corrects it (OFF or
+  /// code 0 clears; a different code restarts from detection).
   void resetOnConnect() {
-    if (state.activeTimerCode != null) {
-      _stashedTimerCode        = state.activeTimerCode;
-      _stashedTimerActivatedAt = state.timerActivatedAt;
-    }
-    update(state.copyWith(
-      isPowered:        false,
-      isBoost:          false,
-      activeMode:       () => null,
-      speed:            0,
-      lastWatts:        () => null,
-      lastRpm:          () => null,
-      activeTimerCode:  () => null,
-      timerActivatedAt: () => null,
-    ));
+    state = state.copyWith(
+      isPowered:  false,
+      isBoost:    false,
+      activeMode: () => null,
+      speed:      0,
+      lastWatts:  () => null,
+      lastRpm:    () => null,
+    );
   }
 
   /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.

@@ -100,6 +100,34 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   int    _connectPollAttempts = 0;
   bool   _motorStateReceived  = false;
 
+  // Confirm-before-demote (see _flushMachineState). Armed by _requestMotorState
+  // (connect/wake bursts, the 90 s mode poll, the expiry sync): the first
+  // Machine-State reply to a poll we sent cannot be trusted blindly. The BLE60 buffers the MCU's UART output while no phone
+  // is connected and can flush that stale backlog (replies cut off mid-delivery
+  // by the disconnect, IR-remote broadcasts) into the new connection with valid
+  // checksums, and a just-woken MCU may answer the first query with default
+  // state. A reply that DEMOTES state relative to the persisted last-known-good
+  // (power off / active mode cleared / unexpired timer cleared) is therefore
+  // held un-applied and the fan re-polled; the next assembled reply is the
+  // answer to OUR poll and is applied unconditionally. Replies that confirm or
+  // upgrade the persisted state apply immediately — zero added latency on the
+  // normal path. Without this, one stale OFF (or ON+speed+timer-0) reply wiped
+  // Smart mode, the timer chip, AND the persisted timerActivatedAt within ~1 s
+  // of connecting, then stopped the retry polls — the 2026-07-04 field bug that
+  // survived every transport-level fix.
+  bool    _needsDemotionConfirm = false;
+  bool    _demotionHeld         = false;
+  // True for ~300 ms after a demoting reply is held: further demoting frames
+  // inside this window are the tail of the same stale backlog burst, not the
+  // answer to our confirm re-poll.
+  bool    _demotionSameBurst    = false;
+  Timer?  _demotionBurstTimer;
+  bool?   _heldPower;
+  int?    _heldSpeed;
+  String? _heldMode;
+  int?    _heldTimer;
+  Timer?  _demotionFallbackTimer;
+
   // Machine State response assembler. A getMotorState reply is always 3 frames —
   // power (0x02), speed (0x04) OR mode (0x21), and timer (0x22) — but the BLE60
   // bridge may split or reorder them across notifications, especially from a
@@ -282,16 +310,29 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   /// connection state stream surfaces any real disconnect.
   void _requestMotorState() {
     _markAwaitingMotorState();
+    // Every reply to a poll WE send is demotion-gated (see _flushMachineState):
+    // this covers not just the connect/wake bursts but also the 90 s mode poll
+    // and the timer-expiry sync — a stale mid-session reply could otherwise
+    // wipe and persist Smart/timer while still connected, so a later reconnect
+    // would have nothing left to restore. _isStateDemotion treats an OFF reply
+    // after the timer's expected expiry as expected truth, so arming here adds
+    // no latency to the timer-shutdown path.
+    _needsDemotionConfirm = true;
     unawaited(_ble.writeFrame(BleFrameBuilder.getMotorState()).catchError((Object _) {}));
   }
 
   /// Marks that we are expecting a motor-state response to a poll we just sent,
   /// so its echo can't re-trigger another poll. The timeout is a safety net in
-  /// case the response never arrives (e.g. fan dropped mid-poll).
+  /// case the response never arrives (e.g. fan dropped mid-poll). It must be
+  /// comfortably longer than the 1.5 s retry-poll period: each retry re-arms
+  /// it, so the flag stays continuously true through a retry burst and for a
+  /// while after the final retry — a slow reply (typical from a just-rebooted
+  /// MCU or after a BT adapter cycle) is still buffered atomically instead of
+  /// falling onto the reorder-vulnerable live dispatch path.
   void _markAwaitingMotorState() {
     _awaitingMotorState = true;
     _awaitingMotorStateTimer?.cancel();
-    _awaitingMotorStateTimer = Timer(const Duration(milliseconds: 1500), () {
+    _awaitingMotorStateTimer = Timer(const Duration(milliseconds: 3500), () {
       _awaitingMotorState = false;
     });
   }
@@ -311,6 +352,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _wakePollTimer?.cancel();
     _wakePollAttempts = 0;
     _resetMachineStateBuffer();
+    _cancelDemotionHold();
     _requestMotorState();
     _wakePollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
       if (!mounted || _ble.currentState != BleConnectionState.connected) {
@@ -351,6 +393,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _connectPollAttempts = 0;
     _motorStateReceived  = false;
     _resetMachineStateBuffer();
+    _cancelDemotionHold();
     _requestMotorState();
     _connectPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
       if (!mounted || _ble.currentState != BleConnectionState.connected) {
@@ -408,6 +451,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // watts (0x23) and RPM (0x24) — never a timer. Use this to distinguish.
       final isMotorStateResponse =
           responses.any((r) => BleResponseParser.parseTimer(r) != null);
+      // An OFF Machine-State reply's 0x22 frame carries the firmware's STORED
+      // duration (part of the power-on memory), not a running countdown — it
+      // must never light the timer chip on an OFF fan. Mirrors the buffered
+      // path (_flushMachineState clears the timer on an OFF reply).
+      final isOffMotorStateReply = isMotorStateResponse &&
+          responses.any((r) => BleResponseParser.parsePowerState(r) == false);
 
       for (final response in responses) {
         final power = BleResponseParser.parsePowerState(response);
@@ -421,6 +470,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             // Clear ALL operating state — speed, mode, and boost are undefined
             // when the fan is off; do not show any stale previous-session values.
             notifier.applyMotorStatePowerOff();
+            // No sleep timer can be counting down on an OFF fan (mirrors
+            // _flushMachineState; the reply's own 0x22 is skipped below).
+            notifier.updateTimer(0);
             if (!_isDemo) unawaited(BleForegroundService.stop());
           } else {
             final wasPowered =
@@ -469,13 +521,27 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
             notifier.applyMotorStateTruth(null);
             notifier.updateSpeed(speed);
           } else {
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            final hasPowerFrame = responses
+                .any((r) => BleResponseParser.parsePowerState(r) != null);
+            if (hasPowerFrame && (s.activeMode != null || s.isBoost)) {
+              // Firmware's 4-frame post-mains-restore status poll (02 04 23 24
+              // — power frame present, but no 0x22 timer so it isn't a Machine
+              // State reply): its 0x04 is the stored speed, not a mode exit.
+              // Don't wipe an active mode from it; defer to Machine State
+              // truth. Skipping updateSpeed too is intentional — if the fan
+              // truly dropped to a fixed speed, the requested reply applies it
+              // ~100 ms later, and speed + mode highlight together would
+              // violate the exclusive-state model.
+              _requestMotorState();
+              continue;
+            }
             // Regular speed notification (remote or app echo). Smart, Nature,
             // and Reverse are all incompatible with a fixed speed step — if any
             // is active the hardware has exited the mode; clear it so the UI
             // stays in sync.
             notifier.updateSpeed(speed);
             if (speed > 0) notifier.updatePower(true);
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
             if (s.activeMode != null) notifier.setActiveMode(null);
             if (s.isBoost) notifier.setBoostActive(false);
           }
@@ -508,7 +574,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         }
         final timer = BleResponseParser.parseTimer(response);
         if (timer != null) {
-          notifier.updateTimer(timer);
+          // Skip the stored-duration 0x22 of an OFF Machine-State reply — the
+          // OFF branch above already cleared the timer.
+          if (!isOffMotorStateReply) notifier.updateTimer(timer);
           continue;
         }
         final watts = BleResponseParser.parsePowerWatts(response);
@@ -570,7 +638,22 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         continue;
       }
       final speed = BleResponseParser.parseSpeed(r);
-      if (speed != null) { _msSpeed = speed; _msMode = null; gotMachineFrame = true; continue; }
+      if (speed != null) {
+        // A genuine Machine State 0x04 arrives alongside 0x22, never with
+        // watts/RPM. A 0x04 riding a telemetry burst (the firmware's 4-frame
+        // post-mains-restore status poll: 02 04 23 24) is the stored speed,
+        // not frame [2] — don't let it null a mode already buffered from the
+        // real reply.
+        final telemetryBurst = responses.any((x) =>
+            BleResponseParser.parsePowerWatts(x) != null ||
+            BleResponseParser.parseRpm(x) != null);
+        if (!(_msMode != null && telemetryBurst)) {
+          _msSpeed = speed;
+          _msMode  = null;
+        }
+        gotMachineFrame = true;
+        continue;
+      }
       final mode = BleResponseParser.parseModeString(r);
       if (mode != null) { _msMode = mode; _msSpeed = null; gotMachineFrame = true; continue; }
       final timer = BleResponseParser.parseTimer(r);
@@ -614,8 +697,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     return (_msSpeed != null || _msMode != null) && _msTimer != null;
   }
 
-  /// Applies the assembled Machine State atomically, independent of the order or
-  /// notification-splitting of the frames that built it.
+  /// Flushes the assembled Machine State, atomically and independent of the
+  /// order or notification-splitting of the frames that built it. While the
+  /// confirm-before-demote window is armed (connect/wake restore), a reply
+  /// that demotes the persisted last-known-good state is held and re-polled
+  /// instead of applied — see the field-block comment on _needsDemotionConfirm.
   void _flushMachineState() {
     _msFlushTimer?.cancel();
     _msFlushTimer = null;
@@ -629,6 +715,116 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     final speed = _msSpeed;
     final mode  = _msMode;
     final timer = _msTimer;
+    _resetMachineStateBuffer();
+
+    if (_needsDemotionConfirm) {
+      if (_demotionHeld) {
+        // A demoting reply is on hold and another assembled reply has arrived.
+        // A stale BLE60 backlog flushes as one burst, so demoting frames landing
+        // within ~300 ms of the hold are part of the SAME burst — refresh the
+        // held values (later frames are newer) and keep waiting for the answer
+        // to our confirm re-poll. Anything after that (or any non-demoting
+        // reply) answers the poll WE sent: apply it unconditionally.
+        if (_demotionSameBurst &&
+            _isStateDemotion(power: power, speed: speed, mode: mode, timer: timer)) {
+          _heldPower = power;
+          _heldSpeed = speed;
+          _heldMode  = mode;
+          _heldTimer = timer;
+          return;
+        }
+        _cancelDemotionHold();
+        _needsDemotionConfirm = false;
+        _applyMachineState(power, speed, mode, timer);
+        return;
+      }
+      if (_isStateDemotion(power: power, speed: speed, mode: mode, timer: timer)) {
+        // First reply after (re)connect contradicts the persisted state in the
+        // demoting direction — suspect. Hold it un-applied (and un-persisted),
+        // poll again; if no second reply ever lands, apply the held one so a
+        // genuinely-off fan still resolves.
+        _demotionHeld     = true;
+        _demotionSameBurst = true;
+        _demotionBurstTimer?.cancel();
+        _demotionBurstTimer = Timer(const Duration(milliseconds: 300), () {
+          _demotionSameBurst = false;
+        });
+        _heldPower = power;
+        _heldSpeed = speed;
+        _heldMode  = mode;
+        _heldTimer = timer;
+        _demotionFallbackTimer?.cancel();
+        _demotionFallbackTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted || !_demotionHeld) return;
+          final p = _heldPower;
+          final s = _heldSpeed;
+          final m = _heldMode;
+          final t = _heldTimer;
+          _cancelDemotionHold();
+          _needsDemotionConfirm = false;
+          if (p != null) _applyMachineState(p, s, m, t);
+        });
+        _requestMotorState();
+        return;
+      }
+      // Non-demoting reply: firmware truth confirms (or upgrades) the persisted
+      // state — apply immediately. _applyMachineState disarms the window once
+      // the reply is definitive.
+    }
+    _applyMachineState(power, speed, mode, timer);
+  }
+
+  /// True when an assembled Machine-State reply contradicts the persisted
+  /// last-known-good state in the demoting direction. The baseline is read
+  /// from ObjectBox, NOT the live provider — resetOnConnect() blanks the
+  /// in-memory state without persisting, so the DB still holds the truth from
+  /// before the disconnect.
+  bool _isStateDemotion({
+    required bool power,
+    int? speed,
+    String? mode,
+    int? timer,
+  }) {
+    final base = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
+    if (!base.isPowered) return false; // nothing active to lose
+
+    final baseCode  = base.activeTimerCode;
+    final baseStart = base.timerActivatedAt;
+    final timerRunning = baseCode != null && baseCode != 0 && baseStart != null &&
+        DateTime.now().isBefore(
+            baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
+
+    if (!power) {
+      // OFF is EXPECTED when the baseline sleep timer already expired while
+      // disconnected — the fan shut itself down; apply without a re-poll.
+      final timerExpired = baseCode != null && baseCode != 0 && baseStart != null &&
+          !DateTime.now().isBefore(
+              baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
+      return !timerExpired;
+    }
+    // Baseline had an active mode; reply reports a plain speed instead.
+    if (base.activeMode != null && mode == null && speed != null) return true;
+    // Baseline had an unexpired sleep timer; reply explicitly reports none.
+    // (A missing 0x22 frame is neutral — applying it never clears the timer.)
+    if (timerRunning && timer == 0) return true;
+    return false;
+  }
+
+  void _cancelDemotionHold() {
+    _demotionFallbackTimer?.cancel();
+    _demotionFallbackTimer = null;
+    _demotionBurstTimer?.cancel();
+    _demotionBurstTimer = null;
+    _demotionHeld      = false;
+    _demotionSameBurst = false;
+    _heldPower = null;
+    _heldSpeed = null;
+    _heldMode  = null;
+    _heldTimer = null;
+  }
+
+  /// Applies an assembled Machine State to the fan state atomically.
+  void _applyMachineState(bool power, int? speed, String? mode, int? timer) {
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
     var received = false;
 
@@ -684,6 +880,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _awaitingMotorStateTimer?.cancel();
       // Stops _scheduleConnectPolls / _scheduleWakePolls — the truth has landed.
       _motorStateReceived = true;
+      // Definitive state applied — the confirm-before-demote window is over.
+      _needsDemotionConfirm = false;
     }
   }
 
@@ -891,6 +1089,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _awaitingMotorState = false;
         _awaitingMotorStateTimer?.cancel();
         _resetMachineStateBuffer();
+        _needsDemotionConfirm = false;
+        _cancelDemotionHold();
         _rxAssembler.reset();
         _timerExpirySyncTimer?.cancel();
         _timerExpirySyncTimer = null;
@@ -927,6 +1127,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _wakePollTimer?.cancel();
     _connectPollTimer?.cancel();
     _msFlushTimer?.cancel();
+    _demotionFallbackTimer?.cancel();
+    _demotionBurstTimer?.cancel();
     _timerExpirySyncTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     unawaited(BleForegroundService.stop());
@@ -2145,6 +2347,10 @@ class _TimerCountdownState extends State<_TimerCountdown> {
 
     final String label;
     if (remaining.isNegative || remaining.inSeconds <= 0) {
+      // Expired while disconnected: shows briefly (≤~2 s) on reconnect until
+      // the Machine State reply reports OFF and clears the chip. Deliberately
+      // no self-clearing here — a build-tick widget mutating the provider is
+      // riskier than the short "0s" window; firmware truth does the clearing.
       label = '0s REMAINING';
     } else {
       final h = remaining.inHours;

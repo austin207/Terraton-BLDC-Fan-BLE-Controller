@@ -505,5 +505,306 @@ void main() {
       expect(s.activeMode, 'smart');
       expect(s.activeTimerCode, 0x02);
     });
+
+    // ── Persisted countdown across reconnect / relaunch ───────────────────────
+    // resetOnConnect no longer clears the sleep timer: the countdown keeps
+    // ticking from the persisted start time, and the Machine State reply then
+    // confirms (same code keeps the timestamp) or corrects it (OFF clears).
+
+    testWidgets(
+        'persisted countdown ticks immediately on reconnect and survives the reply',
+        (tester) async {
+      final started = DateTime.now()
+          .subtract(const Duration(minutes: 30, seconds: 5));
+      when(() => mockRepo.getState(any())).thenReturn(FanState()
+        ..deviceId = 'TT-001'
+        ..activeTimerCode = 0x02
+        ..timerActivatedAt = started);
+
+      await pumpConnected(tester);
+      // Before ANY notify frame: the chip already shows the remaining time.
+      final before = tester.widget<Text>(find.textContaining('REMAINING')).data!;
+      expect(before, matches(RegExp(r'^1h 29m \d{1,2}s REMAINING$')));
+
+      // Machine State reply confirms the same duration code.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.activeMode, 'smart');
+      expect(s.timerActivatedAt, started); // countdown continues, not restarted
+      final after = tester.widget<Text>(find.textContaining('REMAINING')).data!;
+      expect(after, matches(RegExp(r'^1h 29m \d{1,2}s REMAINING$')));
+    });
+
+    testWidgets('OFF reply clears the persisted timer', (tester) async {
+      when(() => mockRepo.getState(any())).thenReturn(FanState()
+        ..deviceId = 'TT-001'
+        ..activeTimerCode = 0x02
+        ..timerActivatedAt = DateTime.now().subtract(const Duration(minutes: 30)));
+
+      await pumpConnected(tester);
+      expect(find.textContaining('REMAINING'), findsOneWidget);
+
+      // Fan was turned off while disconnected — firmware truth clears the chip.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeTimerCode, isNull);
+      expect(find.textContaining('REMAINING'), findsNothing);
+    });
+
+    // ── Slow Machine-State reply (awaiting-timeout race) ──────────────────────
+    // The reply to a poll we sent may arrive well after the poll (a rebooted
+    // MCU after a mains cycle, or a BT adapter cycle). _awaitingMotorState must
+    // outlive the retry burst so the late reply is still assembled atomically —
+    // with the old 1500 ms timeout it fell onto the live path, where a split
+    // OFF reply lights the dial from the stored speed.
+
+    testWidgets(
+        'reply landing 8 s after connect, split [speed][timer] then [power OFF] '
+        '→ still assembled atomically (dial stays dark)', (tester) async {
+      await pumpConnected(tester);
+      // Connect polls run at 0/1.5/3/4.5/6 s then stop; nothing has replied.
+      await tester.pump(const Duration(seconds: 8));
+
+      notifyCtrl.add([...speed5, ...timerOff]);
+      await tester.pump();
+      // Buffered, not applied — power still unknown.
+      expect(stateOf(tester).speed, 0);
+
+      notifyCtrl.add(powerOff);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.speed, 0); // stored speed captured as memory, not shown
+    });
+
+    // ── 4-frame post-mains-restore status poll must not wipe Smart ────────────
+    // The first status poll after mains restore returns 0x02 0x04 0x23 0x24.
+    // Its 0x04 is the stored speed, not a mode exit — a just-restored Smart
+    // highlight must survive it; the app re-checks via getMotorState instead.
+
+    const watts10 = [0x55, 0xAA, 0x07, 0x23, 0x01, 0x0A, 0x34];
+    const rpm300  = [0x55, 0xAA, 0x07, 0x24, 0x02, 0x01, 0x2C, 0x59];
+
+    testWidgets('4-frame status poll [power][speed][watts][rpm] keeps Smart active',
+        (tester) async {
+      await pumpConnected(tester);
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+      expect(stateOf(tester).activeMode, 'smart');
+
+      clearInteractions(mockBle);
+      notifyCtrl.add([...powerOn, ...speed5, ...watts10, ...rpm300]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.activeMode, 'smart'); // not wiped by the stored-speed frame
+      expect(s.lastWatts, 10);       // telemetry still applied live
+      expect(s.lastRpm, 300);
+      // Mode truth is re-checked from the fan instead of guessed.
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
+          .called(1);
+    });
+
+    testWidgets(
+        'status poll interleaving a split Machine-State reply cannot overwrite '
+        'the buffered Smart mode', (tester) async {
+      await pumpConnected(tester);
+      // First part of the reply we polled for: power + mode, timer still in flight.
+      notifyCtrl.add([...powerOn, ...modeSmart]);
+      await tester.pump();
+      // A 4-frame status poll interleaves — its 0x04 must not null the mode.
+      notifyCtrl.add([...powerOn, ...speed5, ...watts10, ...rpm300]);
+      await tester.pump();
+      // The reply's timer frame finally lands → flush.
+      notifyCtrl.add(timer2h);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart'); // not replaced by speed 5
+      expect(s.activeTimerCode, 0x02);
+    });
+
+    // ── Confirm-before-demote (stale first reply after reconnect) ─────────────
+    // The BLE60 buffers the MCU's UART output while no phone is connected and
+    // can flush that stale backlog into a new connection; a just-woken MCU may
+    // answer the first poll with default state. A reply that DEMOTES the
+    // persisted last-known-good state (power off / mode cleared / unexpired
+    // timer cleared) must be confirmed by a second reply before it is applied —
+    // one stale reply must not wipe Smart + the persisted countdown (the
+    // 2026-07-04 field bug that survived every transport-level fix).
+
+    // Persisted last-known-good: fan running Smart with a 2H timer 30 min in.
+    FanState runningSmartBaseline(DateTime started) => FanState()
+      ..deviceId         = 'TT-001'
+      ..isPowered        = true
+      ..activeMode       = 'smart'
+      ..activeTimerCode  = 0x02
+      ..timerActivatedAt = started;
+
+    testWidgets(
+        'FIELD BUG: stale OFF reply on reconnect is held, genuine reply restores '
+        'Smart + countdown', (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+      clearInteractions(mockBle);
+
+      // Stale backlog reply: fan "off", stored speed, no timer.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      // Held, not applied: the persisted countdown is untouched and the fan
+      // was immediately re-polled to confirm.
+      var s = stateOf(tester);
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started);
+      expect(find.textContaining('REMAINING'), findsOneWidget);
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
+          .called(1);
+
+      // The genuine reply to our confirm poll restores everything.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started); // countdown continued, not restarted
+    });
+
+    testWidgets(
+        'stale [ON][speed][timer-0] reply is held; genuine reply keeps Smart + timer',
+        (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+
+      // Stale/default reply: plain speed instead of Smart, timer code 0.
+      notifyCtrl.add([...powerOn, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      var s = stateOf(tester);
+      expect(s.activeTimerCode, 0x02);   // not cleared by the suspect reply
+      expect(s.timerActivatedAt, started);
+
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      s = stateOf(tester);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started);
+    });
+
+    testWidgets(
+        'two consecutive OFF replies → genuinely off: state and timer cleared',
+        (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      // Past the same-burst window (300 ms) so the next reply counts as the
+      // answer to the confirm poll, not a continuation of the stale burst.
+      await tester.pump(const Duration(milliseconds: 400));
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.activeMode, isNull);
+      expect(s.activeTimerCode, isNull);
+      expect(find.textContaining('REMAINING'), findsNothing);
+    });
+
+    testWidgets(
+        'no second reply → held OFF reply applied by the fallback (~3 s)',
+        (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      // Still held right after delivery…
+      expect(stateOf(tester).activeTimerCode, 0x02);
+
+      // …but with no confirming reply the fallback applies the held truth.
+      await tester.pump(const Duration(milliseconds: 3500));
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.activeTimerCode, isNull);
+    });
+
+    testWidgets(
+        'OFF is applied immediately when the persisted timer already expired '
+        '(expected shutdown, no confirm round-trip)', (tester) async {
+      // 2H timer started 2h05m ago — the fan shut itself down while we were away.
+      final started = DateTime.now()
+          .subtract(const Duration(hours: 2, minutes: 5));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      // No hold: applied on the first reply.
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.activeTimerCode, isNull);
+      expect(find.textContaining('REMAINING'), findsNothing);
+    });
+
+    // ── Live-path OFF reply: stored 0x22 must not light the chip ─────────────
+
+    testWidgets(
+        'live-path OFF reply with stored 0x22 does not show a phantom countdown',
+        (tester) async {
+      await pumpConnected(tester);
+      // Let the connect retry burst and the awaiting window fully lapse so the
+      // reply lands on the LIVE dispatch path.
+      await tester.pump(const Duration(seconds: 11));
+
+      // OFF reply whose frame [3] carries the firmware's STORED duration (2H).
+      notifyCtrl.add([...powerOff, ...speed5, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.activeTimerCode, isNull); // stored duration ≠ running countdown
+      expect(find.textContaining('REMAINING'), findsNothing);
+    });
   });
 }
