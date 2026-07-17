@@ -81,18 +81,48 @@ final connectedFanDeviceIdProvider = StateProvider<String?>((ref) => null);
 class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String> {
   late FanRepository _repo;
 
+  /// True between resetOnConnect() and the first authoritative truth (a
+  /// Machine-State apply, or an explicit user action). While set, the in-memory
+  /// state is a deliberate BLANK, not knowledge — see update().
+  bool _restorePending = false;
+
   @override
   FanState build(String deviceId) {
     _repo = ref.watch(fanRepositoryProvider);
     return _repo.getState(deviceId);
   }
 
+  /// The connect-time blank is over: firmware truth (or the user) has spoken,
+  /// so [update] may persist the live state verbatim again.
+  void markRestored() => _restorePending = false;
+
   void update(FanState s) {
     state = s;
     // Fire-and-forget persist; assert catches failures in debug builds.
-    unawaited(_repo.saveState(s).onError((e, st) {
+    unawaited(_repo.saveState(_toPersist(s)).onError((e, st) {
       assert(false, 'ObjectBox saveState failed: $e\n$st');
     }));
+  }
+
+  /// What actually reaches ObjectBox.
+  ///
+  /// resetOnConnect() blanks the operating fields for display only — the DB is
+  /// the last-known-good baseline the reconnect restore is validated against
+  /// (control_screen's _isStateDemotion reads it). But [update] writes the whole
+  /// row, so without this merge the next write of ANY kind — a watts/RPM/runtime
+  /// frame from the connect burst, which lands microseconds before the
+  /// Machine-State reply is flushed — would carry the blank into the DB and
+  /// silently disarm the guard. Telemetry knows nothing about power/mode/speed;
+  /// it must not be able to overwrite them.
+  FanState _toPersist(FanState s) {
+    if (!_restorePending) return s;
+    final base = _repo.getState(arg);
+    return s.copyWith(
+      isPowered:  base.isPowered,
+      isBoost:    base.isBoost,
+      speed:      base.speed,
+      activeMode: () => base.activeMode,
+    );
   }
 
   void updatePower(bool powered) => update(state.copyWith(isPowered: powered));
@@ -165,14 +195,21 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
 
   /// Blanks volatile connection-state fields so reconnects don't show stale
   /// data; the Machine State response restores the actual values within ~100 ms.
-  /// In-memory only (no persist): the DB keeps the last-known-good state, so an
-  /// app kill mid-connect — before the Machine State reply lands — loses
-  /// nothing. The sleep timer is deliberately NOT cleared: the countdown keeps
-  /// ticking from the persisted start time across the reconnect, and the
-  /// Machine State timer frame (0x22) then confirms it (same code keeps the
-  /// start time via updateTimer's current-state rule) or corrects it (OFF or
-  /// code 0 clears; a different code restarts from detection).
+  /// Display-only: the DB keeps the last-known-good state, so an app kill
+  /// mid-connect — before the Machine State reply lands — loses nothing.
+  ///
+  /// This assigns `state` directly rather than calling update(), and arms
+  /// [_restorePending] so that no LATER write can leak the blank into the DB
+  /// either — see [_toPersist]. Skipping update() here is not sufficient on its
+  /// own: the next telemetry frame would re-persist the whole blanked row.
+  ///
+  /// The sleep timer is deliberately NOT cleared: the countdown keeps ticking
+  /// from the persisted start time across the reconnect, and the Machine State
+  /// timer frame (0x22) then confirms it (same code keeps the start time via
+  /// updateTimer's current-state rule) or corrects it (OFF or code 0 clears; a
+  /// different code restarts from detection).
   void resetOnConnect() {
+    _restorePending = true;
     state = state.copyWith(
       isPowered:  false,
       isBoost:    false,

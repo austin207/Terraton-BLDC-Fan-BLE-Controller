@@ -500,6 +500,104 @@ void main() {
       expect(persisted.timerActivatedAt, tap);
     });
 
+    // FIELD BUG (2026-07-17): the blank outlives resetOnConnect. update() writes
+    // the whole FanState row, so the first telemetry frame after connect — the
+    // runtime reply rides the very same notification burst as the Machine-State
+    // reply — re-persists the blanked operating state. That destroys the
+    // ObjectBox baseline _isStateDemotion reads, microseconds before it reads
+    // it, so the confirm-before-demote guard is disarmed on every reconnect and
+    // a stale OFF wipes Smart + the sleep timer. Telemetry must never carry the
+    // blank into the DB.
+    test('telemetry after resetOnConnect does not persist the blank', () {
+      final repo = _FakeRepo();
+      final c = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      final tap = DateTime.now().subtract(const Duration(minutes: 5));
+      n.updatePower(true);
+      n.updateSpeed(4);
+      n.updateMode('smart');
+      n.updateTimer(0x02, activatedAt: tap);
+      n.resetOnConnect();
+
+      // The connect burst: runtime + watts + RPM land before the Machine-State
+      // reply is assembled and flushed.
+      n.updateRuntime(1234);
+      n.updateWatts(200);
+      n.updateRpm(310);
+
+      // The UI still shows the blank — that part is intended.
+      final visible = c.read(activeFanStateProvider(deviceId));
+      expect(visible.isPowered, false);
+      expect(visible.activeMode, isNull);
+      expect(visible.speed, 0);
+
+      // ...but the persisted baseline must still hold the truth from before the
+      // disconnect, or the demotion guard has nothing left to defend.
+      final persisted = repo.getState(deviceId);
+      expect(persisted.isPowered, true, reason: 'baseline poisoned: guard disarmed');
+      expect(persisted.speed, 4);
+      expect(persisted.activeMode, 'smart');
+      expect(persisted.activeTimerCode, 0x02);
+      expect(persisted.timerActivatedAt, tap);
+      // Telemetry itself must still reach the DB.
+      expect(persisted.lastRuntimeSecs, 1234);
+      expect(persisted.lastWatts, 200);
+      expect(persisted.lastRpm, 310);
+    });
+
+    test('an authoritative reply ends the restore window and persists normally', () {
+      final repo = _FakeRepo();
+      final c = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updatePower(true);
+      n.updateMode('smart');
+      n.resetOnConnect();
+
+      // Machine-State truth lands: the fan really is off now. Once applied, the
+      // restore window is over and later writes must persist verbatim — the
+      // merge must not pin the old baseline forever.
+      n.markRestored();
+      n.applyMotorStatePowerOff();
+      n.updateWatts(0);
+
+      final persisted = repo.getState(deviceId);
+      expect(persisted.isPowered, false);
+      expect(persisted.activeMode, isNull);
+      expect(persisted.lastWatts, 0);
+    });
+
+    test('the restore window pins operating fields but never the sleep timer', () {
+      final repo = _FakeRepo();
+      final c = ProviderContainer(overrides: [
+        fanRepositoryProvider.overrideWithValue(repo),
+      ]);
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updatePower(true);
+      n.updateMode('smart');
+      n.resetOnConnect();
+
+      // The Machine-State flush confirms a 4H timer while the window is still
+      // open (markRestored fires from the same apply). The timer is not an
+      // operating field, so it must persist even mid-window — otherwise the
+      // countdown the guard defends could never be written at all.
+      final tap = DateTime.now().subtract(const Duration(minutes: 10));
+      n.updateTimer(0x04, activatedAt: tap);
+
+      final persisted = repo.getState(deviceId);
+      expect(persisted.activeTimerCode, 0x04);
+      expect(persisted.timerActivatedAt, tap);
+      // ...and the operating baseline is still intact underneath it.
+      expect(persisted.isPowered, true);
+      expect(persisted.activeMode, 'smart');
+    });
+
     test('timer countdown survives an app kill and relaunch', () {
       final repo = _FakeRepo();
       final tap = DateTime.now().subtract(const Duration(minutes: 30));

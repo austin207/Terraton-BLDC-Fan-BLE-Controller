@@ -43,6 +43,19 @@ abstract final class ConnectionLogService {
   /// Raw notification bytes received from the fan (pre-reassembly).
   static void rx(List<int> bytes) => _add('RX', _hex(bytes));
 
+  /// Frames FrameStreamAssembler produced from the raw bytes, as `cmd=data`
+  /// pairs. Read against the RX line(s) above it, this is the only way to tell
+  /// a frame the fan never sent from one the assembler dropped — the raw bytes
+  /// alone cannot distinguish them, and the BLE60 splits frames mid-byte.
+  static void frames(String summary) => _add('FRM', summary);
+
+  /// Machine-State assembly + confirm-before-demote decision: the assembled
+  /// (power, speed, mode, timer) tuple, the persisted baseline it was judged
+  /// against, and the outcome (applied / held / confirmed / fallback). Without
+  /// this, a capture cannot distinguish "the reply never arrived" from "the
+  /// reply arrived and the guard held it".
+  static void machineState(String summary) => _add('MS', summary);
+
   static void _add(String kind, String message) {
     _pendingLines.add('[${DateTime.now().toIso8601String()}] $kind $message');
     _scheduleFlush();

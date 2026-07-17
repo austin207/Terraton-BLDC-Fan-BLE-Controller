@@ -9,6 +9,7 @@ import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/providers.dart';
+import 'package:terraton_fan_app/core/storage/daily_runtime_repository.dart';
 import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
@@ -21,6 +22,9 @@ import 'package:terraton_fan_app/models/usage_log.dart';
 class _MockBle            extends Mock implements BleService {}
 class _MockRepo           extends Mock implements FanRepository {}
 class _MockUsageLogRepo   extends Mock implements UsageLogRepository {}
+// The real impl needs an ObjectBox Store, so an un-overridden runtime frame
+// throws out of the notify handler and silently drops the rest of the burst.
+class _MockDailyRuntimeRepo extends Mock implements DailyRuntimeRepository {}
 
 FanDevice _testFan() => FanDevice()
   ..deviceId   = 'TT-001'
@@ -45,6 +49,7 @@ void main() {
   late _MockBle          mockBle;
   late _MockRepo         mockRepo;
   late _MockUsageLogRepo mockUsageLogRepo;
+  late _MockDailyRuntimeRepo mockDailyRuntimeRepo;
   late StreamController<BleConnectionState> stateCtrl;
   late StreamController<List<int>>          notifyCtrl;
 
@@ -52,6 +57,11 @@ void main() {
     mockBle          = _MockBle();
     mockRepo         = _MockRepo();
     mockUsageLogRepo = _MockUsageLogRepo();
+    mockDailyRuntimeRepo = _MockDailyRuntimeRepo();
+    when(() => mockDailyRuntimeRepo.upsertForDate(any(), any(), any()))
+        .thenReturn(null);
+    when(() => mockDailyRuntimeRepo.getRange(any(), any(), any()))
+        .thenReturn([]);
     stateCtrl  = StreamController<BleConnectionState>.broadcast();
     notifyCtrl = StreamController<List<int>>.broadcast();
 
@@ -108,6 +118,7 @@ void main() {
           bleServiceProvider.overrideWithValue(mockBle),
           fanRepositoryProvider.overrideWithValue(mockRepo),
           usageLogRepositoryProvider.overrideWithValue(mockUsageLogRepo),
+          dailyRuntimeRepositoryProvider.overrideWithValue(mockDailyRuntimeRepo),
         ],
         child: MaterialApp(home: ControlScreen(fan: _testFan())),
       );
@@ -651,6 +662,117 @@ void main() {
       ..activeMode       = 'smart'
       ..activeTimerCode  = 0x02
       ..timerActivatedAt = started;
+
+    // Make mockRepo round-trip like the real ObjectBox repo: saveState stores,
+    // getState returns what was stored. The default setUp stubs saveState as a
+    // no-op and getState as a constant, so the persisted baseline can never be
+    // observed changing — which is precisely why these tests stayed green while
+    // the field was broken. _isStateDemotion reads that baseline on every reply.
+    void useStatefulRepo(FanState seed) {
+      var row = seed;
+      when(() => mockRepo.getState(any())).thenAnswer((_) => row);
+      when(() => mockRepo.saveState(any())).thenAnswer((inv) async {
+        row = inv.positionalArguments[0] as FanState;
+      });
+    }
+
+    // Query Runtime reply: 55 AA 07 08 02 HH LL CRC → (0x0100)*5 = 1280 s.
+    // checksum = (0x55+0xAA+0x07+0x08+0x02+0x01+0x00) & 0xFF = 273 & 0xFF = 0x11
+    const runtime1280 = [0x55, 0xAA, 0x07, 0x08, 0x02, 0x01, 0x00, 0x11];
+
+    testWidgets(
+        'FIELD BUG: connect-burst telemetry must not poison the demotion '
+        'baseline; stale OFF is still held afterwards', (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      useStatefulRepo(runningSmartBaseline(started));
+
+      await pumpConnected(tester); // resetOnConnect blanks the UI in-memory
+
+      // The real connect burst. _connect() fires queryRuntime() immediately and
+      // starts the 3 s status poll, so runtime/watts/RPM land BEFORE the
+      // Machine-State reply is assembled — the one ordering the older tests
+      // never produced. Each of these goes through update(), which persists the
+      // whole FanState row.
+      notifyCtrl.add([...runtime1280, ...watts10, ...rpm300]);
+      await tester.pump();
+      await tester.pump();
+
+      // The last-known-good baseline must be intact: telemetry knows nothing
+      // about power/mode/speed and must not be able to overwrite them.
+      final base = mockRepo.getState('TT-001');
+      expect(base.isPowered, true, reason: 'baseline poisoned → guard disarmed');
+      expect(base.activeMode, 'smart');
+      expect(base.activeTimerCode, 0x02);
+      expect(base.timerActivatedAt, started);
+      // ...while the telemetry itself still persisted.
+      expect(base.lastRuntimeSecs, 1280);
+      expect(base.lastWatts, 10);
+
+      clearInteractions(mockBle);
+
+      // Now the stale BLE60 backlog OFF reply lands. With the baseline intact
+      // the guard sees a demotion, holds it, and re-polls instead of wiping.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      // Held, so nothing was applied and nothing was erased. (The dial is still
+      // blank from resetOnConnect — that is the restore pending, not a wipe —
+      // but the sleep timer keeps ticking and the baseline is untouched.)
+      final afterStale = mockRepo.getState('TT-001');
+      expect(afterStale.isPowered, true);
+      expect(afterStale.activeMode, 'smart');
+      expect(afterStale.activeTimerCode, 0x02);
+      expect(afterStale.timerActivatedAt, started);
+      expect(stateOf(tester).activeTimerCode, 0x02);
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
+          .called(1);
+
+      // The genuine reply confirms the running state and closes the window.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+      final s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started); // countdown continued, not restarted
+    });
+
+    testWidgets(
+        'a genuine OFF still applies after the restore window closes',
+        (tester) async {
+      // Guards the trade-off: the merge must not pin the old baseline forever.
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      useStatefulRepo(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+      // Genuine reply closes the window (markRestored fires in _applyMachineState).
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      // Fan is switched off at the remote. The first reply demotes, so it is
+      // held and re-polled; the confirming reply must land past the 300 ms
+      // same-burst window to count as confirmation rather than more of the
+      // same burst.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false);
+      expect(s.activeMode, isNull);
+      expect(s.activeTimerCode, isNull);
+      // ...and the demoted truth reached the DB, so later reconnects see it.
+      final base = mockRepo.getState('TT-001');
+      expect(base.isPowered, false);
+      expect(base.activeMode, isNull);
+    });
 
     testWidgets(
         'FIELD BUG: stale OFF reply on reconnect is held, genuine reply restores '

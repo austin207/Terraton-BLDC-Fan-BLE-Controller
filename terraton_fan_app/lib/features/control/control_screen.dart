@@ -11,6 +11,7 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
 import 'package:terraton_fan_app/core/providers.dart';
@@ -279,6 +280,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _lastWattsAt = null;
       _lastRpmAt   = null;
       _connectedFanCtrl.state = widget.fan.deviceId;
+      // Marks where a capture's restore sequence begins, and records the
+      // baseline the whole restore will be judged against.
+      final b = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
+      ConnectionLogService.event(
+        'connected; restore baseline power:${b.isPowered ? 'on' : 'off'} '
+        'speed:${b.speed} mode:${b.activeMode ?? '-'} '
+        'timer:${b.activeTimerCode ?? '-'} '
+        'since:${b.timerActivatedAt?.toIso8601String() ?? '-'}',
+      );
       // Reset volatile state so stale data from the previous session doesn't
       // persist. Motor state response corrects to actual values within ~100 ms.
       ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).resetOnConnect();
@@ -430,6 +440,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // mid-frame split can't drop the frame.
       final responses = _rxAssembler.addChunk(bytes);
       if (responses.isEmpty) return;
+      // Paired with the RX line for the same bytes, this is what makes a
+      // tester's capture readable: RX shows what the BLE60 sent, FRM shows what
+      // survived reassembly. A frame present in RX but absent here was dropped.
+      ConnectionLogService.frames(_frameSummary(responses));
 
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
@@ -742,12 +756,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // our confirm re-poll. Anything after that (or any non-demoting reply)
       // answers the poll WE sent: apply it unconditionally.
       if (_demotionSameBurst && demotes) {
+        _logMachineState(power, speed, mode, timer, 'held(same-burst)');
         _heldPower = power;
         _heldSpeed = speed;
         _heldMode  = mode;
         _heldTimer = timer;
         return;
       }
+      _logMachineState(power, speed, mode, timer, 'applied(confirms hold)');
       _cancelDemotionHold();
       _applyMachineState(power, speed, mode, timer);
       return;
@@ -757,6 +773,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // suspect. Hold it un-applied (and un-persisted), poll again; if no second
       // reply ever lands, apply the held one so a genuinely-off fan still
       // resolves. _requestMotorState re-polls to confirm.
+      _logMachineState(power, speed, mode, timer, 'HELD(demotes)+repoll');
       _demotionHeld      = true;
       _demotionSameBurst = true;
       _demotionBurstTimer?.cancel();
@@ -775,21 +792,53 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         final m = _heldMode;
         final t = _heldTimer;
         _cancelDemotionHold();
-        if (p != null) _applyMachineState(p, s, m, t);
+        if (p == null) return;
+        _logMachineState(p, s, m, t, 'applied(3s fallback, never confirmed)');
+        _applyMachineState(p, s, m, t);
       });
       _requestMotorState();
       return;
     }
     // Non-demoting reply: firmware truth confirms (or upgrades) the persisted
     // state — apply immediately.
+    _logMachineState(power, speed, mode, timer, 'applied');
     _applyMachineState(power, speed, mode, timer);
   }
 
+  /// Records an assembled reply, the persisted baseline it was judged against,
+  /// and what was done with it. This is the line that answers the question a raw
+  /// frame dump cannot: did the reply not arrive, or did the guard hold it?
+  ///
+  /// [action] is passed in by each decision branch rather than re-derived here —
+  /// a log that restates the branching logic would quietly start lying the first
+  /// time the two drift apart, and a lying log is worse than none.
+  void _logMachineState(
+      bool power, int? speed, String? mode, int? timer, String action) {
+    final base = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
+    ConnectionLogService.machineState(
+      'reply{power:${power ? 'on' : 'off'} speed:${speed ?? '-'} '
+      'mode:${mode ?? '-'} timer:${timer ?? '-'}} '
+      'base{power:${base.isPowered ? 'on' : 'off'} speed:${base.speed} '
+      'mode:${base.activeMode ?? '-'} timer:${base.activeTimerCode ?? '-'} '
+      'since:${base.timerActivatedAt?.toIso8601String() ?? '-'}} '
+      '=> $action',
+    );
+  }
+
+  static String _hex2(int b) => b.toRadixString(16).padLeft(2, '0').toUpperCase();
+
+  /// Assembled frames as `cmd=data` pairs, e.g. `02=01 21=04 22=02`.
+  static String _frameSummary(List<FanResponse> rs) => rs
+      .map((r) => '${_hex2(r.command)}='
+          '${r.data.isEmpty ? '-' : r.data.map(_hex2).join()}')
+      .join(' ');
+
   /// True when an assembled Machine-State reply contradicts the persisted
-  /// last-known-good state in the demoting direction. The baseline is read
-  /// from ObjectBox, NOT the live provider — resetOnConnect() blanks the
-  /// in-memory state without persisting, so the DB still holds the truth from
-  /// before the disconnect.
+  /// last-known-good state in the demoting direction. The baseline is read from
+  /// ObjectBox, NOT the live provider — resetOnConnect() blanks the in-memory
+  /// state for display only, and ActiveFanStateNotifier._toPersist keeps any
+  /// write during the restore window from leaking that blank into the DB, so
+  /// the DB still holds the truth from before the disconnect.
   bool _isStateDemotion({
     required bool power,
     int? speed,
@@ -797,7 +846,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     int? timer,
   }) {
     final base = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
-    if (!base.isPowered) return false; // nothing active to lose
 
     final baseCode  = base.activeTimerCode;
     final baseStart = base.timerActivatedAt;
@@ -805,7 +853,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         DateTime.now().isBefore(
             baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
 
+    // Nothing recorded to lose — no reply can demote it, so never stall. Note
+    // this checks all three axes, not just isPowered: a row left half-blank by
+    // an older build (isPowered=false while a mode or timer is still recorded)
+    // must still be defended, or the guard stays silently disabled on exactly
+    // the devices already carrying the bug.
+    if (!base.isPowered && base.activeMode == null && !timerRunning) return false;
+
     if (!power) {
+      // The baseline already says OFF, so an OFF reply confirms it rather than
+      // demoting it — apply at once instead of stalling every connect to a fan
+      // that is genuinely off.
+      if (!base.isPowered) return false;
       // OFF is EXPECTED when the baseline sleep timer already expired while
       // disconnected — the fan shut itself down; apply without a re-poll.
       final timerExpired = baseCode != null && baseCode != 0 && baseStart != null &&
@@ -838,6 +897,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   void _applyMachineState(bool power, int? speed, String? mode, int? timer) {
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
     var received = false;
+
+    // This reply is firmware truth that has already cleared the demotion gate,
+    // so the connect-time blank is over: writes below must reach ObjectBox
+    // verbatim and become the new last-known-good baseline. (Replies that are
+    // still being confirmed never get here — they are held in _flushMachineState.)
+    notifier.markRestored();
 
     if (power == false) {
       // Machine State frame [1] = OFF: frame [2] (if present) is the firmware's
@@ -1098,6 +1163,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         // upload is independent: it runs at app startup in main.dart, gated by
         // opt-in + Wi-Fi + once-per-day, so dropping the link here doesn't
         // affect it.)
+        ConnectionLogService.event('app paused → disconnecting');
         _telemetryTimer?.cancel();
         _motorStateTimer?.cancel();
         _motorStateTimer = null;
@@ -1122,6 +1188,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         // gracefully with an 'in use by another device' status (GATT 133) when
         // another phone holds the fan — the BLE60 allows only one connection —
         // so this never steals an active connection from someone else.
+        ConnectionLogService.event('app resumed');
         if (_ble.currentState != BleConnectionState.connected) {
           unawaited(_connect());
         }
@@ -1195,6 +1262,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
+    // An explicit command is intent, so it ends the connect-time restore window:
+    // what the user asks for must persist even if the Machine-State reply is
+    // still in flight. Only user/app-initiated frames come through _send — the
+    // status/motor-state/runtime polls call _ble.writeFrame directly.
+    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).markRestored();
     // Suppress incoming power=false for 1.5 s after any powerOn command so the
     // initial motor-state response (queued before the fan receives powerOn) cannot
     // race back and override the user-initiated isPowered=true.
