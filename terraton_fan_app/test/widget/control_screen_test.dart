@@ -806,5 +806,85 @@ void main() {
       expect(s.activeTimerCode, isNull); // stored duration ≠ running countdown
       expect(find.textContaining('REMAINING'), findsNothing);
     });
+
+    // ── Confirm-before-demote on the LIVE path ────────────────────────────────
+    // The demotion guard used to run ONLY while awaiting a poll we sent. A stale
+    // BLE60 backlog OFF reply landing AFTER the awaiting window closed fell onto
+    // the live dispatch path and wiped Smart + the timer AND persisted the wipe
+    // (poisoning the baseline the guard reads) — the regression that survived
+    // every buffered-path fix. The guard now runs on every motor-state reply.
+
+    testWidgets(
+        'FIELD BUG: stale OFF reply on the LIVE path (after restore) is held, '
+        'not applied; genuine reply keeps Smart + countdown', (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+
+      // Genuine reply to the connect poll lands first and closes the awaiting
+      // window (_awaitingMotorState → false), so the next reply is dispatched on
+      // the LIVE path — exactly where the unguarded OFF wipe used to happen.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+      expect(stateOf(tester).activeMode, 'smart');
+
+      clearInteractions(mockBle);
+
+      // Stale BLE60 backlog OFF reply now arrives on the live path.
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      // Held + re-polled, NOT applied: Smart and the countdown survive.
+      var s = stateOf(tester);
+      expect(s.isPowered, true);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started);
+      expect(find.textContaining('REMAINING'), findsOneWidget);
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
+          .called(1);
+
+      // The confirm reply restores/confirms the running state.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+      s = stateOf(tester);
+      expect(s.activeMode, 'smart');
+      expect(s.activeTimerCode, 0x02);
+      expect(s.timerActivatedAt, started); // countdown continued, not restarted
+    });
+
+    testWidgets(
+        'bare live power=OFF frame (no timer) is confirmed, not applied blindly, '
+        'while Smart + timer are persisted', (tester) async {
+      final started = DateTime.now().subtract(const Duration(minutes: 30));
+      when(() => mockRepo.getState(any()))
+          .thenReturn(runningSmartBaseline(started));
+
+      await pumpConnected(tester);
+      // Close the awaiting window with a genuine reply.
+      notifyCtrl.add([...powerOn, ...modeSmart, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+      clearInteractions(mockBle);
+
+      // A lone power=OFF frame (no 0x22 → live path). Because the persisted
+      // baseline still has an active mode, it must be re-polled to confirm
+      // rather than persisting off and poisoning the baseline.
+      notifyCtrl.add([...powerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, true);       // not wiped
+      expect(s.activeMode, 'smart');   // Smart survives
+      expect(s.activeTimerCode, 0x02); // timer survives
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
+          .called(1);
+    });
   });
 }

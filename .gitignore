@@ -9,6 +9,7 @@ builds/version.json
 .wrangler/
 cloudflare/.wrangler/
 graphify-out/
+build_output.log
 
 # Local secrets — never commit
 secrets.env
