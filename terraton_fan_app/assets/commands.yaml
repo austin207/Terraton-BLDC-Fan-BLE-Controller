@@ -33,6 +33,16 @@ status_poll:
 get_motor_state:
   frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]
 
+# Vendor-formula checksum variant of get_motor_state. Terraton's protocol doc
+# defines checksum = lower byte of the frame sum excluding the header, which
+# yields 0x02 here — but the lab fan answers the 0x01 variant above
+# (hardware-verified). Newer field firmware may validate checksums and drop
+# the 0x01 frame, so reconnect sync polls alternate between both variants;
+# whichever the fan answers wins. Harmless on firmware that answers both —
+# duplicate replies simply agree.
+get_motor_state_vendor:
+  frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x02]
+
 # Special case: query cumulative fan runtime uses a fixed non-standard frame.
 # Response: 55 AA 07 08 02 HH LL CRC — runtime seconds = (HH<<8|LL) * 5.
 # Sent once on connect and every 90 s alongside motor-state polling.

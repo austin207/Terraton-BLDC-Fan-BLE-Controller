@@ -71,6 +71,15 @@ class CommandLoader {
     return List<int>.from((node['frame'] as YamlList));
   }
 
+  /// Vendor-doc checksum variant of [getMotorState] (see commands.yaml).
+  /// Falls back to the lab-verified frame when a (future remote) YAML predates
+  /// the variant — alternating polls then simply repeat the primary frame.
+  static List<int> getMotorStateVendor() {
+    final node = _safeGet(['get_motor_state_vendor']);
+    if (node == null) return getMotorState();
+    return List<int>.from((node['frame'] as YamlList));
+  }
+
   static List<int> queryRuntime() {
     final node = _safeGet(['query_runtime']);
     if (node == null) throw StateError('query_runtime missing from commands.yaml');

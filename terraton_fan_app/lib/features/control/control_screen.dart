@@ -11,6 +11,7 @@ import 'package:terraton_fan_app/core/commands/command_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
+import 'package:terraton_fan_app/core/ble/machine_state_sync.dart';
 import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
@@ -78,69 +79,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   bool   _recentlyPoweredOn      = false;
   Timer? _recentlyPoweredOnTimer;
 
-  // Set while we are waiting for the response to a getMotorState poll WE sent
-  // (on connect or via _requestMotorState). Lets the notify handler tell our own
-  // poll's echo apart from a spontaneous power frame broadcast by the remote, so
-  // the rescue poll fires for the latter but never loops on the former. Cleared
-  // when a motor-state response arrives, with a timeout as a safety net.
-  bool   _awaitingMotorState     = false;
-  Timer? _awaitingMotorStateTimer;
-
-  // Drives the post-wake motor-state poll retries (see _scheduleWakePolls).
-  // A single rescue poll is not enough when the fan was woken right after a
-  // mains power-cycle: its MCU has just rebooted and isn't ready to answer the
-  // first query, so we retry until the gear/mode is known.
-  Timer? _wakePollTimer;
-  int    _wakePollAttempts = 0;
-
-  // Drives the on-(re)connect motor-state poll retries (see _scheduleConnectPolls).
-  // Set true the moment a real motor-state response lands, so the connect poll
-  // can stop. A single connect poll is lost if the reconnect happens while the
-  // fan MCU is still booting after a mains power-cycle, leaving the dial blank.
-  Timer? _connectPollTimer;
-  int    _connectPollAttempts = 0;
-  bool   _motorStateReceived  = false;
-
-  // Confirm-before-demote (see _flushMachineState). EVERY assembled Machine-State
-  // reply is checked against the persisted last-known-good state, on every path
-  // (buffered connect/wake/mode-poll replies AND live spontaneous frames). The
-  // BLE60 buffers the MCU's UART output while no phone is connected and can flush
-  // that stale backlog (replies cut off mid-delivery by the disconnect, IR-remote
-  // broadcasts) into the new connection with valid checksums, and a just-woken
-  // MCU may answer the first query with default state. A reply that DEMOTES state
-  // relative to the persisted last-known-good (power off / active mode cleared /
-  // unexpired timer cleared) is held un-applied and the fan re-polled; the next
-  // assembled reply is applied unconditionally. Replies that confirm or upgrade
-  // the persisted state apply immediately — zero added latency on the normal
-  // path. Without this, one stale OFF (or ON+speed+timer-0) reply wiped Smart
-  // mode, the timer chip, AND the persisted timerActivatedAt within ~1 s of
-  // connecting — the 2026-07-04 field bug that survived every transport-level fix.
-  // (Earlier this guard only ran while awaiting a poll WE sent; a stale OFF on
-  // the live path still wiped state and poisoned the baseline the guard reads.)
-  bool    _demotionHeld         = false;
-  // True for ~300 ms after a demoting reply is held: further demoting frames
-  // inside this window are the tail of the same stale backlog burst, not the
-  // answer to our confirm re-poll.
-  bool    _demotionSameBurst    = false;
-  Timer?  _demotionBurstTimer;
-  bool?   _heldPower;
-  int?    _heldSpeed;
-  String? _heldMode;
-  int?    _heldTimer;
-  Timer?  _demotionFallbackTimer;
-
-  // Machine State response assembler. A getMotorState reply is always 3 frames —
-  // power (0x02), speed (0x04) OR mode (0x21), and timer (0x22) — but the BLE60
-  // bridge may split or reorder them across notifications, especially from a
-  // freshly-rebooted MCU after a mains power-cycle. Applying frames live then
-  // makes the speed/mode gate (which needs power first) drop the speed. Instead,
-  // while _awaitingMotorState we buffer these frames and apply them atomically
-  // once complete (or after a short debounce), independent of arrival order.
-  bool?   _msPower;
-  int?    _msSpeed;
-  String? _msMode;
-  int?    _msTimer;
-  Timer?  _msFlushTimer;
+  // The Machine-State retrieval engine (lib/core/ble/machine_state_sync.dart).
+  // Owns everything the six failed reconnect fixes used to spread across this
+  // widget: reply assembly, connect/wake poll retries, and the trust decision.
+  // While `_sync.engaged`, state-bearing frames are routed into it; when idle,
+  // frames dispatch live (command echoes, IR-remote broadcasts). Trust needs
+  // no DB baseline: during a connect/wake session a state applies only when
+  // two consecutively assembled replies agree across a query boundary, so a
+  // stale BLE60 backlog burst can never confirm itself — and a reply that is
+  // never confirmed is never applied (a timeout leaves the UI blank rather
+  // than promoting a suspect reply to truth).
+  late final MachineStateSync _sync;
 
   // The fan's power-on memory, captured from the most recent power-OFF Machine
   // State reply: frame [2] of an OFF reply carries the firmware's stored last
@@ -183,6 +132,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     super.initState();
     _ble = ref.read(bleServiceProvider);
     _connectedFanCtrl = ref.read(connectedFanDeviceIdProvider.notifier);
+    _sync = MachineStateSync(
+      sendPoll: (vendorChecksum) {
+        // Errors swallowed — the connection state stream surfaces any real
+        // disconnect, and the session's retries/timeout handle a lost poll.
+        unawaited(_ble
+            .writeFrame(vendorChecksum
+                ? BleFrameBuilder.getMotorStateVendor()
+                : BleFrameBuilder.getMotorState())
+            .catchError((Object _) {}));
+      },
+      apply: (t, via) =>
+          _applyMachineState(t.power, t.speed, t.mode, t.timer),
+      log: ConnectionLogService.machineState,
+    );
     WidgetsBinding.instance.addObserver(this);
     _resolvedMac = widget.fan.macAddress.isNotEmpty ? widget.fan.macAddress : null;
     if (!_isDemo) {
@@ -280,8 +243,9 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _lastWattsAt = null;
       _lastRpmAt   = null;
       _connectedFanCtrl.state = widget.fan.deviceId;
-      // Marks where a capture's restore sequence begins, and records the
-      // baseline the whole restore will be judged against.
+      // Marks where a capture's restore sequence begins. The baseline is
+      // logged for the capture's readability only — no trust decision reads
+      // it (MachineStateSync judges replies against each other instead).
       final b = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
       ConnectionLogService.event(
         'connected; restore baseline power:${b.isPowered ? 'on' : 'off'} '
@@ -296,11 +260,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       _rxAssembler.reset();
       _subscribeNotify();
       _startRuntimePoll();
-      // Pull full motor state so the dial reflects the fan's real gear/mode the
-      // moment the app reopens and reconnects. Retrying (not a single poll):
-      // if the reconnect lands while the fan MCU is still booting after a mains
-      // power-cycle, the first query is dropped and the dial would stay blank.
-      _scheduleConnectPolls();
+      // Pull full motor state so the dial reflects the fan's real gear/mode
+      // once the reply is CONFIRMED (two agreeing replies across a query
+      // boundary — see MachineStateSync). The session retries on its own: if
+      // the reconnect lands while the fan MCU is still booting after a mains
+      // power-cycle, the first polls go unanswered and the dial stays blank
+      // until real state arrives.
+      _sync.startSession('connect');
       try {
         await _ble.writeFrame(BleFrameBuilder.queryRuntime());
       } on Object catch (_) {
@@ -312,117 +278,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     } finally {
       if (mounted) _connecting = false;
     }
-  }
-
-  /// Fire-and-forget request for the fan's full motor state (power/speed/mode/
-  /// timer). Used to refresh the dial when the fan is woken via the remote and
-  /// the spontaneous frame lacks speed/mode. Errors are swallowed — the
-  /// connection state stream surfaces any real disconnect.
-  void _requestMotorState() {
-    _markAwaitingMotorState();
-    // The reply is demotion-gated in _flushMachineState (as is every assembled
-    // Machine-State reply, on any path): a stale reply that demotes the persisted
-    // Smart/timer state is held and re-confirmed before it can wipe + persist it,
-    // so a later reconnect still has something to restore. _isStateDemotion
-    // treats an OFF reply after the timer's expected expiry as expected truth, so
-    // this adds no latency to the timer-shutdown path.
-    unawaited(_ble.writeFrame(BleFrameBuilder.getMotorState()).catchError((Object _) {}));
-  }
-
-  /// Marks that we are expecting a motor-state response to a poll we just sent,
-  /// so its echo can't re-trigger another poll. The timeout is a safety net in
-  /// case the response never arrives (e.g. fan dropped mid-poll). It must be
-  /// comfortably longer than the 1.5 s retry-poll period: each retry re-arms
-  /// it, so the flag stays continuously true through a retry burst and for a
-  /// while after the final retry — a slow reply (typical from a just-rebooted
-  /// MCU or after a BT adapter cycle) is still buffered atomically instead of
-  /// falling onto the reorder-vulnerable live dispatch path.
-  void _markAwaitingMotorState() {
-    _awaitingMotorState = true;
-    _awaitingMotorStateTimer?.cancel();
-    _awaitingMotorStateTimer = Timer(const Duration(milliseconds: 3500), () {
-      _awaitingMotorState = false;
-    });
-  }
-
-  /// Polls motor state after the fan is woken by the remote, retrying until the
-  /// gear/mode is actually known.
-  ///
-  /// When mains is cut and restored, the fan MCU reboots. Pressing ON on the
-  /// remote makes the fan broadcast a bare power-ON frame (→ power button turns
-  /// green) but the just-booted MCU is not yet ready to answer a motor-state
-  /// query, so the very first rescue poll comes back without a usable speed.
-  /// A single-shot poll then leaves the dial blank forever, because the only
-  /// recurring poll (the 3 s status poll) carries watts/RPM, never speed.
-  /// Poll immediately, then retry every 1.5 s until the gear or an active mode
-  /// resolves (or the fan is switched back off), giving the MCU time to wake.
-  void _scheduleWakePolls() {
-    _wakePollTimer?.cancel();
-    _wakePollAttempts = 0;
-    _resetMachineStateBuffer();
-    _cancelDemotionHold();
-    _requestMotorState();
-    _wakePollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
-      if (!mounted || _ble.currentState != BleConnectionState.connected) {
-        t.cancel();
-        _wakePollTimer = null;
-        return;
-      }
-      final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-      // Resolved (gear or mode known) or fan turned back off — stop polling.
-      if (!s.isPowered || s.speed > 0 || s.activeMode != null) {
-        t.cancel();
-        _wakePollTimer = null;
-        return;
-      }
-      // Give the rebooted MCU ~6 s (4 retries) to become responsive, then stop.
-      if (++_wakePollAttempts > 4) {
-        t.cancel();
-        _wakePollTimer = null;
-        return;
-      }
-      _requestMotorState();
-    });
-  }
-
-  /// Fetches motor state on (re)connect, retrying until a real response lands.
-  ///
-  /// Called once per successful connect (app reopen, resume, Retry). A single
-  /// poll is fragile: if the reconnect happens right after a mains power-cycle
-  /// the fan MCU may still be booting and won't answer the first query, leaving
-  /// the dial blank until the user touches the remote. Unlike _scheduleWakePolls
-  /// we cannot use the dial state as the stop signal here — resetOnConnect() has
-  /// just blanked it to isPowered=false/speed=0, which is indistinguishable from
-  /// a genuine "fan off" until a response actually arrives. So stop on the
-  /// dedicated _motorStateReceived flag (set when any motor-state frame lands,
-  /// powered or off — either is the truth), or after a ~6 s cap.
-  void _scheduleConnectPolls() {
-    _connectPollTimer?.cancel();
-    _connectPollAttempts = 0;
-    _motorStateReceived  = false;
-    _resetMachineStateBuffer();
-    _cancelDemotionHold();
-    _requestMotorState();
-    _connectPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (t) {
-      if (!mounted || _ble.currentState != BleConnectionState.connected) {
-        t.cancel();
-        _connectPollTimer = null;
-        return;
-      }
-      // A motor-state response (on or off) has landed — we have the truth.
-      if (_motorStateReceived) {
-        t.cancel();
-        _connectPollTimer = null;
-        return;
-      }
-      // Give the rebooted MCU ~6 s (4 retries) to become responsive, then stop.
-      if (++_connectPollAttempts > 4) {
-        t.cancel();
-        _connectPollTimer = null;
-        return;
-      }
-      _requestMotorState();
-    });
   }
 
   void _subscribeNotify() {
@@ -447,159 +302,15 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
-      // A getMotorState response always contains a timer frame (0x22) alongside
-      // the power and speed/mode frames. Status-poll responses only contain
-      // watts (0x23) and RPM (0x24) — never a timer. Use this to distinguish.
-      final isMotorStateResponse =
-          responses.any((r) => BleResponseParser.parseTimer(r) != null);
-
-      // Assemble EVERY Machine-State reply atomically (see _bufferMachineState)
-      // instead of applying it live — not only replies to a poll WE sent
-      // (_awaitingMotorState), but ANY reply carrying a 0x22 frame. A Machine
-      // State reply is always 3 frames (power, speed-or-mode, timer); the BLE60
-      // bridge may split or reorder them across notifications, and — critically —
-      // a stale or spontaneous OFF reply landing on the live path used to wipe
-      // AND persist Smart + the sleep timer with no confirm-before-demote guard,
-      // which also poisoned the ObjectBox baseline the guard reads (the
-      // 2026-07-04 field bug that survived every transport-level fix). Routing
-      // all motor-state replies through the buffered flush applies the demotion
-      // guard on every path. Bare power frames WITHOUT a timer are not
-      // motor-state replies and stay on the live path below, preserving the
-      // spontaneous-remote wake-poll trigger.
-      if (_awaitingMotorState || isMotorStateResponse) {
-        _bufferMachineState(responses, notifier);
-        return;
-      }
-      for (final response in responses) {
-        final power = BleResponseParser.parsePowerState(response);
-        if (power != null) {
-          // Ignore power=false frames while _recentlyPoweredOn is set — a stale
-          // motor-state response (sent before the fan received powerOn) must not
-          // race back and cancel the user-initiated power-on.
-          if (power == false && _recentlyPoweredOn) { continue; }
-          if (power == false) {
-            // Bare power-off frame (no 0x22 timer → not a motor-state reply; a
-            // real motor-state OFF is routed through the buffered demotion guard
-            // above). If the persisted baseline still holds an active mode or an
-            // unexpired sleep timer, a lone off frame here may be a stale BLE60
-            // backlog frame — confirm with a (demotion-guarded) motor-state poll
-            // before persisting off, so it can't wipe Smart + the timer and
-            // poison the baseline. A plain powered fan (nothing to lose) powers
-            // off immediately.
-            final base =
-                ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
-            final baseCode  = base.activeTimerCode;
-            final baseStart = base.timerActivatedAt;
-            final timerRunning = baseCode != null &&
-                baseCode != 0 &&
-                baseStart != null &&
-                DateTime.now().isBefore(
-                    baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
-            if (base.isPowered && (base.activeMode != null || timerRunning)) {
-              _requestMotorState();
-              continue;
-            }
-            notifier.updatePower(false);
-            if (!_isDemo) unawaited(BleForegroundService.stop());
-          } else {
-            final wasPowered =
-                ref.read(activeFanStateProvider(widget.fan.deviceId)).isPowered;
-            notifier.updatePower(true);
-            if (!_isDemo) {
-              final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-              final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
-              unawaited(BleForegroundService.start(label));
-            }
-            // A spontaneous power-ON frame from the remote may carry no speed/
-            // mode — the dial would render blank. Pull full state so the gear/
-            // mode is restored regardless of which remote button woke the fan.
-            // !wasPowered independently breaks any loop; a retrying burst covers
-            // a just-rebooted MCU that won't answer the first query.
-            if (!wasPowered && !_awaitingMotorState) _scheduleWakePolls();
-          }
-          _updateMotorStatePoll();
-          continue;
-        }
-        final speed = BleResponseParser.parseSpeed(response);
-        if (speed != null) {
-          if (isMotorStateResponse) {
-            // Motor State frame [2] = speed. Only apply when frame [1]
-            // confirmed the fan is ON. If OFF, this speed is the hardware's
-            // last stored value — keep it as the power-on memory but do not
-            // re-light a speed dot on an inactive fan (and do not call
-            // updatePower(true)).
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            if (!s.isPowered) {
-              _offStateSpeed = speed;
-              _offStateMode  = null;
-              continue;
-            }
-            // Fan is ON: speed is the exclusive active state — clear mode flags.
-            notifier.applyMotorStateTruth(null);
-            notifier.updateSpeed(speed);
-          } else {
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            final hasPowerFrame = responses
-                .any((r) => BleResponseParser.parsePowerState(r) != null);
-            if (hasPowerFrame && (s.activeMode != null || s.isBoost)) {
-              // Firmware's 4-frame post-mains-restore status poll (02 04 23 24
-              // — power frame present, but no 0x22 timer so it isn't a Machine
-              // State reply): its 0x04 is the stored speed, not a mode exit.
-              // Don't wipe an active mode from it; defer to Machine State
-              // truth. Skipping updateSpeed too is intentional — if the fan
-              // truly dropped to a fixed speed, the requested reply applies it
-              // ~100 ms later, and speed + mode highlight together would
-              // violate the exclusive-state model.
-              _requestMotorState();
-              continue;
-            }
-            // Regular speed notification (remote or app echo). Smart, Nature,
-            // and Reverse are all incompatible with a fixed speed step — if any
-            // is active the hardware has exited the mode; clear it so the UI
-            // stays in sync.
-            notifier.updateSpeed(speed);
-            if (speed > 0) notifier.updatePower(true);
-            if (s.activeMode != null) notifier.setActiveMode(null);
-            if (s.isBoost) notifier.setBoostActive(false);
-          }
-          continue;
-        }
-        final mode = BleResponseParser.parseModeString(response);
-        if (mode != null) {
-          if (isMotorStateResponse) {
-            // Motor State frame [2] = mode. Only apply when frame [1]
-            // confirmed the fan is ON — same gate as the speed case above;
-            // when OFF, keep the stored mode as the power-on memory.
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            if (!s.isPowered) {
-              _offStateMode  = mode;
-              _offStateSpeed = null;
-              continue;
-            }
-            // Fan is ON: this mode is the exclusive active state.
-            notifier.applyMotorStateTruth(mode);
-          } else if (mode == 'reverse' &&
-                     ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode == 'reverse') {
-            // Hardware toggle model: 0x03 means "reverse active". When the remote
-            // sends 0x03 while we are already in reverse, this is an exit toggle.
-            notifier.setActiveMode(null);
-          } else {
-            notifier.updateMode(mode);
-          }
-          _updateMotorStatePoll();
-          continue;
-        }
-        final timer = BleResponseParser.parseTimer(response);
-        if (timer != null) {
-          // Unreachable in normal operation: any response carrying a 0x22 timer
-          // frame is a motor-state reply and is routed to the buffered,
-          // demotion-guarded path above. Kept as a defensive fallback for a
-          // lone spontaneous timer frame.
-          notifier.updateTimer(timer);
-          continue;
-        }
-        final watts = BleResponseParser.parsePowerWatts(response);
+      // Telemetry applies live on EVERY path — status-poll watts/RPM and the
+      // runtime reply interleave with state replies during the connect burst,
+      // and (with field-scoped persistence) can no longer touch the operating
+      // state no matter when they land.
+      var hasTelemetry = false;
+      for (final r in responses) {
+        final watts = BleResponseParser.parsePowerWatts(r);
         if (watts != null) {
+          hasTelemetry = true;
           notifier.updateWatts(watts);
           _lastWattsAt = DateTime.now();
           if (!_isDemo) {
@@ -611,9 +322,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           }
           continue;
         }
-        final rpm = BleResponseParser.parseRpm(response);
-        if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); continue; }
-        final runtimeSecs = BleResponseParser.parseRuntimeSeconds(response);
+        final rpm = BleResponseParser.parseRpm(r);
+        if (rpm != null) {
+          hasTelemetry = true;
+          notifier.updateRpm(rpm);
+          _lastRpmAt = DateTime.now();
+          continue;
+        }
+        final runtimeSecs = BleResponseParser.parseRuntimeSeconds(r);
         if (runtimeSecs != null) {
           notifier.updateRuntime(runtimeSecs);
           final now = DateTime.now();
@@ -625,204 +341,154 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         }
       }
 
-      // The response to a poll we sent has now been fully applied — stop
-      // suppressing the rescue poll so a later spontaneous remote frame is
-      // honoured. (Done after the loop so the echo's own power frame, processed
-      // above, still saw the flag set.)
-      if (isMotorStateResponse) {
-        _awaitingMotorState = false;
-        _awaitingMotorStateTimer?.cancel();
-        // Tells _scheduleConnectPolls the fan's real state has arrived, so the
-        // on-connect retry loop can stop.
-        _motorStateReceived = true;
+      // State-bearing frames (power / speed / mode / timer), in arrival order.
+      final stateFrames = <SyncFrame>[];
+      for (final r in responses) {
+        final power = BleResponseParser.parsePowerState(r);
+        if (power != null) {
+          // Ignore power=false while _recentlyPoweredOn — a stale motor-state
+          // response (queued before the fan received powerOn) must not race
+          // back and cancel the user-initiated power-on.
+          if (power == false && _recentlyPoweredOn) continue;
+          stateFrames.add(SyncFrame.power(power));
+          continue;
+        }
+        final speed = BleResponseParser.parseSpeed(r);
+        if (speed != null) { stateFrames.add(SyncFrame.speed(speed)); continue; }
+        final mode = BleResponseParser.parseModeString(r);
+        if (mode != null) { stateFrames.add(SyncFrame.mode(mode)); continue; }
+        final timer = BleResponseParser.parseTimer(r);
+        if (timer != null) stateFrames.add(SyncFrame.timer(timer));
       }
+      if (stateFrames.isEmpty) return;
+
+      // While the sync engine is engaged (connect/wake session, or a
+      // steady-state poll in flight) it assembles these frames atomically and
+      // decides when they may be applied. When idle, frames dispatch live —
+      // they are command echoes or spontaneous IR-remote broadcasts, which
+      // carry no backlog risk in steady state.
+      if (_sync.engaged) {
+        _sync.addFrames(stateFrames, chunkHasTelemetry: hasTelemetry);
+        return;
+      }
+      _dispatchLive(stateFrames, hasTelemetry, notifier);
     });
     unawaited(old?.cancel() ?? Future<void>.value());
   }
 
-  /// Collects the frames of a Machine State (getMotorState) reply we are awaiting
-  /// into the _ms* buffer, then flushes them atomically. Power/speed/mode/timer
-  /// frames are buffered (frame [2] is speed OR mode — mutually exclusive, so the
-  /// latest of the two wins); watts/RPM/runtime frames are applied live because
-  /// they are status-poll telemetry that interleaves during the connect burst.
-  void _bufferMachineState(List<FanResponse> responses, ActiveFanStateNotifier notifier) {
-    var gotMachineFrame = false;
-    for (final r in responses) {
-      final power = BleResponseParser.parsePowerState(r);
+  /// Steady-state dispatch for state frames arriving while the sync engine is
+  /// idle: command echoes and spontaneous IR-remote broadcasts. A chunk shaped
+  /// like a FULL Machine-State reply (power + 0x22 timer) — e.g. a late reply
+  /// landing after its await window, or a spontaneous full broadcast — is
+  /// applied atomically instead of per-frame, so its stored-speed frame can
+  /// never re-light a fan its own power frame just reported OFF.
+  void _dispatchLive(
+    List<SyncFrame> frames,
+    bool hasTelemetry,
+    ActiveFanStateNotifier notifier,
+  ) {
+    final hasPowerFrame = frames.any((f) => f.power != null);
+    final hasTimerFrame = frames.any((f) => f.timer != null);
+    if (hasPowerFrame && hasTimerFrame) {
+      bool? power;
+      int? speed;
+      String? mode;
+      int? timer;
+      for (final f in frames) {
+        if (f.power != null) power = f.power;
+        if (f.speed != null) { speed = f.speed; mode = null; }
+        if (f.mode != null) { mode = f.mode; speed = null; }
+        if (f.timer != null) timer = f.timer;
+      }
+      _applyMachineState(power!, speed, mode, timer);
+      return;
+    }
+    // A power-OFF frame makes any speed/mode in the same chunk the firmware's
+    // STORED memory (frame [2] of an OFF reply), never live state.
+    final chunkHasOff = frames.any((f) => f.power == false);
+    for (final f in frames) {
+      final power = f.power;
       if (power != null) {
-        // Respect the post-power-on suppression window: a stale power=OFF frame
-        // must not cancel a user-initiated power-on.
-        if (!(power == false && _recentlyPoweredOn)) _msPower = power;
-        gotMachineFrame = true;
-        continue;
-      }
-      final speed = BleResponseParser.parseSpeed(r);
-      if (speed != null) {
-        // A genuine Machine State 0x04 arrives alongside 0x22, never with
-        // watts/RPM. A 0x04 riding a telemetry burst (the firmware's 4-frame
-        // post-mains-restore status poll: 02 04 23 24) is the stored speed,
-        // not frame [2] — don't let it null a mode already buffered from the
-        // real reply.
-        final telemetryBurst = responses.any((x) =>
-            BleResponseParser.parsePowerWatts(x) != null ||
-            BleResponseParser.parseRpm(x) != null);
-        if (!(_msMode != null && telemetryBurst)) {
-          _msSpeed = speed;
-          _msMode  = null;
+        if (!power) {
+          // Spontaneous OFF (IR remote). Genuine in steady state — the BLE60's
+          // stale backlog only exists at connect time, where a session is
+          // engaged and everything is agreement-gated. Applying immediately
+          // restores instant remote-OFF feedback. Full OFF semantics: an off
+          // fan has no speed/mode/countdown.
+          notifier.applyMotorStatePowerOff();
+          notifier.updateTimer(0);
+          if (!_isDemo) unawaited(BleForegroundService.stop());
+        } else {
+          final wasPowered =
+              ref.read(activeFanStateProvider(widget.fan.deviceId)).isPowered;
+          notifier.updatePower(true);
+          if (!_isDemo) {
+            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+            final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
+            unawaited(BleForegroundService.start(label));
+          }
+          // A spontaneous power-ON from the remote may carry no speed/mode —
+          // run a wake session so the dial fills with confirmed state (a
+          // just-rebooted MCU won't answer the first poll; the session
+          // retries). !wasPowered breaks any loop.
+          if (!wasPowered) _sync.startSession('remote wake');
         }
-        gotMachineFrame = true;
+        _updateMotorStatePoll();
         continue;
       }
-      final mode = BleResponseParser.parseModeString(r);
-      if (mode != null) { _msMode = mode; _msSpeed = null; gotMachineFrame = true; continue; }
-      final timer = BleResponseParser.parseTimer(r);
-      if (timer != null) { _msTimer = timer; gotMachineFrame = true; continue; }
-
-      // Telemetry frames stay live so watts/RPM/runtime don't stall mid-burst.
-      final watts = BleResponseParser.parsePowerWatts(r);
-      if (watts != null) { notifier.updateWatts(watts); _lastWattsAt = DateTime.now(); continue; }
-      final rpm = BleResponseParser.parseRpm(r);
-      if (rpm != null) { notifier.updateRpm(rpm); _lastRpmAt = DateTime.now(); continue; }
-      final runtimeSecs = BleResponseParser.parseRuntimeSeconds(r);
-      if (runtimeSecs != null) {
-        notifier.updateRuntime(runtimeSecs);
-        final now = DateTime.now();
-        ref.read(dailyRuntimeRepositoryProvider).upsertForDate(
-          widget.fan.deviceId,
-          DateTime(now.year, now.month, now.day),
-          runtimeSecs,
-        );
+      final speed = f.speed;
+      if (speed != null) {
+        if (chunkHasOff) {
+          // Stored memory riding an OFF frame — keep for the Power ON restore,
+          // never light a dot on an inactive fan.
+          _offStateSpeed = speed;
+          _offStateMode  = null;
+          continue;
+        }
+        final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+        if (hasPowerFrame && hasTelemetry && !hasTimerFrame &&
+            (s.activeMode != null || s.isBoost)) {
+          // Firmware's 4-frame post-mains-restore status poll (02 04 23 24 —
+          // power frame present but no 0x22): its 0x04 is the STORED speed,
+          // not a mode exit. Don't wipe an active mode from it — fetch real
+          // state instead (single steady-state poll, applied on assembly).
+          _sync.requestOnce('status-poll stored-speed vs active mode');
+          continue;
+        }
+        // Regular speed notification (remote or app echo). Smart, Nature and
+        // Reverse are all incompatible with a fixed speed step — if any is
+        // active the hardware has exited the mode; clear it to stay in sync.
+        notifier.updateSpeed(speed);
+        if (speed > 0) notifier.updatePower(true);
+        if (s.activeMode != null) notifier.setActiveMode(null);
+        if (s.isBoost) notifier.setBoostActive(false);
+        continue;
+      }
+      final mode = f.mode;
+      if (mode != null) {
+        if (chunkHasOff) {
+          _offStateMode  = mode;
+          _offStateSpeed = null;
+          continue;
+        }
+        if (mode == 'reverse' &&
+            ref.read(activeFanStateProvider(widget.fan.deviceId)).activeMode ==
+                'reverse') {
+          // Hardware toggle model: 0x03 means "reverse active". When the
+          // remote sends 0x03 while we are already in reverse, it's an exit.
+          notifier.setActiveMode(null);
+        } else {
+          notifier.updateMode(mode);
+        }
+        _updateMotorStatePoll();
+        continue;
+      }
+      final timer = f.timer;
+      if (timer != null) {
+        // Timer command echo (user tap) or a spontaneous remote-set timer.
+        notifier.updateTimer(timer);
       }
     }
-    if (!gotMachineFrame) return;
-
-    // All three frames present → apply now. Otherwise debounce briefly to let
-    // split/out-of-order frames from the same reply catch up.
-    if (_machineStateComplete) {
-      _flushMachineState();
-    } else {
-      _msFlushTimer?.cancel();
-      _msFlushTimer = Timer(const Duration(milliseconds: 300), _flushMachineState);
-    }
-  }
-
-  /// True once all 3 frames of the reply are buffered: power, frame [2]
-  /// (speed or mode), and timer. An OFF reply waits for the full set too —
-  /// its frame [2] is the firmware's stored last state (the power-on memory),
-  /// which must be captured before flushing. A genuinely short reply still
-  /// flushes via the 300 ms debounce.
-  bool get _machineStateComplete {
-    if (_msPower == null) return false;
-    return (_msSpeed != null || _msMode != null) && _msTimer != null;
-  }
-
-  /// Flushes the assembled Machine State, atomically and independent of the
-  /// order or notification-splitting of the frames that built it. A reply that
-  /// demotes the persisted last-known-good state is held and re-polled instead
-  /// of applied — see the confirm-before-demote field-block comment.
-  void _flushMachineState() {
-    _msFlushTimer?.cancel();
-    _msFlushTimer = null;
-    if (!mounted) { _resetMachineStateBuffer(); return; }
-
-    final power = _msPower;
-    // No power frame yet — cannot decide. Keep the buffer so a later power frame
-    // in the same retry burst completes it; leave the retry polls running.
-    if (power == null) return;
-
-    final speed = _msSpeed;
-    final mode  = _msMode;
-    final timer = _msTimer;
-    _resetMachineStateBuffer();
-
-    // Confirm-before-demote — applied to EVERY assembled reply, not just replies
-    // to a poll we sent. A reply that demotes the persisted last-known-good state
-    // (power off, active mode → plain speed, or an unexpired timer → none) is
-    // suspect on any path: the BLE60 can flush a stale UART backlog into a fresh
-    // connection, a just-woken MCU can answer with default state, and a
-    // spontaneous frame can arrive after the awaiting window has closed. Such a
-    // reply is held un-applied (and un-persisted) and the fan re-polled; the next
-    // assembled reply is applied unconditionally. Replies that confirm or upgrade
-    // the persisted state apply immediately. Checking demotion universally (not
-    // only while _needsDemotionConfirm) is what stops a lone live-path OFF from
-    // wiping Smart + the timer and poisoning the baseline the guard itself reads.
-    final demotes =
-        _isStateDemotion(power: power, speed: speed, mode: mode, timer: timer);
-    if (_demotionHeld) {
-      // A demoting reply is on hold and another assembled reply has arrived.
-      // A stale BLE60 backlog flushes as one burst, so demoting frames landing
-      // within ~300 ms of the hold are part of the SAME burst — refresh the
-      // held values (later frames are newer) and keep waiting for the answer to
-      // our confirm re-poll. Anything after that (or any non-demoting reply)
-      // answers the poll WE sent: apply it unconditionally.
-      if (_demotionSameBurst && demotes) {
-        _logMachineState(power, speed, mode, timer, 'held(same-burst)');
-        _heldPower = power;
-        _heldSpeed = speed;
-        _heldMode  = mode;
-        _heldTimer = timer;
-        return;
-      }
-      _logMachineState(power, speed, mode, timer, 'applied(confirms hold)');
-      _cancelDemotionHold();
-      _applyMachineState(power, speed, mode, timer);
-      return;
-    }
-    if (demotes) {
-      // Reply contradicts the persisted state in the demoting direction —
-      // suspect. Hold it un-applied (and un-persisted), poll again; if no second
-      // reply ever lands, apply the held one so a genuinely-off fan still
-      // resolves. _requestMotorState re-polls to confirm.
-      _logMachineState(power, speed, mode, timer, 'HELD(demotes)+repoll');
-      _demotionHeld      = true;
-      _demotionSameBurst = true;
-      _demotionBurstTimer?.cancel();
-      _demotionBurstTimer = Timer(const Duration(milliseconds: 300), () {
-        _demotionSameBurst = false;
-      });
-      _heldPower = power;
-      _heldSpeed = speed;
-      _heldMode  = mode;
-      _heldTimer = timer;
-      _demotionFallbackTimer?.cancel();
-      _demotionFallbackTimer = Timer(const Duration(seconds: 3), () {
-        if (!mounted || !_demotionHeld) return;
-        final p = _heldPower;
-        final s = _heldSpeed;
-        final m = _heldMode;
-        final t = _heldTimer;
-        _cancelDemotionHold();
-        if (p == null) return;
-        _logMachineState(p, s, m, t, 'applied(3s fallback, never confirmed)');
-        _applyMachineState(p, s, m, t);
-      });
-      _requestMotorState();
-      return;
-    }
-    // Non-demoting reply: firmware truth confirms (or upgrades) the persisted
-    // state — apply immediately.
-    _logMachineState(power, speed, mode, timer, 'applied');
-    _applyMachineState(power, speed, mode, timer);
-  }
-
-  /// Records an assembled reply, the persisted baseline it was judged against,
-  /// and what was done with it. This is the line that answers the question a raw
-  /// frame dump cannot: did the reply not arrive, or did the guard hold it?
-  ///
-  /// [action] is passed in by each decision branch rather than re-derived here —
-  /// a log that restates the branching logic would quietly start lying the first
-  /// time the two drift apart, and a lying log is worse than none.
-  void _logMachineState(
-      bool power, int? speed, String? mode, int? timer, String action) {
-    final base = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
-    ConnectionLogService.machineState(
-      'reply{power:${power ? 'on' : 'off'} speed:${speed ?? '-'} '
-      'mode:${mode ?? '-'} timer:${timer ?? '-'}} '
-      'base{power:${base.isPowered ? 'on' : 'off'} speed:${base.speed} '
-      'mode:${base.activeMode ?? '-'} timer:${base.activeTimerCode ?? '-'} '
-      'since:${base.timerActivatedAt?.toIso8601String() ?? '-'}} '
-      '=> $action',
-    );
   }
 
   static String _hex2(int b) => b.toRadixString(16).padLeft(2, '0').toUpperCase();
@@ -833,76 +499,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           '${r.data.isEmpty ? '-' : r.data.map(_hex2).join()}')
       .join(' ');
 
-  /// True when an assembled Machine-State reply contradicts the persisted
-  /// last-known-good state in the demoting direction. The baseline is read from
-  /// ObjectBox, NOT the live provider — resetOnConnect() blanks the in-memory
-  /// state for display only, and ActiveFanStateNotifier._toPersist keeps any
-  /// write during the restore window from leaking that blank into the DB, so
-  /// the DB still holds the truth from before the disconnect.
-  bool _isStateDemotion({
-    required bool power,
-    int? speed,
-    String? mode,
-    int? timer,
-  }) {
-    final base = ref.read(fanRepositoryProvider).getState(widget.fan.deviceId);
-
-    final baseCode  = base.activeTimerCode;
-    final baseStart = base.timerActivatedAt;
-    final timerRunning = baseCode != null && baseCode != 0 && baseStart != null &&
-        DateTime.now().isBefore(
-            baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
-
-    // Nothing recorded to lose — no reply can demote it, so never stall. Note
-    // this checks all three axes, not just isPowered: a row left half-blank by
-    // an older build (isPowered=false while a mode or timer is still recorded)
-    // must still be defended, or the guard stays silently disabled on exactly
-    // the devices already carrying the bug.
-    if (!base.isPowered && base.activeMode == null && !timerRunning) return false;
-
-    if (!power) {
-      // The baseline already says OFF, so an OFF reply confirms it rather than
-      // demoting it — apply at once instead of stalling every connect to a fan
-      // that is genuinely off.
-      if (!base.isPowered) return false;
-      // OFF is EXPECTED when the baseline sleep timer already expired while
-      // disconnected — the fan shut itself down; apply without a re-poll.
-      final timerExpired = baseCode != null && baseCode != 0 && baseStart != null &&
-          !DateTime.now().isBefore(
-              baseStart.add(Duration(hours: _timerCodeToHours(baseCode))));
-      return !timerExpired;
-    }
-    // Baseline had an active mode; reply reports a plain speed instead.
-    if (base.activeMode != null && mode == null && speed != null) return true;
-    // Baseline had an unexpired sleep timer; reply explicitly reports none.
-    // (A missing 0x22 frame is neutral — applying it never clears the timer.)
-    if (timerRunning && timer == 0) return true;
-    return false;
-  }
-
-  void _cancelDemotionHold() {
-    _demotionFallbackTimer?.cancel();
-    _demotionFallbackTimer = null;
-    _demotionBurstTimer?.cancel();
-    _demotionBurstTimer = null;
-    _demotionHeld      = false;
-    _demotionSameBurst = false;
-    _heldPower = null;
-    _heldSpeed = null;
-    _heldMode  = null;
-    _heldTimer = null;
-  }
-
-  /// Applies an assembled Machine State to the fan state atomically.
+  /// Applies a state the sync engine has released — either the agreement of a
+  /// connect/wake session or the single reply to a steady-state poll. The
+  /// engine never releases a power-less fragment or a bare ON, so this method
+  /// always has a complete decision to render.
   void _applyMachineState(bool power, int? speed, String? mode, int? timer) {
+    if (!mounted) return;
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
-    var received = false;
-
-    // This reply is firmware truth that has already cleared the demotion gate,
-    // so the connect-time blank is over: writes below must reach ObjectBox
-    // verbatim and become the new last-known-good baseline. (Replies that are
-    // still being confirmed never get here — they are held in _flushMachineState.)
-    notifier.markRestored();
 
     if (power == false) {
       // Machine State frame [1] = OFF: frame [2] (if present) is the firmware's
@@ -918,7 +521,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // (frame [3] of an OFF reply may carry a stale stored value).
       notifier.updateTimer(0);
       if (!_isDemo) unawaited(BleForegroundService.stop());
-      received = true; // OFF is complete, authoritative truth.
     } else {
       // Fan is running — any previously captured memory is now stale.
       _offStateSpeed = null;
@@ -932,52 +534,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         notifier.applyMotorStateTruth(null);
         notifier.updateSpeed(speed);
       }
+      // A reply without a 0x22 frame is NEUTRAL on the timer (newer firmware
+      // per the vendor doc reports no timer field at all): the persisted
+      // countdown keeps ticking. Only an explicit code — including 0 — may
+      // change it.
       if (timer != null) notifier.updateTimer(timer);
-      // Complete only when the operating state (speed or mode) AND the timer
-      // are known. A bare power=ON (MCU still booting) — or a reply whose
-      // timer frame went missing — leaves the retry polls running to fill in
-      // the gap; a getMotorState reply always carries a 0x22 frame, so with
-      // frame reassembly in place the timer condition is pure insurance.
-      final stateKnown = speed != null || mode != null;
-      received = stateKnown && timer != null;
-      if (stateKnown && !_isDemo) {
+      if (!_isDemo) {
         final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
         unawaited(BleForegroundService.start(
           s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running',
         ));
       }
-      // A bare power=ON with no speed/mode — a spontaneous remote wake, or a
-      // still-booting MCU — must kick the retry burst so the dial doesn't stay
-      // blank. (Before routing all motor-state replies through this path, the
-      // live handler did this via _scheduleWakePolls.) Skip when a connect/wake
-      // poll burst is already running (it will re-poll) or the dial already
-      // shows a speed/mode.
-      if (!stateKnown &&
-          _connectPollTimer == null &&
-          _wakePollTimer == null) {
-        final cur = ref.read(activeFanStateProvider(widget.fan.deviceId));
-        if (cur.speed == 0 && cur.activeMode == null) _scheduleWakePolls();
-      }
     }
 
-    _resetMachineStateBuffer();
     _updateMotorStatePoll();
-
-    if (received) {
-      _awaitingMotorState = false;
-      _awaitingMotorStateTimer?.cancel();
-      // Stops _scheduleConnectPolls / _scheduleWakePolls — the truth has landed.
-      _motorStateReceived = true;
-    }
-  }
-
-  void _resetMachineStateBuffer() {
-    _msFlushTimer?.cancel();
-    _msFlushTimer = null;
-    _msPower = null;
-    _msSpeed = null;
-    _msMode  = null;
-    _msTimer = null;
   }
 
   /// Sends Power ON and, when the fan's power-on memory was captured from an
@@ -1023,8 +593,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
     // Fetch the firmware's real post-power-on state. The _recentlyPoweredOn
     // window (set by _send for 'Power ON…' labels) suppresses any stale
-    // power=OFF frame that races back during the first ~1.5 s.
-    if (!_isDemo) _scheduleWakePolls();
+    // power=OFF frame that races back during the first ~1.5 s. Started AFTER
+    // the _send calls above — _send cancels any engaged sync, so the order
+    // matters.
+    if (!_isDemo) _sync.startSession('post power-on restore');
   }
 
   /// (Re)schedules a Machine State fetch just after the sleep timer's expected
@@ -1051,11 +623,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     if (delay.isNegative) delay = const Duration(seconds: 2);
     _timerExpirySyncTimer = Timer(delay, () {
       if (!mounted || _ble.currentState != BleConnectionState.connected) return;
-      _requestMotorState();
+      _sync.requestOnce('sleep-timer expiry check');
       _timerExpirySyncTimer = Timer(const Duration(seconds: 10), () {
         if (!mounted || _ble.currentState != BleConnectionState.connected) return;
         final cur = ref.read(activeFanStateProvider(widget.fan.deviceId));
-        if (cur.isPowered && cur.activeTimerCode != null) _requestMotorState();
+        if (cur.isPowered && cur.activeTimerCode != null) {
+          _sync.requestOnce('sleep-timer expiry retry');
+        }
       });
     });
   }
@@ -1096,11 +670,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _motorStateTimer = null;
         return;
       }
-      // Route through _requestMotorState so the reply is assembled atomically
-      // (see _bufferMachineState) rather than hitting the ordering-sensitive
+      // Route through the sync engine so the reply is assembled atomically
+      // rather than hitting the ordering-sensitive
       // live gate — these autonomous modes change speed, so a dropped frame 2
       // would leave the dial stale.
-      _requestMotorState();
+      _sync.requestOnce('90s mode poll');
     });
   }
 
@@ -1138,12 +712,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _lastRpmAt = null;
       }
 
-      // Normally returns 2 frames (0x23 watts + 0x24 RPM).
-      // Exception: the FIRST poll after the fan is freshly powered on returns 4 frames —
-      // 0x02 (power), 0x04 (speed), 0x23 (watts), 0x24 (RPM) — so the fan can restore
-      // state that may reset when disconnected from mains. _subscribeNotify dispatches
-      // all four frame types; no special casing needed here.
+      // Normally returns 2 frames (0x23 watts + 0x24 RPM) on lab firmware.
+      // Exceptions: the first poll after a fresh power-on returns 4 frames
+      // (0x02 power, 0x04 speed, 0x23, 0x24), and newer field firmware may
+      // report state in EVERY status reply (the vendor protocol doc specifies
+      // ON/OFF + mode/speed in the status response). Counting the poll as a
+      // state query lets such a reply confirm a sync-session candidate.
       try {
+        _sync.noteExternalStateQuery();
         await _ble.writeFrame(BleFrameBuilder.statusPoll());
         if (!mounted) return;
       } on Object catch (_) {
@@ -1169,14 +745,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _motorStateTimer = null;
         _runtimeTimer?.cancel();
         _runtimeTimer = null;
-        _wakePollTimer?.cancel();
-        _wakePollTimer = null;
-        _connectPollTimer?.cancel();
-        _connectPollTimer = null;
-        _awaitingMotorState = false;
-        _awaitingMotorStateTimer?.cancel();
-        _resetMachineStateBuffer();
-        _cancelDemotionHold();
+        _sync.cancel('app paused');
         _rxAssembler.reset();
         _timerExpirySyncTimer?.cancel();
         _timerExpirySyncTimer = null;
@@ -1210,12 +779,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _expiryTimer?.cancel();
     _expiryOnceTimer?.cancel();
     _recentlyPoweredOnTimer?.cancel();
-    _awaitingMotorStateTimer?.cancel();
-    _wakePollTimer?.cancel();
-    _connectPollTimer?.cancel();
-    _msFlushTimer?.cancel();
-    _demotionFallbackTimer?.cancel();
-    _demotionBurstTimer?.cancel();
+    _sync.dispose();
     _timerExpirySyncTimer?.cancel();
     unawaited(_notifySub?.cancel() ?? Future<void>.value());
     unawaited(BleForegroundService.stop());
@@ -1262,11 +826,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       return;
     }
     _debug.value = _DebugSnapshot(sentFrame: frame, sentLabel: label);
-    // An explicit command is intent, so it ends the connect-time restore window:
-    // what the user asks for must persist even if the Machine-State reply is
-    // still in flight. Only user/app-initiated frames come through _send — the
-    // status/motor-state/runtime polls call _ble.writeFrame directly.
-    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).markRestored();
+    // An explicit command is user intent — it outranks any in-flight sync.
+    // Cancelling stops the command's own echo from being swallowed into a
+    // half-assembled candidate; the echo then applies on the live path. Only
+    // user/app-initiated frames come through _send — the status/motor-state/
+    // runtime polls call _ble.writeFrame directly.
+    _sync.cancel('user command${label.isEmpty ? '' : ': $label'}');
     // Suppress incoming power=false for 1.5 s after any powerOn command so the
     // initial motor-state response (queued before the fan receives powerOn) cannot
     // race back and override the user-initiated isPowered=true.

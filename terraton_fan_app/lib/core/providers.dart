@@ -81,53 +81,65 @@ final connectedFanDeviceIdProvider = StateProvider<String?>((ref) => null);
 class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String> {
   late FanRepository _repo;
 
-  /// True between resetOnConnect() and the first authoritative truth (a
-  /// Machine-State apply, or an explicit user action). While set, the in-memory
-  /// state is a deliberate BLANK, not knowledge — see update().
-  bool _restorePending = false;
-
   @override
   FanState build(String deviceId) {
     _repo = ref.watch(fanRepositoryProvider);
     return _repo.getState(deviceId);
   }
 
-  /// The connect-time blank is over: firmware truth (or the user) has spoken,
-  /// so [update] may persist the live state verbatim again.
-  void markRestored() => _restorePending = false;
+  // ── Persistence ────────────────────────────────────────────────────────────
+  // Every mutator persists ONLY its own field group through FanRepository's
+  // scoped writers. There is deliberately no whole-row persist: the old
+  // update() wrote the entire FanState on every mutation, so any write that
+  // followed resetOnConnect()'s display blank — a watts or runtime frame from
+  // the connect burst — carried the blank into ObjectBox and destroyed the
+  // last-known-good state the reconnect logic depended on. Scoped writes make
+  // that bug class unexpressible rather than guarded-against.
 
-  void update(FanState s) {
-    state = s;
-    // Fire-and-forget persist; assert catches failures in debug builds.
-    unawaited(_repo.saveState(_toPersist(s)).onError((e, st) {
-      assert(false, 'ObjectBox saveState failed: $e\n$st');
+  /// Fire-and-forget persist; the assert surfaces failures in debug builds.
+  void _persist(Future<void> op) {
+    unawaited(op.onError((e, st) {
+      assert(false, 'ObjectBox persist failed: $e\n$st');
     }));
   }
 
-  /// What actually reaches ObjectBox.
-  ///
-  /// resetOnConnect() blanks the operating fields for display only — the DB is
-  /// the last-known-good baseline the reconnect restore is validated against
-  /// (control_screen's _isStateDemotion reads it). But [update] writes the whole
-  /// row, so without this merge the next write of ANY kind — a watts/RPM/runtime
-  /// frame from the connect burst, which lands microseconds before the
-  /// Machine-State reply is flushed — would carry the blank into the DB and
-  /// silently disarm the guard. Telemetry knows nothing about power/mode/speed;
-  /// it must not be able to overwrite them.
-  FanState _toPersist(FanState s) {
-    if (!_restorePending) return s;
-    final base = _repo.getState(arg);
-    return s.copyWith(
-      isPowered:  base.isPowered,
-      isBoost:    base.isBoost,
-      speed:      base.speed,
-      activeMode: () => base.activeMode,
-    );
+  void _persistOperating() => _persist(_repo.saveOperatingState(
+        arg,
+        isPowered:  state.isPowered,
+        isBoost:    state.isBoost,
+        speed:      state.speed,
+        activeMode: state.activeMode,
+      ));
+
+  void _persistTimer() => _persist(_repo.saveTimerState(
+        arg,
+        activeTimerCode:  state.activeTimerCode,
+        timerActivatedAt: state.timerActivatedAt,
+      ));
+
+  void _persistTelemetry() => _persist(_repo.saveTelemetry(
+        arg,
+        lastWatts:       state.lastWatts,
+        lastRpm:         state.lastRpm,
+        lastRuntimeSecs: state.lastRuntimeSecs,
+      ));
+
+  void _persistLighting() => _persist(_repo.saveLighting(
+        arg,
+        colorType:  state.lastLightColorType,
+        brightness: state.lastLightBrightness,
+        isOn:       state.lastLightIsOn,
+      ));
+
+  void updatePower(bool powered) {
+    state = state.copyWith(isPowered: powered);
+    _persistOperating();
   }
 
-  void updatePower(bool powered) => update(state.copyWith(isPowered: powered));
-
-  void updateSpeed(int speed) => update(state.copyWith(speed: speed));
+  void updateSpeed(int speed) {
+    state = state.copyWith(speed: speed);
+    _persistOperating();
+  }
 
   // Accepts the mode name string from BleResponseParser.parseModeString.
   // Boost is mutually exclusive with ALL modes (Nature, Smart, Reverse) —
@@ -141,24 +153,25 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
         // is running, so mark it powered (a Boost from the remote must ungrey
         // the UI and turn the power button green). Boost replaces any active
         // mode highlight — including Reverse.
-        update(state.copyWith(
+        state = state.copyWith(
           isPowered: true,
           isBoost: true,
           activeMode: () => null,
-        ));
+        );
       case 'nature':
         // Nature is mutually exclusive with boost. Active mode ⇒ powered.
-        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'nature'));
+        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'nature');
       case 'smart':
         // Smart is mutually exclusive with boost; clear isBoost. Active mode ⇒ powered.
-        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'smart'));
+        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'smart');
       case null:
         // Fan reported no active mode — clear both. No power assumption here.
-        update(state.copyWith(isBoost: false, activeMode: () => null));
+        state = state.copyWith(isBoost: false, activeMode: () => null);
       default:
         // 'reverse' — clears isBoost (symmetric exclusivity). Active mode ⇒ powered.
-        update(state.copyWith(isPowered: true, isBoost: false, activeMode: () => modeName));
+        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => modeName);
     }
+    _persistOperating();
   }
 
   // The fan only reports WHICH duration is active (2H/4H/8H), never the time
@@ -171,10 +184,11 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   //      remote while disconnected): count down from detection (upper bound).
   void updateTimer(int timerCode, {DateTime? activatedAt}) {
     if (timerCode == 0) {
-      update(state.copyWith(
+      state = state.copyWith(
         activeTimerCode:  () => null,
         timerActivatedAt: () => null,
-      ));
+      );
+      _persistTimer();
       return;
     }
     var resolved = activatedAt
@@ -187,21 +201,21 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
       resolved = DateTime.now();
     }
-    update(state.copyWith(
+    state = state.copyWith(
       activeTimerCode:  () => timerCode,
       timerActivatedAt: () => resolved,
-    ));
+    );
+    _persistTimer();
   }
 
   /// Blanks volatile connection-state fields so reconnects don't show stale
-  /// data; the Machine State response restores the actual values within ~100 ms.
-  /// Display-only: the DB keeps the last-known-good state, so an app kill
-  /// mid-connect — before the Machine State reply lands — loses nothing.
-  ///
-  /// This assigns `state` directly rather than calling update(), and arms
-  /// [_restorePending] so that no LATER write can leak the blank into the DB
-  /// either — see [_toPersist]. Skipping update() here is not sufficient on its
-  /// own: the next telemetry frame would re-persist the whole blanked row.
+  /// data; the Machine-State sync then restores the actual values.
+  /// Display-only BY CONSTRUCTION: this assigns `state` without persisting,
+  /// and every mutator persists only its own field group — so no later write
+  /// of any kind can carry this blank into ObjectBox. (Under the old
+  /// whole-row persist, the first telemetry frame after this call re-wrote
+  /// the blanked operating fields to the DB — the root of the reconnect
+  /// state-loss field bug.)
   ///
   /// The sleep timer is deliberately NOT cleared: the countdown keeps ticking
   /// from the persisted start time across the reconnect, and the Machine State
@@ -209,7 +223,6 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   /// updateTimer's current-state rule) or corrects it (OFF or code 0 clears; a
   /// different code restarts from detection).
   void resetOnConnect() {
-    _restorePending = true;
     state = state.copyWith(
       isPowered:  false,
       isBoost:    false,
@@ -223,38 +236,65 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.
   /// Clears all operating state atomically — speed, mode, and boost are
   /// undefined when the fan is off; do not preserve previous-session values.
-  void applyMotorStatePowerOff() => update(state.copyWith(
-    isPowered:  false,
-    isBoost:    false,
-    activeMode: () => null,
-    speed:      0,
-    lastWatts:  () => null,
-    lastRpm:    () => null,
-  ));
+  void applyMotorStatePowerOff() {
+    state = state.copyWith(
+      isPowered:  false,
+      isBoost:    false,
+      activeMode: () => null,
+      speed:      0,
+      lastWatts:  () => null,
+      lastRpm:    () => null,
+    );
+    _persistOperating();
+    _persistTelemetry();
+  }
 
-  void updateWatts(int watts)       => update(state.copyWith(lastWatts:       () => watts));
-  void updateRpm(int rpm)           => update(state.copyWith(lastRpm:         () => rpm));
-  void updateRuntime(int secs)      => update(state.copyWith(lastRuntimeSecs: () => secs));
-  void clearWatts()                 => update(state.copyWith(lastWatts:       () => null));
-  void clearRpm()                   => update(state.copyWith(lastRpm:         () => null));
+  void updateWatts(int watts) {
+    state = state.copyWith(lastWatts: () => watts);
+    _persistTelemetry();
+  }
+
+  void updateRpm(int rpm) {
+    state = state.copyWith(lastRpm: () => rpm);
+    _persistTelemetry();
+  }
+
+  void updateRuntime(int secs) {
+    state = state.copyWith(lastRuntimeSecs: () => secs);
+    _persistTelemetry();
+  }
+
+  void clearWatts() {
+    state = state.copyWith(lastWatts: () => null);
+    _persistTelemetry();
+  }
+
+  void clearRpm() {
+    state = state.copyWith(lastRpm: () => null);
+    _persistTelemetry();
+  }
 
   /// Toggle boost. Nature mode blocks boost activation (the UI clears Nature
   /// first). Activating boost exits ANY active mode — Boost is mutually
   /// exclusive with Nature, Smart, and Reverse.
   void setBoostActive(bool on) {
     if (on && state.activeMode == 'nature') return;
-    update(state.copyWith(
+    state = state.copyWith(
       isBoost: on,
       activeMode: () => on ? null : state.activeMode,
-    ));
+    );
+    _persistOperating();
   }
 
   /// Activate or clear a non-boost mode. Every mode (Nature, Smart, Reverse)
   /// clears boost — Boost is mutually exclusive with all of them.
-  void setActiveMode(String? mode) => update(state.copyWith(
-    isBoost: mode != null ? false : state.isBoost,
-    activeMode: () => mode,
-  ));
+  void setActiveMode(String? mode) {
+    state = state.copyWith(
+      isBoost: mode != null ? false : state.isBoost,
+      activeMode: () => mode,
+    );
+    _persistOperating();
+  }
 
   /// Applied when Motor State (getMotorState) frame [2] is received.
   /// Frame [2] is the exclusive truth: one speed OR one special mode is active,
@@ -262,24 +302,28 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   void applyMotorStateTruth(String? mode) {
     switch (mode) {
       case 'boost':
-        update(state.copyWith(isBoost: true, activeMode: () => null));
+        state = state.copyWith(isBoost: true, activeMode: () => null);
       case null:
         // Speed was frame [2] — fan is in plain speed mode, no special mode active.
-        update(state.copyWith(isBoost: false, activeMode: () => null));
+        state = state.copyWith(isBoost: false, activeMode: () => null);
       default: // 'nature', 'smart', 'reverse'
-        update(state.copyWith(isBoost: false, activeMode: () => mode));
+        state = state.copyWith(isBoost: false, activeMode: () => mode);
     }
+    _persistOperating();
   }
 
   void updateLighting({
     required String colorType,
     required double brightness,
     required bool isOn,
-  }) => update(state.copyWith(
-    lastLightColorType:  colorType,
-    lastLightBrightness: brightness,
-    lastLightIsOn:       isOn,
-  ));
+  }) {
+    state = state.copyWith(
+      lastLightColorType:  colorType,
+      lastLightBrightness: brightness,
+      lastLightIsOn:       isOn,
+    );
+    _persistLighting();
+  }
 }
 
 // autoDispose releases the notifier when no widget is watching it,

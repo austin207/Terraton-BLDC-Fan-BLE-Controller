@@ -251,12 +251,18 @@ class BleServiceImpl implements BleService {
         }
 
         if (_notifyChar != null) {
-          await _notifyChar!.setNotifyValue(true);
+          // Cancel the previous session's listener BEFORE enabling
+          // notifications: enabling is what triggers the BLE60 to flush the
+          // UART backlog it buffered while no phone was connected, and that
+          // flush must never be delivered through a stale subscription (or
+          // through two listeners at once). The new listener is attached
+          // before setNotifyValue so nothing lands in the gap.
           await _notifyValueSub?.cancel();
           _notifyValueSub = _notifyChar!.onValueReceived.listen((bytes) {
             ConnectionLogService.rx(bytes);
             _notifyCtrl.add(bytes);
           });
+          await _notifyChar!.setNotifyValue(true);
         }
 
         _device = device;
@@ -322,6 +328,10 @@ class BleServiceImpl implements BleService {
     if (_device != null) ConnectionLogService.event('disconnect() requested');
     await _connStateSub?.cancel();
     _connStateSub = null;
+    // Without this, the old listener survives into the next connect() and
+    // delivers the BLE60's backlog flush into the new session's stream.
+    await _notifyValueSub?.cancel();
+    _notifyValueSub = null;
     try { await _device?.disconnect(); } on Object catch (_) {}
     _writeChar       = null;
     _notifyChar      = null;

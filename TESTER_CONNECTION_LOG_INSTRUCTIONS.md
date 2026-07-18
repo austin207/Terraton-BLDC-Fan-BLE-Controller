@@ -48,13 +48,31 @@ Please follow these steps **exactly**.
     - Did Smart stay highlighted, or go blank?
     - Did the timer keep counting down, or disappear / reset?
 
-> On reconnect the dial may be blank for **up to ~3 seconds** before Smart and the gear reappear.
-> That short gap is expected — the app is double-checking the fan's answer before trusting it.
-> What matters is the state **after** those few seconds.
+> On reconnect the dial may be blank for **up to ~12 seconds** before Smart and the gear reappear.
+> That gap is expected — the app now refuses to trust the fan's very first answer at all. It asks
+> twice, and only draws Smart/the timer once the fan gives the **same answer a second time**.
+> If the fan never gives a clean second answer, the app deliberately leaves the screen blank
+> rather than guess — so a blank screen that never fills in, while the log shows repeated
+> "unanswered" polling, is itself useful diagnostic information, not just a failure.
+> What matters is the state **after** that gap.
 
 **4. Capture the log**
 11. Go to **Settings → Connection Log** again.
 12. Tap **Share** and send the log to me (WhatsApp / email — whatever's easiest).
+
+---
+
+## What's in the log now
+
+The lines starting with `MS` are new and are the most important part of this capture. Each one is
+the app asking the fan "what state are you in?" and recording the answer. Instead of trusting the
+fan's first answer, the app now asks **at least twice** and only shows Smart/the timer once two
+answers in a row **agree**. So you'll see, per reconnect: an answer logged as a candidate, then
+either a second line saying it **agrees → applied** (the screen updates) or, if the fan never gives
+a clean repeat answer in time, a line saying **session expired — nothing applied** (the screen
+stays blank on purpose). Both outcomes are useful to us — a repeated "nothing applied" with the fan
+still spinning correctly tells us the fan simply isn't answering reliably, which is a different
+problem than the app misreading a correct answer.
 
 ---
 

@@ -14,9 +14,15 @@ class FanResponse {
 
 class BleResponseParser {
   // Hardware quirk: RPM responses (cmd 0x24) arrive with checksum = (correct − 1) & 0xFF.
-  // All other responses use the standard formula. Accept both.
-  static bool _checksumOk(int computed, int received) =>
-      (computed & 0xFF) == received || ((computed - 1) & 0xFF) == received;
+  // The tolerance is scoped to RPM frames ONLY: applied to every command it
+  // doubled the odds (~2/256 per candidate offset) of accepting BLE60 junk —
+  // AT strings, FF padding, stale backlog fragments — as a valid frame, and a
+  // junk frame that parses as a state command corrupts the reconnect sync.
+  static bool _checksumOk(int computed, int received, int command) {
+    if ((computed & 0xFF) == received) return true;
+    return command == CommandLoader.responseCommand('running_rpm') &&
+        ((computed - 1) & 0xFF) == received;
+  }
 
   /// Parses a single frame starting at byte 0.
   /// Returns null if the bytes do not form a valid response frame.
@@ -32,7 +38,7 @@ class BleResponseParser {
     final received = bytes[5 + dataLen];
     int sum = bytes[0] + bytes[1] + bytes[2] + bytes[3] + bytes[4];
     for (final b in data) { sum += b; }
-    if (!_checksumOk(sum, received)) return null;
+    if (!_checksumOk(sum, received, command)) return null;
     return FanResponse(command: command, data: data);
   }
 
@@ -57,7 +63,7 @@ class BleResponseParser {
       final received = bytes[i + 5 + dataLen];
       int sum = bytes[i] + bytes[i + 1] + bytes[i + 2] + bytes[i + 3] + bytes[i + 4];
       for (final b in data) { sum += b; }
-      if (_checksumOk(sum, received)) {
+      if (_checksumOk(sum, received, command)) {
         results.add(FanResponse(command: command, data: data));
       }
       i = end;
@@ -94,7 +100,13 @@ class BleResponseParser {
   static int? parseTimer(FanResponse r) {
     final cmd = CommandLoader.responseCommand('timer');
     if (r.command != cmd || r.data.isEmpty) return null;
-    return r.data[0];
+    final t = r.data[0];
+    // Only the four real codes (off / 2 h / 4 h / 8 h — commands.yaml
+    // timers.actions). parseTimer != null is what classifies a burst as a
+    // Machine-State reply, so an out-of-range byte in a junk 0x22 frame must
+    // not be allowed to reroute a whole response set. Mirrors parseSpeed's
+    // 1–6 range check.
+    return const {0x00, 0x02, 0x04, 0x08}.contains(t) ? t : null;
   }
 
   /// Response: `55 AA 07 08 02 HH LL CRC` — runtime = (HH<<8|LL) × 5 seconds.
@@ -168,7 +180,7 @@ class FrameStreamAssembler {
       if (end > _buf.length) break; // frame split mid-frame — retain
       var sum = _buf[i] + _buf[i + 1] + _buf[i + 2] + _buf[i + 3] + _buf[i + 4];
       for (var j = i + 5; j < i + 5 + dataLen; j++) { sum += _buf[j]; }
-      if (BleResponseParser._checksumOk(sum, _buf[end - 1])) {
+      if (BleResponseParser._checksumOk(sum, _buf[end - 1], _buf[i + 3])) {
         results.add(FanResponse(
           command: _buf[i + 3],
           data: _buf.sublist(i + 5, i + 5 + dataLen),

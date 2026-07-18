@@ -74,6 +74,67 @@ class _FakeRepo implements FanRepository {
     _states.add(fanState);
   }
 
+  // Field-scoped writers — mirror FanRepositoryImpl: mutate the stored row,
+  // touching only the method's own field group.
+  FanState _row(String deviceId) {
+    final row = getState(deviceId);
+    _states.removeWhere((s) => s.deviceId == deviceId);
+    _states.add(row);
+    return row;
+  }
+
+  @override
+  Future<void> saveOperatingState(
+    String deviceId, {
+    required bool isPowered,
+    required bool isBoost,
+    required int speed,
+    required String? activeMode,
+  }) async {
+    _row(deviceId)
+      ..isPowered  = isPowered
+      ..isBoost    = isBoost
+      ..speed      = speed
+      ..activeMode = activeMode;
+  }
+
+  @override
+  Future<void> saveTimerState(
+    String deviceId, {
+    required int? activeTimerCode,
+    required DateTime? timerActivatedAt,
+  }) async {
+    _row(deviceId)
+      ..activeTimerCode  = activeTimerCode
+      ..timerActivatedAt = timerActivatedAt;
+  }
+
+  @override
+  Future<void> saveTelemetry(
+    String deviceId, {
+    required int? lastWatts,
+    required int? lastRpm,
+    required int? lastRuntimeSecs,
+  }) async {
+    _row(deviceId)
+      ..lastWatts       = lastWatts
+      ..lastRpm         = lastRpm
+      ..lastRuntimeSecs = lastRuntimeSecs;
+  }
+
+  @override
+  Future<void> saveLighting(
+    String deviceId, {
+    required String colorType,
+    required double brightness,
+    required bool isOn,
+  }) async {
+    _row(deviceId)
+      ..lastLightColorType  = colorType
+      ..lastLightBrightness = brightness
+      ..lastLightIsOn       = isOn;
+  }
+
   @override
   Future<void> saveOpenSegment(
     String deviceId, {

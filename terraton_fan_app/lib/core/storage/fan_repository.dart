@@ -15,6 +15,50 @@ abstract class FanRepository {
   FanState getState(String deviceId);
   Future<void> saveState(FanState fanState);
 
+  // ── Field-scoped persistence ────────────────────────────────────────────
+  // Each method writes ONLY its own field group, mutating the stored row —
+  // a telemetry write can physically never touch the operating state, a
+  // timer write never touches lighting, and so on. This is what makes the
+  // control screen's connect-time display blank structurally unable to leak
+  // into the DB: the old whole-row saveState funnel let ANY write that
+  // followed resetOnConnect() (a watts or runtime frame from the connect
+  // burst) overwrite the persisted operating state — the vector through
+  // which six consecutive reconnect fixes died in the field.
+
+  /// Power / boost / speed / active mode — the operating state.
+  Future<void> saveOperatingState(
+    String deviceId, {
+    required bool isPowered,
+    required bool isBoost,
+    required int speed,
+    required String? activeMode,
+  });
+
+  /// Sleep-timer code + app-side countdown start. The fan never reports
+  /// remaining time (vendor protocol doc lists no timer field at all), so
+  /// this pair is the countdown's only source of truth across reconnects.
+  Future<void> saveTimerState(
+    String deviceId, {
+    required int? activeTimerCode,
+    required DateTime? timerActivatedAt,
+  });
+
+  /// Watts / RPM / cumulative runtime.
+  Future<void> saveTelemetry(
+    String deviceId, {
+    required int? lastWatts,
+    required int? lastRpm,
+    required int? lastRuntimeSecs,
+  });
+
+  /// Lighting panel UI state.
+  Future<void> saveLighting(
+    String deviceId, {
+    required String colorType,
+    required double brightness,
+    required bool isOn,
+  });
+
   /// Persists the "open" usage-log segment for Last Known State Continuation —
   /// independent of [saveState] so frequent telemetry-driven writes don't
   /// touch the live Riverpod fan state.
@@ -130,6 +174,66 @@ class FanRepositoryImpl implements FanRepository {
           ..openSegmentRpmCount      = existing.openSegmentRpmCount)
         : fanState;
     _stateBox.put(toSave);
+  }
+
+  // getState returns the live queried entity (with its ObjectBox id) or a
+  // fresh row keyed to the deviceId — mutate + put is the same pattern
+  // saveOpenSegment established.
+
+  @override
+  Future<void> saveOperatingState(
+    String deviceId, {
+    required bool isPowered,
+    required bool isBoost,
+    required int speed,
+    required String? activeMode,
+  }) async {
+    final row = getState(deviceId)
+      ..isPowered  = isPowered
+      ..isBoost    = isBoost
+      ..speed      = speed
+      ..activeMode = activeMode;
+    _stateBox.put(row);
+  }
+
+  @override
+  Future<void> saveTimerState(
+    String deviceId, {
+    required int? activeTimerCode,
+    required DateTime? timerActivatedAt,
+  }) async {
+    final row = getState(deviceId)
+      ..activeTimerCode  = activeTimerCode
+      ..timerActivatedAt = timerActivatedAt;
+    _stateBox.put(row);
+  }
+
+  @override
+  Future<void> saveTelemetry(
+    String deviceId, {
+    required int? lastWatts,
+    required int? lastRpm,
+    required int? lastRuntimeSecs,
+  }) async {
+    final row = getState(deviceId)
+      ..lastWatts       = lastWatts
+      ..lastRpm         = lastRpm
+      ..lastRuntimeSecs = lastRuntimeSecs;
+    _stateBox.put(row);
+  }
+
+  @override
+  Future<void> saveLighting(
+    String deviceId, {
+    required String colorType,
+    required double brightness,
+    required bool isOn,
+  }) async {
+    final row = getState(deviceId)
+      ..lastLightColorType  = colorType
+      ..lastLightBrightness = brightness
+      ..lastLightIsOn       = isOn;
+    _stateBox.put(row);
   }
 
   @override

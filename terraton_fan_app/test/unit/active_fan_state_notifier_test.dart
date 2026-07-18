@@ -30,6 +30,63 @@ class _FakeRepo implements FanRepository {
   @override
   Future<void> saveState(FanState fanState) async =>
       _states[fanState.deviceId] = fanState;
+
+  // Field-scoped writers — mirror FanRepositoryImpl: mutate only the method's
+  // own field group on the stored row, so a telemetry write can never touch
+  // the operating state (the property the reconnect rewrite depends on).
+  FanState _row(String deviceId) =>
+      _states[deviceId] ??= (FanState()..deviceId = deviceId);
+  @override
+  Future<void> saveOperatingState(
+    String deviceId, {
+    required bool isPowered,
+    required bool isBoost,
+    required int speed,
+    required String? activeMode,
+  }) async {
+    _row(deviceId)
+      ..isPowered  = isPowered
+      ..isBoost    = isBoost
+      ..speed      = speed
+      ..activeMode = activeMode;
+  }
+
+  @override
+  Future<void> saveTimerState(
+    String deviceId, {
+    required int? activeTimerCode,
+    required DateTime? timerActivatedAt,
+  }) async {
+    _row(deviceId)
+      ..activeTimerCode  = activeTimerCode
+      ..timerActivatedAt = timerActivatedAt;
+  }
+
+  @override
+  Future<void> saveTelemetry(
+    String deviceId, {
+    required int? lastWatts,
+    required int? lastRpm,
+    required int? lastRuntimeSecs,
+  }) async {
+    _row(deviceId)
+      ..lastWatts       = lastWatts
+      ..lastRpm         = lastRpm
+      ..lastRuntimeSecs = lastRuntimeSecs;
+  }
+
+  @override
+  Future<void> saveLighting(
+    String deviceId, {
+    required String colorType,
+    required double brightness,
+    required bool isOn,
+  }) async {
+    _row(deviceId)
+      ..lastLightColorType  = colorType
+      ..lastLightBrightness = brightness
+      ..lastLightIsOn       = isOn;
+  }
   @override
   Future<void> saveOpenSegment(
     String deviceId, {
@@ -500,14 +557,12 @@ void main() {
       expect(persisted.timerActivatedAt, tap);
     });
 
-    // FIELD BUG (2026-07-17): the blank outlives resetOnConnect. update() writes
-    // the whole FanState row, so the first telemetry frame after connect — the
-    // runtime reply rides the very same notification burst as the Machine-State
-    // reply — re-persists the blanked operating state. That destroys the
-    // ObjectBox baseline _isStateDemotion reads, microseconds before it reads
-    // it, so the confirm-before-demote guard is disarmed on every reconnect and
-    // a stale OFF wipes Smart + the sleep timer. Telemetry must never carry the
-    // blank into the DB.
+    // FIELD BUG (2026-07-17): under the old whole-row persist, the first
+    // telemetry frame after connect — the runtime reply rides the very same
+    // notification burst as the Machine-State reply — re-persisted the blanked
+    // operating state and destroyed the last-known-good row, wiping Smart +
+    // the sleep timer on every reconnect. Field-scoped persistence makes this
+    // structurally impossible: a telemetry write touches only telemetry.
     test('telemetry after resetOnConnect does not persist the blank', () {
       final repo = _FakeRepo();
       final c = ProviderContainer(overrides: [
@@ -548,7 +603,7 @@ void main() {
       expect(persisted.lastRpm, 310);
     });
 
-    test('an authoritative reply ends the restore window and persists normally', () {
+    test('an authoritative apply persists verbatim, blank or not', () {
       final repo = _FakeRepo();
       final c = ProviderContainer(overrides: [
         fanRepositoryProvider.overrideWithValue(repo),
@@ -559,10 +614,10 @@ void main() {
       n.updateMode('smart');
       n.resetOnConnect();
 
-      // Machine-State truth lands: the fan really is off now. Once applied, the
-      // restore window is over and later writes must persist verbatim — the
-      // merge must not pin the old baseline forever.
-      n.markRestored();
+      // Machine-State truth lands (released by the sync engine): the fan
+      // really is off now. The apply must persist — scoped writes protect the
+      // row from writes OUTSIDE their field group, never from a deliberate
+      // operating-state apply.
       n.applyMotorStatePowerOff();
       n.updateWatts(0);
 
@@ -572,7 +627,7 @@ void main() {
       expect(persisted.lastWatts, 0);
     });
 
-    test('the restore window pins operating fields but never the sleep timer', () {
+    test('a timer write after the blank never touches the operating row', () {
       final repo = _FakeRepo();
       final c = ProviderContainer(overrides: [
         fanRepositoryProvider.overrideWithValue(repo),
@@ -583,10 +638,9 @@ void main() {
       n.updateMode('smart');
       n.resetOnConnect();
 
-      // The Machine-State flush confirms a 4H timer while the window is still
-      // open (markRestored fires from the same apply). The timer is not an
-      // operating field, so it must persist even mid-window — otherwise the
-      // countdown the guard defends could never be written at all.
+      // A confirmed 4H timer lands while the display is still blank. The
+      // timer is its own field group, so it persists — and the operating
+      // baseline underneath stays exactly as it was before the disconnect.
       final tap = DateTime.now().subtract(const Duration(minutes: 10));
       n.updateTimer(0x04, activatedAt: tap);
 
