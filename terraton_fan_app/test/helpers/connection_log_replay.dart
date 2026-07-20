@@ -77,14 +77,24 @@ bool _isStateQueryTx(List<int> bytes) {
 /// Replays a `ConnectionLogService` capture through
 /// `FrameStreamAssembler` → SyncFrame classification → `MachineStateSync`.
 ///
-/// Only `TX`/`RX` lines matter; `EV`/`FRM`/`MS` lines and blank/unparseable
-/// lines are skipped. A session is started before any line is fed (mirrors
-/// `_connect()` calling `_sync.startSession('connect')` immediately after
-/// resetting the assembler). Real time between consecutive TX/RX lines is
-/// replayed via `fake_async`'s `elapse`, capped at 5 s per gap so a capture
-/// spanning minutes of idle connection doesn't blow past the session timeout
-/// purely from wall-clock arithmetic, while near-zero gaps inside one BLE60
-/// backlog burst stay a burst (no synthetic delay inserted).
+/// `TX`/`RX`/`EV` lines matter; `FRM`/`MS` lines and blank/unparseable lines
+/// are skipped. A session is started before any line is fed (this preserves
+/// every existing single-connect capture's behavior unchanged). EV lines then
+/// segment that timeline the way production really does across a capture
+/// spanning multiple (re)connects:
+///  * a `connected …` EV (a successful connection — NOT the `connect … attempt
+///    N/3` announcement) resets the `FrameStreamAssembler` and calls
+///    `sync.startSession('connect')`, mirroring `_connect()`.
+///  * a `disconnect…` or `connect failed…` EV calls `sync.cancel('disconnect')`
+///    so no pending candidate/partial leaks across the idle gap until the next
+///    connect.
+///  * any other EV (e.g. a bare `connect … attempt N/3`) is a no-op for the
+///    state machine but still counts for elapsed-time purposes.
+/// Real time between consecutive lines is replayed via `fake_async`'s
+/// `elapse`, capped at 5 s per gap so a capture spanning minutes of idle
+/// connection doesn't blow past the session timeout purely from wall-clock
+/// arithmetic, while near-zero gaps inside one BLE60 backlog burst stay a
+/// burst (no synthetic delay inserted).
 ReplayResult replayConnectionLog(String capture) {
   final applied = <(MachineStateTuple, String)>[];
   final logs = <String>[];
@@ -97,7 +107,7 @@ ReplayResult replayConnectionLog(String capture) {
     final m = _lineRe.firstMatch(trimmed);
     if (m == null) continue;
     final kind = m.group(2)!;
-    if (kind != 'TX' && kind != 'RX') continue;
+    if (kind != 'TX' && kind != 'RX' && kind != 'EV') continue;
     DateTime ts;
     try {
       ts = DateTime.parse(m.group(1)!);
@@ -127,6 +137,27 @@ ReplayResult replayConnectionLog(String capture) {
         async.elapse(delta);
       }
       lastTs = line.ts;
+
+      if (line.kind == 'EV') {
+        final msg = line.message;
+        if (msg.startsWith('connected')) {
+          // Successful (re)connection — distinct from the bare "connect …
+          // attempt N/3" announcement, which must NOT reset anything.
+          // Mirrors `_connect()`: `_rxAssembler.reset()` then
+          // `_sync.startSession('connect')`.
+          assembler.reset();
+          sync.startSession('connect');
+        } else if (msg.startsWith('disconnect') ||
+            msg.startsWith('connect failed')) {
+          // Link torn down or a connect attempt failed outright — cancel any
+          // engagement so nothing pending leaks across the idle gap into the
+          // next connect. Harmless no-op if the engine was already idle.
+          sync.cancel('disconnect');
+        }
+        // Any other EV (e.g. a bare "connect … attempt N/3") is a no-op for
+        // the state machine — it already counted for elapsed time above.
+        continue;
+      }
 
       final bytes = _parseHex(line.message);
       if (bytes == null || bytes.isEmpty) continue;
