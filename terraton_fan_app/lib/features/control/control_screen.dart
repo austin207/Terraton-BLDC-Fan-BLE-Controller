@@ -455,13 +455,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           _sync.requestOnce('status-poll stored-speed vs active mode');
           continue;
         }
-        // Regular speed notification (remote or app echo). Smart, Nature and
-        // Reverse are all incompatible with a fixed speed step — if any is
-        // active the hardware has exited the mode; clear it to stay in sync.
+        // Regular speed notification (remote or app echo). This is NOT proof
+        // that no mode is active: this firmware reports the SPEED, not the
+        // mode, when a mode is driving speed 6. Evidence:
+        // test/unit/field_capture_2026_07_04_test.dart — Smart tapped at
+        // speed 5, firmware raises to 6 on its own, then every state reply
+        // says 04 01 06 and never 21 01 04, with no speed command ever sent
+        // by the app. Clearing the mode here is what deleted
+        // Smart/Nature/Boost on every reconnect — a mode is cleared only by
+        // an explicit 0x21 frame reporting a different mode, a trusted
+        // power==false, or the user's own action.
         notifier.updateSpeed(speed);
         if (speed > 0) notifier.updatePower(true);
-        if (s.activeMode != null) notifier.setActiveMode(null);
-        if (s.isBoost) notifier.setBoostActive(false);
         continue;
       }
       final mode = f.mode;
@@ -530,8 +535,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         // Frame [2] = mode: the exclusive active state.
         notifier.applyMotorStateTruth(mode);
       } else if (speed != null) {
-        // Frame [2] = speed: plain speed mode, clear any special mode.
-        notifier.applyMotorStateTruth(null);
+        // Frame [2] = speed. This is NOT proof that no mode is active: this
+        // firmware reports the SPEED, not the mode, when a mode is driving
+        // speed 6. Evidence: test/unit/field_capture_2026_07_04_test.dart —
+        // Smart tapped at speed 5, firmware raises to 6 on its own, then every
+        // state reply says 04 01 06 and never 21 01 04, with no speed command
+        // ever sent by the app. Clearing the mode here is what deleted
+        // Smart/Nature/Boost on every reconnect.
         notifier.updateSpeed(speed);
       }
       // A reply without a 0x22 frame is NEUTRAL on the timer (newer firmware

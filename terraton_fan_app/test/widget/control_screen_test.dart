@@ -303,6 +303,9 @@ void main() {
     const powerOn  = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A];
     const powerOff = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x00, 0x09];
     const speed5   = [0x55, 0xAA, 0x07, 0x04, 0x01, 0x05, 0x10];
+    const speed6   = [0x55, 0xAA, 0x07, 0x04, 0x01, 0x06, 0x11];
+    const modeBoost= [0x55, 0xAA, 0x07, 0x21, 0x01, 0x01, 0x29];
+    const modeNature=[0x55, 0xAA, 0x07, 0x21, 0x01, 0x02, 0x2A];
     const modeSmart= [0x55, 0xAA, 0x07, 0x21, 0x01, 0x04, 0x2C];
     const timerOff = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29];
     const timer2h  = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x02, 0x2B];
@@ -1010,6 +1013,119 @@ void main() {
       expect(s.activeMode, isNull);
       expect(s.activeTimerCode, isNull);
       expect(find.textContaining('REMAINING'), findsNothing);
+    });
+
+    // ── Frame [2] = speed is NOT proof no mode is active (field bug 2026-07-04) ──
+    // Proof capture: test/unit/field_capture_2026_07_04_test.dart. Smart is
+    // tapped at speed 5; the firmware raises the fan to speed 6 on its own
+    // (Smart adjusting speed autonomously) and every subsequent state reply
+    // reports frame [2] as "04 01 06" — never "21 01 04" — even though the
+    // app never sends a speed command. The old code read that as "the
+    // hardware exited the mode" and cleared it on every reconnect. A reply
+    // carrying BOTH a power frame and a timer frame is applied atomically by
+    // _dispatchLive's first branch straight into _applyMachineState, so a
+    // single such chunk exercises the fixed code path directly — no session,
+    // no agreement, no poll pumping required.
+
+    testWidgets(
+        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Smart',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timerOff]);
+      expect(stateOf(tester).activeMode, 'smart');
+
+      // Session is over; this full reply (power + timer both present)
+      // dispatches on the live path and applies atomically.
+      notifyCtrl.add([...powerOn, ...speed6, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.activeMode, 'smart',
+          reason: 'field report: "Smart is not retained after reconnecting" — '
+              'the firmware reports speed (04 01 06), not mode (21 01 04), '
+              'once Smart drives the fan to speed 6, and the app must not '
+              'read that as a mode exit');
+      expect(s.speed, 6);
+    });
+
+    testWidgets(
+        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Nature',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...modeNature, ...timerOff]);
+      expect(stateOf(tester).activeMode, 'nature');
+
+      notifyCtrl.add([...powerOn, ...speed6, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.activeMode, 'nature',
+          reason: 'field report: "Nature is restored but does not work at '
+              'Speed 6" — the same speed-report-not-mode-exit mechanism as '
+              'Smart, just for a different mode driven to speed 6');
+      expect(s.speed, 6);
+    });
+
+    testWidgets(
+        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Boost',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...modeBoost, ...timerOff]);
+      expect(stateOf(tester).isBoost, true);
+
+      notifyCtrl.add([...powerOn, ...speed6, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isBoost, true,
+          reason: 'field report: "Boost is restored but does not work at '
+              'Speed 6" — Boost must survive a firmware speed-6 report the '
+              'same way Smart and Nature do');
+      expect(s.speed, 6);
+    });
+
+    testWidgets(
+        'exclusivity is still intact: an explicit mode frame still switches '
+        'away from Smart', (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timerOff]);
+      expect(stateOf(tester).activeMode, 'smart');
+
+      // A genuine mode change (0x21 reporting a DIFFERENT mode) must still
+      // clear the old mode — the fix only stops a bare SPEED frame from
+      // doing that, not an explicit mode frame.
+      notifyCtrl.add([...powerOn, ...modeNature, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeMode, 'nature',
+          reason: 'an explicit 0x21 mode frame must still switch the active '
+              'mode — the fix must not make activeMode sticky against real '
+              'mode changes');
+    });
+
+    testWidgets(
+        'power OFF reply still clears mode, boost, and speed',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timerOff]);
+      expect(stateOf(tester).activeMode, 'smart');
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      final s = stateOf(tester);
+      expect(s.isPowered, false,
+          reason: 'a trusted power==false must still clear mode/boost/speed '
+              'even though a bare speed frame no longer clears the mode on '
+              'its own');
+      expect(s.activeMode, isNull);
+      expect(s.isBoost, false);
+      expect(s.speed, 0);
     });
   });
 }
