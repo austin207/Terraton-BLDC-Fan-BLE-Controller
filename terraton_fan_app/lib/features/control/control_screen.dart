@@ -12,6 +12,7 @@ import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_response_parser.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/ble/machine_state_sync.dart';
+import 'package:terraton_fan_app/core/ble/machine_state_timer_policy.dart';
 import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
@@ -512,6 +513,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     if (!mounted) return;
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
 
+    // The sleep-timer decision is one pure rule (machine_state_timer_policy.dart)
+    // so it cannot accidentally couple to persisted state: null means leave the
+    // countdown exactly as it is.
+    final timerDecision = timerFromStateReply(power: power, replyTimer: timer);
+
     if (power == false) {
       // Machine State frame [1] = OFF: frame [2] (if present) is the firmware's
       // stored last state — keep it as the power-on memory so a Power ON tap
@@ -523,8 +529,10 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       }
       notifier.applyMotorStatePowerOff();
       // No sleep timer can be counting down on an OFF fan — clear the chip
-      // (frame [3] of an OFF reply may carry a stale stored value).
-      notifier.updateTimer(0);
+      // (frame [3] of an OFF reply may carry a stale stored value). The policy
+      // always returns 0 for power == false, so this is unconditional exactly
+      // like before.
+      if (timerDecision != null) notifier.updateTimer(timerDecision);
       if (!_isDemo) unawaited(BleForegroundService.stop());
     } else {
       // Fan is running — any previously captured memory is now stale.
@@ -546,9 +554,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       }
       // A reply without a 0x22 frame is NEUTRAL on the timer (newer firmware
       // per the vendor doc reports no timer field at all): the persisted
-      // countdown keeps ticking. Only an explicit code — including 0 — may
-      // change it.
-      if (timer != null) notifier.updateTimer(timer);
+      // countdown keeps ticking. An explicit code applies, but an explicit
+      // reported 0 is ALSO neutral, not a clear: this firmware's state-reply
+      // 0x22 field does not report an active timer at all — evidence in
+      // test/unit/field_capture_2026_07_04_test.dart, where the firmware
+      // echoes/re-reports a set 4 h timer yet answers every Get Motor State
+      // reply with 22 01 00, with no timer-off command ever sent. Treating
+      // that 0 as a clear destroyed the countdown on every reconnect. See
+      // machine_state_timer_policy.dart for the single rule this now funnels
+      // through.
+      if (timerDecision != null) notifier.updateTimer(timerDecision);
       if (!_isDemo) {
         final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
         unawaited(BleForegroundService.start(

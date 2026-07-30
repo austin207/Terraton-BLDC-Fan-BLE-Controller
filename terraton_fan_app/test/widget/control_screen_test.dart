@@ -1127,5 +1127,87 @@ void main() {
       expect(s.isBoost, false);
       expect(s.speed, 0);
     });
+
+    // ── State-reply 0x22 field is a bad timer reporter (field bug 2026-07-04) ──
+    // Proof capture: test/unit/field_capture_2026_07_04_test.dart. The firmware
+    // echoes/re-reports a set 4 h timer as active, yet every Get Motor State
+    // reply carries 22 01 00 — an explicit zero, not a missing frame — and the
+    // capture contains no timer-off command. machine_state_timer_policy.dart's
+    // timerFromStateReply() treats that explicit 0 as neutral (like an absent
+    // 0x22 frame already was) so it can no longer wipe the countdown.
+    const timer4h = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x04, 0x2D];
+
+    testWidgets(
+        'FIELD BUG 2026-07-04: powered reply reporting timer 0 must not clear '
+        'an active 4 h countdown', (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...speed5, ...timer4h]);
+      expect(stateOf(tester).activeTimerCode, 0x04);
+
+      // Session is over; this full reply (power + timer both present)
+      // dispatches on the live path and applies atomically straight into
+      // _applyMachineState.
+      notifyCtrl.add([...powerOn, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeTimerCode, 0x04,
+          reason: 'field report: "The Timer does not display the remaining '
+              'countdown after the app is sent to the background and '
+              'reopened. Instead, it appears to have been reset or cleared, '
+              'even if the timer is still active on the device" — this '
+              "firmware's state-reply 0x22 field always reports 0 and must "
+              'not be read as a cancellation');
+    });
+
+    testWidgets(
+        'a genuine power-OFF reply still clears an active 4 h countdown',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...speed5, ...timer4h]);
+      expect(stateOf(tester).activeTimerCode, 0x04);
+
+      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeTimerCode, isNull,
+          reason: 'the timer-neutral-zero rule must not defeat the existing '
+              'invariant that an OFF fan has no running countdown');
+    });
+
+    testWidgets(
+        'a powered reply reporting a nonzero timer code still applies — a '
+        'timer set from the IR remote must still be discovered', (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...speed5, ...timer4h]);
+      expect(stateOf(tester).activeTimerCode, 0x04);
+
+      notifyCtrl.add([...powerOn, ...speed5, ...timer2h]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeTimerCode, 0x02,
+          reason: 'only an explicit reported 0 is neutral — a genuine '
+              'nonzero code from firmware (e.g. the IR remote setting a new '
+              'duration) must still update the countdown');
+    });
+
+    testWidgets(
+        'a powered reply with no 0x22 frame at all remains neutral on the '
+        'timer (pre-existing rule, unaffected by the zero-is-neutral fix)',
+        (tester) async {
+      await pumpConnected(tester);
+      await emitConfirmed(tester, [...powerOn, ...speed5, ...timer4h]);
+      expect(stateOf(tester).activeTimerCode, 0x04);
+
+      notifyCtrl.add([...powerOn, ...speed5]); // no timer frame in this chunk
+      await tester.pump();
+      await tester.pump();
+
+      expect(stateOf(tester).activeTimerCode, 0x04,
+          reason: 'a reply carrying no 0x22 frame at all was already neutral '
+              'before this fix and must remain so');
+    });
   });
 }
