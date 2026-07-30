@@ -1,10 +1,12 @@
 // test/widget/control_screen_test.dart
 import 'dart:async';
+import 'dart:io' show sleep;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
+import 'package:terraton_fan_app/core/ble/ble_frame_builder.dart';
 import 'package:terraton_fan_app/core/ble/ble_service.dart';
 import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/commands/command_loader.dart';
@@ -1208,6 +1210,195 @@ void main() {
       expect(stateOf(tester).activeTimerCode, 0x04,
           reason: 'a reply carrying no 0x22 frame at all was already neutral '
               'before this fix and must remain so');
+    });
+  });
+
+  // ── Field bug: fast app-switch leaves the app deaf ──────────────────────
+  // Report: "The status polling function is not being called ... the app is
+  // not receiving updated device status." Root cause: `resumed` decided
+  // whether to reconnect by reading `_ble.currentState`, which still read
+  // `connected` for as long as the `paused`-triggered disconnect (fired
+  // fire-and-forget) had not yet landed. On a fast pause→resume, `resumed`
+  // would see "connected", skip `_connect()` entirely, and then the
+  // in-flight disconnect would complete anyway and tear down the notify
+  // subscription — leaving the app believing it's connected while no polls
+  // are sent and no notifications arrive.
+  group('app lifecycle — fast pause/resume (field bug fix)', () {
+    FanState stateOf(WidgetTester tester) => ProviderScope
+        .containerOf(tester.element(find.byType(ControlScreen)))
+        .read(activeFanStateProvider('TT-001'));
+
+    const watts10 = [0x55, 0xAA, 0x07, 0x23, 0x01, 0x0A, 0x34];
+    const rpm300  = [0x55, 0xAA, 0x07, 0x24, 0x02, 0x01, 0x2C, 0x59];
+
+    testWidgets(
+        'a fast pause then resume, with the pause disconnect still in '
+        'flight, still reconnects and resumes telemetry + Machine-State '
+        'polling once the disconnect lands', (tester) async {
+      await pumpConnected(tester);
+
+      // The exact race from the field report: the pause-triggered
+      // disconnect has not completed, so a naive `currentState` read would
+      // still say "connected" for the whole test.
+      final disconnectCompleter = Completer<void>();
+      when(() => mockBle.disconnect())
+          .thenAnswer((_) => disconnectCompleter.future);
+      when(() => mockBle.currentState)
+          .thenReturn(BleConnectionState.connected);
+
+      clearInteractions(mockBle);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      // Reason: resume must not decide anything while the pause disconnect
+      // it triggered is still in flight — currentState alone (which this
+      // test pins to "connected" throughout) must never be trusted for the
+      // reconnect decision. (mocktail's `verify(...).called(0)` throws
+      // unconditionally on zero matches, so a true "never called" check
+      // must use `verifyNever`.)
+      verifyNever(() => mockBle.connect(any()));
+
+      // The pause disconnect finally lands.
+      disconnectCompleter.complete();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        verify(() => mockBle.connect(any())).callCount,
+        1,
+        reason: 'once the in-flight pause disconnect actually completes, '
+            'the deferred resume must reconnect — this is the fix for the '
+            'field report that a fast app-switch leaves the app deaf',
+      );
+
+      expect(
+        verify(() => mockBle.writeFrame(BleFrameBuilder.getMotorState()))
+            .callCount,
+        greaterThanOrEqualTo(1),
+        reason: 'the fresh connect() must start a new MachineStateSync '
+            'session so the dial re-syncs after the reconnect',
+      );
+
+      // Advance past the 3 s telemetry tick to prove status polling itself
+      // (the exact function the field report says stopped running) is alive
+      // again.
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+        verify(() => mockBle.writeFrame(BleFrameBuilder.statusPoll()))
+            .callCount,
+        greaterThanOrEqualTo(1),
+        reason: 'the 3 s status poll must be running again post-reconnect — '
+            'this is precisely the field report: "the status polling '
+            'function is not being called"',
+      );
+    });
+
+    testWidgets(
+        'a second pause superseding an in-flight resume leaves no stale '
+        'reconnect racing it (epoch guard)', (tester) async {
+      await pumpConnected(tester);
+
+      final disconnectCompleter = Completer<void>();
+      when(() => mockBle.disconnect())
+          .thenAnswer((_) => disconnectCompleter.future);
+      when(() => mockBle.currentState)
+          .thenReturn(BleConnectionState.connected);
+
+      clearInteractions(mockBle);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      // The first resume's helper is now awaiting the still-pending
+      // disconnect. A second pause supersedes it before that wait resolves.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      disconnectCompleter.complete();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      // The most recent lifecycle event is a pause: the app is backgrounded
+      // and the link is meant to be released. Reconnecting here would be
+      // wrong regardless of the superseded resume's own logic — the epoch
+      // guard is what stops that stale resume from acting once its wait on
+      // the first disconnect finally resolves. Reason: a resume superseded
+      // by a later pause must not reconnect once its stale wait resolves —
+      // the app is currently paused, so a reconnect here would race the
+      // very pause that superseded it (the epoch guard exists to prevent
+      // this).
+      verifyNever(() => mockBle.connect(any()));
+    });
+
+    testWidgets(
+        'a resume with no prior pause does not reconnect while genuinely '
+        'connected', (tester) async {
+      await pumpConnected(tester);
+      clearInteractions(mockBle);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      // Reason: the fix must not turn every resume into a reconnect — with
+      // no prior pause (_linkReleasedByPause == false) and a genuinely
+      // connected link, resume must stay a no-op exactly as before.
+      verifyNever(() => mockBle.connect(any()));
+    });
+
+    testWidgets(
+        'stale watts/RPM clear on the 3 s tick even while disconnected '
+        '(previously gated behind the connected check)', (tester) async {
+      await pumpConnected(tester);
+
+      notifyCtrl.add([...watts10, ...rpm300]);
+      await tester.pump();
+      await tester.pump();
+      expect(stateOf(tester).lastWatts, 10,
+          reason: 'sanity check — telemetry applies live before the drop');
+      expect(stateOf(tester).lastRpm, 300,
+          reason: 'sanity check — telemetry applies live before the drop');
+
+      // Link drops — status polling stops, but the stale-value clear must
+      // not be gated behind the connected check (it used to sit below it,
+      // making it unreachable while disconnected).
+      when(() => mockBle.currentState)
+          .thenReturn(BleConnectionState.disconnected);
+
+      // `_lastWattsAt`/`_lastRpmAt` are stamped with real `DateTime.now()`
+      // (there's no injectable clock here), so the FakeAsync virtual clock
+      // that `tester.pump(duration)` normally fast-forwards cannot age them
+      // by itself — it advances pending Timers, not `DateTime.now()`.
+      // `runAsync` steps outside the FakeAsync zone so real time actually
+      // passes; a synchronous `sleep` (rather than `Future.delayed`) blocks
+      // the isolate without pumping the real event loop, so it can't let
+      // unrelated real-zone futures (e.g. google_fonts asset loading) run
+      // and throw mid-test. The following `pump` then advances the fake
+      // clock far enough to fire the 3 s telemetry tick, whose staleness
+      // check reads the now-genuinely-elapsed real time.
+      await tester.runAsync(() async {
+        sleep(const Duration(seconds: 6));
+      });
+      await tester.pump(const Duration(seconds: 3));
+
+      expect(stateOf(tester).lastWatts, isNull,
+          reason: 'B1: the stale-watts clear must run regardless of '
+              'connection state, or watts stay on screen indefinitely '
+              'after a drop');
+      expect(stateOf(tester).lastRpm, isNull,
+          reason: 'B1: the stale-RPM clear must run regardless of '
+              'connection state, or RPM stays on screen indefinitely '
+              'after a drop');
     });
   });
 }

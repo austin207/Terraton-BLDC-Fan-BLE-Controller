@@ -122,6 +122,25 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   bool _connecting = false;
   bool _showDisconnectAlert = false;
 
+  /// The pause-initiated disconnect, kept so `resumed` can await it instead of
+  /// racing it. Errors are swallowed onto this future — it is a completion
+  /// signal, not a result.
+  Future<void>? _pauseDisconnect;
+
+  /// True once `paused` has asked for the link to be released. `resumed` must
+  /// reconnect on THIS, not on `_ble.currentState`, which still reads
+  /// `connected` for as long as the disconnect is in flight.
+  bool _linkReleasedByPause = false;
+
+  /// Bumped on every pause and every resume so a slow resume can detect that a
+  /// later lifecycle event superseded it and bail out.
+  int _lifecycleEpoch = 0;
+
+  /// Throttle for the "status poll skipped — not connected" log line in
+  /// `_startTelemetry` — logged at most once per ~30 s so a prolonged
+  /// disconnect doesn't drown the Connection Log capture.
+  DateTime? _lastSkippedPollLogAt;
+
   // Debug state isolated in a ValueNotifier so only _DebugCard rebuilds on
   // each BLE notification — not the entire ControlScreen.
   final _debug = ValueNotifier(const _DebugSnapshot());
@@ -707,11 +726,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _runtimeTimer?.cancel();
     _runtimeTimer = Timer.periodic(const Duration(seconds: 90), (_) async {
       if (!mounted) { _runtimeTimer?.cancel(); return; }
-      if (_ble.currentState != BleConnectionState.connected) {
-        _runtimeTimer?.cancel();
-        _runtimeTimer = null;
-        return;
-      }
+      if (_ble.currentState != BleConnectionState.connected) return;
       try {
         await _ble.writeFrame(BleFrameBuilder.queryRuntime());
       } on Object catch (_) {
@@ -724,8 +739,11 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     _telemetryTimer?.cancel();
     _telemetryTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (!mounted) return;
-      if (_ble.currentState != BleConnectionState.connected) return;
 
+      // Stale-value clear must run regardless of connection state — otherwise
+      // watts/RPM from before a disconnect stay on screen indefinitely (they
+      // were previously gated behind the connected check below, so they never
+      // cleared while disconnected).
       final now = DateTime.now();
       final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
       if (_lastWattsAt != null && now.difference(_lastWattsAt!) > const Duration(seconds: 5)) {
@@ -735,6 +753,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       if (_lastRpmAt != null && now.difference(_lastRpmAt!) > const Duration(seconds: 5)) {
         notifier.clearRpm();
         _lastRpmAt = null;
+      }
+
+      if (_ble.currentState != BleConnectionState.connected) {
+        // Throttled to roughly once per 30 s so a prolonged disconnect
+        // doesn't drown a field tester's Connection Log capture.
+        if (_lastSkippedPollLogAt == null ||
+            now.difference(_lastSkippedPollLogAt!) > const Duration(seconds: 30)) {
+          ConnectionLogService.event('status poll skipped — not connected');
+          _lastSkippedPollLogAt = now;
+        }
+        return;
       }
 
       // Normally returns 2 frames (0x23 watts + 0x24 RPM) on lab firmware.
@@ -776,20 +805,67 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _timerExpirySyncTimer = null;
         _timerExpirySyncTarget = null;
         unawaited(BleForegroundService.stop());
-        unawaited(_ble.disconnect());
+        // Record intent instead of trusting `_ble.currentState` afterwards —
+        // on a fast app-switch, `resumed` can fire before this disconnect
+        // lands, and `currentState` still reads `connected` for as long as
+        // it's in flight. Errors are swallowed onto the stored future so it
+        // can never surface as an unhandled async error; it is only a
+        // completion signal for `resumed` to await.
+        _lifecycleEpoch++;
+        _linkReleasedByPause = true;
+        _pauseDisconnect = _ble.disconnect().catchError((Object _) {});
       case AppLifecycleState.resumed:
         // Re-establish the link unless we're already connected. connect() fails
         // gracefully with an 'in use by another device' status (GATT 133) when
         // another phone holds the fan — the BLE60 allows only one connection —
         // so this never steals an active connection from someone else.
         ConnectionLogService.event('app resumed');
-        if (_ble.currentState != BleConnectionState.connected) {
-          unawaited(_connect());
-        }
+        // Delegate to an async helper — lifecycle callbacks must stay
+        // synchronous. The epoch is bumped and captured here so the helper
+        // can detect a later pause/resume superseding it.
+        _lifecycleEpoch++;
+        final epoch = _lifecycleEpoch;
+        unawaited(_handleResume(epoch));
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
         break;
+    }
+  }
+
+  // Waits out a pause-initiated disconnect (if any) before deciding whether
+  // to reconnect. Reconnect decisions are made on `_linkReleasedByPause` /
+  // the post-await `_ble.currentState` — never on `_ble.currentState` alone,
+  // which can still read `connected` while the disconnect from a fast
+  // app-switch is in flight (the root cause of the field bug where polling
+  // silently stopped after a quick pause/resume).
+  Future<void> _handleResume(int epoch) async {
+    final pending = _pauseDisconnect;
+    if (pending != null) {
+      try {
+        await pending.timeout(const Duration(seconds: 3));
+      } on Object catch (_) {
+        // Timeout or a (already-swallowed) error — either way this is only a
+        // completion signal, not a result.
+      }
+    }
+
+    if (!mounted) return;
+    // A later pause or resume has superseded this one — bail out so this
+    // stale resume can't race the newer lifecycle event's decision.
+    if (epoch != _lifecycleEpoch) return;
+
+    final released = _linkReleasedByPause;
+    final bleState = _ble.currentState;
+    ConnectionLogService.event(
+      'resume reconnect: released=$released bleState=$bleState',
+    );
+
+    _linkReleasedByPause = false;
+    _pauseDisconnect = null;
+
+    if (released || bleState != BleConnectionState.connected) {
+      unawaited(_connect());
     }
   }
 

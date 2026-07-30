@@ -170,8 +170,18 @@ class BleServiceImpl implements BleService {
     if (_disposed) throw StateError('BleService disposed');
 
     // Already connected to the exact same device — skip full GATT setup.
+    // Also require the write/notify characteristics and the notify
+    // subscription to be live: a link that reports "connected" but is
+    // missing any of these is deaf (no notifications will ever arrive), and
+    // returning success for it would strand the caller with a connection
+    // that looks fine but never delivers a reply. When that happens, fall
+    // through to the full GATT setup path below, which already tears down
+    // `_device` and re-runs discovery.
     if (_currentState == app.BleConnectionState.connected &&
-        _device?.remoteId.str == mac) {
+        _device?.remoteId.str == mac &&
+        _writeChar != null &&
+        _notifyChar != null &&
+        _notifyValueSub != null) {
       return mac;
     }
 
