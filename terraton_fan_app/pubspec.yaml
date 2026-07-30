@@ -63,6 +63,11 @@ dev_dependencies:
   plugin_platform_interface: ^2.1.8
   path_provider_platform_interface: ^2.1.2
   flutter_blue_plus_platform_interface: ^9.0.0
+  # Imported directly by tests that drive timers under a fake clock
+  # (machine_state_sync_test, write_queue_test, connection_log_replay).
+  # Reaches us transitively via flutter_test today; declared explicitly so a
+  # future flutter_test that drops it cannot silently break those suites.
+  fake_async: ^1.3.3
 
 flutter:
   uses-material-design: true
