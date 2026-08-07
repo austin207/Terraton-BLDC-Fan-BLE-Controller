@@ -185,7 +185,14 @@ if ($buildClient) {
 }
 
 if (-not $buildTester -and -not $buildClient) {
-    Write-Host "No variant selected — nothing to build." -ForegroundColor Yellow
+    # ASCII '--' on purpose. This file is UTF-8 without a BOM, so Windows
+    # PowerShell 5.1 decodes it as CP1252: an em dash becomes 'a€”', and that
+    # trailing U+201D is a character PowerShell accepts as a closing double
+    # quote. It ended the string early, the rest of the line opened a new one,
+    # and everything up to the next quote -- including the whole GitHub release
+    # block below -- was swallowed as string content and silently never ran.
+    # Keep non-ASCII out of string literals in this file (comments are safe).
+    Write-Host "No variant selected -- nothing to build." -ForegroundColor Yellow
     exit 0
 }
 
