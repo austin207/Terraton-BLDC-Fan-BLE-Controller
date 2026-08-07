@@ -18,6 +18,7 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:terraton_fan_app/core/ble/ble_constants.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart' as app;
+import 'package:terraton_fan_app/core/ble/write_queue.dart';
 import 'package:terraton_fan_app/core/diagnostics/connection_log_service.dart';
 
 class DiscoveredFan {
@@ -63,6 +64,28 @@ class BleServiceImpl implements BleService {
 
   String _writeCharStatus = 'pending';
   String _connectStatus   = 'idle';
+
+  /// Spacing enforced between consecutive BLE writes.
+  ///
+  /// The BLE60 is a BLE-to-UART bridge: it only flushes to the MCU on \r\n,
+  /// and the MCU parses one request frame at a time. Two writes issued in the
+  /// same connection interval cost the second frame — which is every control
+  /// path that sends more than one frame per tap (exit-reverse then Mode:
+  /// nature in _onMode, the documented mode-before-speed sequences, the
+  /// power-on restore). Raise this if a multi-frame action still fails on
+  /// hardware; it is the first thing to try.
+  static const Duration _writeGap = Duration(milliseconds: 60);
+
+  /// Serialises and paces every frame written to the fan.
+  ///
+  /// `retries: 0` is deliberate, not an oversight. Firmware Reverse is
+  /// `direction ^= 0x01` — a toggle — so re-sending a frame that actually
+  /// reached the MCU flips the fan back and reads as "Reverse did nothing".
+  /// Writes also go out unacknowledged (writeWithoutResponse), so a throw is
+  /// no proof the frame missed the wire. Pacing is the fix; retrying is not
+  /// safe for this command set.
+  late final WriteQueue _writeQueue =
+      WriteQueue(send: _writeFrameNow, gap: _writeGap, retries: 0);
 
   // Scan cache: live BluetoothDevice objects keyed by MAC.
   // These carry the BLE address type (public vs random) which is lost when
@@ -220,6 +243,9 @@ class BleServiceImpl implements BleService {
         _connectStatus = 'discovering services...';
         final services = await device.discoverServices();
 
+        // Drop any frames still queued against the previous link so this
+        // session starts clean (mirrors nulling _writeChar).
+        _writeQueue.reset();
         _writeChar  = null;
         _notifyChar = null;
         for (final svc in services) {
@@ -282,6 +308,7 @@ class BleServiceImpl implements BleService {
         _connStateSub = device.connectionState.listen((state) {
           if (state == BluetoothConnectionState.disconnected && !_disposed) {
             ConnectionLogService.event('link dropped $mac');
+            _writeQueue.reset();
             _writeChar  = null;
             _notifyChar = null;
             _device     = null;
@@ -317,6 +344,7 @@ class BleServiceImpl implements BleService {
         _connStateSub = null;
 
         if (attempt == _maxRetries) {
+          _writeQueue.reset();
           _writeChar  = null;
           _notifyChar = null;
           _device     = null;
@@ -343,6 +371,7 @@ class BleServiceImpl implements BleService {
     await _notifyValueSub?.cancel();
     _notifyValueSub = null;
     try { await _device?.disconnect(); } on Object catch (_) {}
+    _writeQueue.reset();
     _writeChar       = null;
     _notifyChar      = null;
     _device          = null;
@@ -354,7 +383,14 @@ class BleServiceImpl implements BleService {
   // ── Write ─────────────────────────────────────────────────────────────────
 
   @override
-  Future<void> writeFrame(List<int> frame) async {
+  Future<void> writeFrame(List<int> frame) => _writeQueue.enqueue(frame);
+
+  /// The actual write. Called only by [_writeQueue], one frame at a time, with
+  /// [_writeGap] between consecutive frames. The TX log line is emitted here
+  /// rather than at enqueue time so the Connection Log reflects the wire — a
+  /// TX line always sits where the bytes really went out relative to the RX
+  /// lines around it. Call order is preserved by the queue either way.
+  Future<void> _writeFrameNow(List<int> frame) async {
     final char = _writeChar;
     if (char == null) throw StateError('writeChar null ($_writeCharStatus)');
     ConnectionLogService.tx(frame);

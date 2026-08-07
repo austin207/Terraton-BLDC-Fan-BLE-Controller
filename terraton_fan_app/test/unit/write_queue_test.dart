@@ -225,4 +225,71 @@ void main() {
       });
     });
   });
+
+  // This is the configuration BleServiceImpl actually constructs. Firmware
+  // Reverse is `direction ^= 0x01` — a toggle — and writes go out
+  // unacknowledged, so a throw is no proof the frame missed the wire. A retry
+  // of a write that did land flips the fan back, which is exactly the
+  // "Reverse did nothing" field report. Pacing is the fix; retrying is not
+  // safe for this command set.
+  group('WriteQueue — retries: 0 (the BleServiceImpl configuration)', () {
+    test('a send that throws is attempted exactly once, never re-sent', () {
+      fakeAsync((async) {
+        var attempts = 0;
+        final q = WriteQueue(
+          send: (f) async {
+            attempts++;
+            throw Exception('write reported a failure after the frame went out');
+          },
+          retries: 0,
+          gap: const Duration(milliseconds: 60),
+        );
+
+        Object? error;
+        unawaited(q.enqueue([0x55, 0xAA, 0x06, 0x21, 0x01, 0x03, 0x2A])
+            .catchError((Object e) => error = e));
+        async.elapse(const Duration(seconds: 2));
+
+        expect(
+          attempts,
+          1,
+          reason: 'a re-sent Reverse frame toggles direction a second time — '
+              'the fan ends up back where it started and the user sees '
+              '"Reverse did nothing"',
+        );
+        expect(
+          error,
+          isNotNull,
+          reason: 'the failure must still reach the caller; suppressing '
+              'retries must not also suppress the error signal',
+        );
+      });
+    });
+
+    test('order and pacing are unaffected by disabling retries', () {
+      fakeAsync((async) {
+        final sentAt = <int>[];
+        final q = WriteQueue(
+          send: (f) async => sentAt.add(async.elapsed.inMilliseconds),
+          retries: 0,
+          gap: const Duration(milliseconds: 60),
+        );
+
+        // The exact shape of the Reverse → Nature tap: two frames enqueued in
+        // one synchronous turn, neither awaited.
+        unawaited(q.enqueue([0x21, 0x03]));
+        unawaited(q.enqueue([0x21, 0x02]));
+
+        async.elapse(const Duration(seconds: 1));
+
+        expect(sentAt.length, 2, reason: 'both frames must reach the wire');
+        expect(
+          sentAt[1] - sentAt[0],
+          greaterThanOrEqualTo(60),
+          reason: 'the second frame must not share a connection interval with '
+              'the first — that is what cost the Nature frame in the field',
+        );
+      });
+    });
+  });
 }

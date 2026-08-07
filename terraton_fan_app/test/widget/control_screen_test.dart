@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:io' show sleep;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -17,6 +18,8 @@ import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/control_screen.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
+import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
+import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
@@ -1399,6 +1402,153 @@ void main() {
           reason: 'B1: the stale-RPM clear must run regardless of '
               'connection state, or RPM stays on screen indefinitely '
               'after a drop');
+    });
+  });
+
+  // ── Reverse → Nature / Smart: the two-frame sequence ───────────────────────
+  // Field report: "after turning on reverse mode, when we try to switch to
+  // nature or smart mode, in the first step it does not go to nature/smart but
+  // goes to the previous speed it was set to."
+  //
+  // Both frames are required. Firmware's `case BOOST` NATURE/SMART branches
+  // never clear `direction`, and get_mc_state() tests `direction` first, so a
+  // fan left reversed would keep reporting 21 01 03 and mask the new mode —
+  // the app has to bring it forward first. The exit-reverse frame landed and
+  // the mode frame did not, so the fan simply returned to its previous speed.
+  //
+  // The loss happened at the BLE layer (both writes in one connection
+  // interval), which a mocked BleService cannot reproduce — see
+  // test/unit/ble_service_write_pacing_test.dart for the pacing that fixes it.
+  // What these tests pin down is the app-side contract the fix depends on:
+  // both frames are issued, exit-reverse first.
+  group('reverse → nature/smart sends both frames, mode after exit-reverse', () {
+    const powerOn     = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A];
+    const speed5      = [0x55, 0xAA, 0x07, 0x04, 0x01, 0x05, 0x10];
+    const timerOff    = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29];
+    const rxReverse   = [0x55, 0xAA, 0x07, 0x21, 0x01, 0x03, 0x2B];
+    const txExitRev   = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x03, 0x2A];
+    const txNature    = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x02, 0x29];
+    const txSmart     = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x04, 0x2B];
+
+    FanState stateOf(WidgetTester tester) => ProviderScope
+        .containerOf(tester.element(find.byType(ControlScreen)))
+        .read(activeFanStateProvider('TT-001'));
+
+    // Connected, powered at speed 5, sync engine idle, then Reverse arrives on
+    // the live path so the highlight is set exactly as it is in the field.
+    Future<void> pumpReversed(WidgetTester tester) async {
+      await pumpConnected(tester);
+      const reply = [...powerOn, ...speed5, ...timerOff];
+      notifyCtrl.add(reply);
+      await tester.pump();
+      notifyCtrl.add(reply);
+      await tester.pump();
+      await tester.pump();
+      notifyCtrl.add(rxReverse);
+      await tester.pump();
+      expect(stateOf(tester).activeMode, 'reverse',
+          reason: 'precondition: the test must actually be in Reverse');
+    }
+
+    testWidgets('Reverse → Nature writes exit-reverse then nature', (tester) async {
+      await pumpReversed(tester);
+      clearInteractions(mockBle);
+
+      tester
+          .widget<ModeControlWidget>(find.byType(ModeControlWidget))
+          .onMode('nature');
+      await tester.pump();
+
+      verifyInOrder([
+        () => mockBle.writeFrame(txExitRev),
+        () => mockBle.writeFrame(txNature),
+      ]);
+    });
+
+    testWidgets('Reverse → Smart writes exit-reverse then smart', (tester) async {
+      await pumpReversed(tester);
+      clearInteractions(mockBle);
+
+      tester
+          .widget<ModeControlWidget>(find.byType(ModeControlWidget))
+          .onMode('smart');
+      await tester.pump();
+
+      verifyInOrder([
+        () => mockBle.writeFrame(txExitRev),
+        () => mockBle.writeFrame(txSmart),
+      ]);
+    });
+  });
+
+  // ── Sleep-timer countdown survives backgrounding ───────────────────────────
+  // The client's ask: the countdown must stay visible as a notification while
+  // the app is in the background — with no BLE (the link is still released on
+  // pause, and the fan performs its own shutdown at T-0). Before this, `paused`
+  // stopped the foreground service unconditionally, so the countdown vanished
+  // the moment the user left the app.
+  group('sleep-timer countdown notification', () {
+    const bgChannel = MethodChannel('com.terraton/bg_service');
+    late List<MethodCall> bgCalls;
+
+    setUp(() {
+      bgCalls = [];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(bgChannel, (call) async {
+        bgCalls.add(call);
+        return null;
+      });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(bgChannel, null);
+    });
+
+    testWidgets('backgrounding with a 4H timer armed keeps the notification up '
+        'as a countdown instead of stopping it', (tester) async {
+      await pumpPoweredOn(tester);
+
+      tester
+          .widget<TimerControlWidget>(find.byType(TimerControlWidget))
+          .onTimer('4h');
+      await tester.pump();
+
+      bgCalls.clear();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      expect(
+        bgCalls.map((c) => c.method),
+        isNot(contains('stop')),
+        reason: 'stopping the service on pause is what made the countdown '
+            'disappear the moment the app was backgrounded',
+      );
+      final start = bgCalls.lastWhere((c) => c.method == 'start');
+      final endAt = (start.arguments as Map)['endAt'] as int;
+      expect(
+        endAt,
+        greaterThan(DateTime.now().millisecondsSinceEpoch),
+        reason: 'the notification must carry the expiry timestamp — Android '
+            'renders and ticks the countdown from it, which is what lets it '
+            'keep running with nothing awake on the Dart side',
+      );
+    });
+
+    testWidgets('backgrounding with no timer armed still stops the '
+        'notification', (tester) async {
+      await pumpPoweredOn(tester);
+
+      bgCalls.clear();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      expect(
+        bgCalls.map((c) => c.method),
+        contains('stop'),
+        reason: 'with no countdown to show, a backgrounded app must not leave '
+            'an ongoing notification behind showing stale telemetry',
+      );
     });
   });
 }

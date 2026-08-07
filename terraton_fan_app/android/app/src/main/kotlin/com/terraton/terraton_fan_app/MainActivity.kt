@@ -13,8 +13,11 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.terraton/bg_service")
             .setMethodCallHandler { call, result ->
                 val label = call.argument<String>("label") ?: "Fan running"
+                // Epoch millis; arrives as Long for real timestamps but read it
+                // as Number so a small/absent value can't ClassCastException.
+                val endAt = call.argument<Number>("endAt")?.toLong() ?: 0L
                 when (call.method) {
-                    "start", "update" -> { startBg(label); result.success(null) }
+                    "start", "update" -> { startBg(label, endAt); result.success(null) }
                     "stop" -> {
                         startService(Intent(this, TerraBgService::class.java).apply {
                             action = TerraBgService.ACTION_STOP
@@ -26,9 +29,10 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun startBg(label: String) {
+    private fun startBg(label: String, endAt: Long) {
         val intent = Intent(this, TerraBgService::class.java).apply {
             putExtra(TerraBgService.EXTRA_LABEL, label)
+            putExtra(TerraBgService.EXTRA_END_AT, endAt)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)

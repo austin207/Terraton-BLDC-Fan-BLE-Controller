@@ -106,6 +106,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   Timer? _timerExpirySyncTimer;
   DateTime? _timerExpirySyncTarget;
 
+  // What the ongoing (foreground-service) notification currently shows, as
+  // "label|endAtMillis"; null means no notification is up. _refreshOngoing-
+  // Notification() is driven off every FanState change, which fires several
+  // times per 3 s telemetry cycle, so this keeps the platform channel quiet
+  // by re-issuing only when the rendered content actually changes.
+  String? _ongoingNotifKey;
+
   // Reassembles frames from raw notification bytes. The BLE60 bridges the
   // MCU's UART stream into notifications cut at arbitrary byte boundaries, so
   // a multi-frame reply (e.g. the 3-frame getMotorState burst + runtime frame)
@@ -333,13 +340,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           hasTelemetry = true;
           notifier.updateWatts(watts);
           _lastWattsAt = DateTime.now();
-          if (!_isDemo) {
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            if (s.isPowered) {
-              final label = s.speed > 0 ? 'Speed ${s.speed} · ${watts}W' : '${watts}W';
-              unawaited(BleForegroundService.update(label));
-            }
-          }
+          _refreshOngoingNotification();
           continue;
         }
         final rpm = BleResponseParser.parseRpm(r);
@@ -437,16 +438,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
           // fan has no speed/mode/countdown.
           notifier.applyMotorStatePowerOff();
           notifier.updateTimer(0);
-          if (!_isDemo) unawaited(BleForegroundService.stop());
+          _refreshOngoingNotification();
         } else {
           final wasPowered =
               ref.read(activeFanStateProvider(widget.fan.deviceId)).isPowered;
           notifier.updatePower(true);
-          if (!_isDemo) {
-            final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-            final label = s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running';
-            unawaited(BleForegroundService.start(label));
-          }
+          _refreshOngoingNotification();
           // A spontaneous power-ON from the remote may carry no speed/mode —
           // run a wake session so the dial fills with confirmed state (a
           // just-rebooted MCU won't answer the first poll; the session
@@ -552,7 +549,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // always returns 0 for power == false, so this is unconditional exactly
       // like before.
       if (timerDecision != null) notifier.updateTimer(timerDecision);
-      if (!_isDemo) unawaited(BleForegroundService.stop());
+      _refreshOngoingNotification();
     } else {
       // Fan is running — any previously captured memory is now stale.
       _offStateSpeed = null;
@@ -583,12 +580,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       // machine_state_timer_policy.dart for the single rule this now funnels
       // through.
       if (timerDecision != null) notifier.updateTimer(timerDecision);
-      if (!_isDemo) {
-        final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
-        unawaited(BleForegroundService.start(
-          s.speed > 0 ? 'Speed ${s.speed}' : 'Fan running',
-        ));
-      }
+      _refreshOngoingNotification();
     }
 
     _updateMotorStatePoll();
@@ -676,6 +668,59 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         }
       });
     });
+  }
+
+  /// The moment an armed sleep timer is expected to fire, or null when none is
+  /// armed (or the expected moment has already passed).
+  DateTime? _timerEndsAt(FanState s) {
+    final code      = s.activeTimerCode;
+    final startedAt = s.timerActivatedAt;
+    if (code == null || code == 0 || startedAt == null) return null;
+    final end = startedAt.add(Duration(hours: _timerCodeToHours(code)));
+    return end.isAfter(DateTime.now()) ? end : null;
+  }
+
+  /// Single decision point for the ongoing (foreground-service) notification.
+  ///
+  /// Two things can justify one: live telemetry while the fan runs, and an
+  /// armed sleep timer. The timer outranks the connection — the countdown is
+  /// precisely what the user wants to keep seeing after backgrounding the app,
+  /// and the app deliberately drops the BLE link on pause, so the notification
+  /// has to survive with nothing connected behind it. Android renders the
+  /// countdown itself from `endsAt`; nothing here ticks it.
+  ///
+  /// Pass [linkReleased] from the pause path: `_ble.currentState` can still
+  /// read `connected` while the pause-initiated disconnect is in flight, and a
+  /// backgrounded app must not claim to be showing live telemetry.
+  void _refreshOngoingNotification({bool linkReleased = false}) {
+    if (_isDemo) return;
+    final s      = ref.read(activeFanStateProvider(widget.fan.deviceId));
+    final endsAt = _timerEndsAt(s);
+    final live   = !linkReleased &&
+        _ble.currentState == BleConnectionState.connected &&
+        s.isPowered;
+
+    if (endsAt == null && !live) {
+      if (_ongoingNotifKey == null) return;
+      _ongoingNotifKey = null;
+      unawaited(BleForegroundService.stop());
+      return;
+    }
+
+    final label = live ? _telemetryNotifLabel(s) : 'Sleep timer';
+    final key   = '$label|${endsAt?.millisecondsSinceEpoch ?? 0}';
+    if (key == _ongoingNotifKey) return;
+    _ongoingNotifKey = key;
+    unawaited(BleForegroundService.start(label, endsAt: endsAt));
+  }
+
+  String _telemetryNotifLabel(FanState s) {
+    final watts = s.lastWatts;
+    final parts = [
+      if (s.speed > 0) 'Speed ${s.speed}',
+      if (watts != null && watts > 0) '${watts}W',
+    ];
+    return parts.isEmpty ? 'Fan running' : parts.join(' · ');
   }
 
   // Starts or stops the 90-second Motor State poll based on whether the fan
@@ -804,7 +849,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         _timerExpirySyncTimer?.cancel();
         _timerExpirySyncTimer = null;
         _timerExpirySyncTarget = null;
-        unawaited(BleForegroundService.stop());
+        // NOT an unconditional stop: an armed sleep timer keeps the ongoing
+        // notification up, switched to its countdown, which is the one thing
+        // the user still wants to see while the app is backgrounded. The BLE
+        // link is still released below — the countdown needs no connection
+        // (Android renders it) and the fan performs its own shutdown at T-0.
+        // The service is already running by this point, so nothing is being
+        // started from the background.
+        _refreshOngoingNotification(linkReleased: true);
         // Record intent instead of trusting `_ble.currentState` afterwards —
         // on a fast app-switch, `resumed` can fire before this disconnect
         // lands, and `currentState` still reads `connected` for as long as
@@ -961,8 +1013,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   Widget build(BuildContext context) {
     // Track the sleep timer so a Machine State fetch fires right after its
     // expected expiry (the firmware's shutdown is otherwise never pushed).
-    ref.listen(activeFanStateProvider(widget.fan.deviceId),
-        (_, next) => _syncTimerExpirySchedule(next));
+    ref.listen(activeFanStateProvider(widget.fan.deviceId), (_, next) {
+      _syncTimerExpirySchedule(next);
+      // Also how a Timer tap in _FanControlsPanel arms the countdown
+      // notification: the tap writes FanState, this fires, and the service is
+      // (re)started while the app is still foregrounded — which is what keeps
+      // us clear of the Android 12+ ban on starting a foreground service from
+      // the background. Cheap to call this often: it no-ops unless what the
+      // notification renders actually changed.
+      _refreshOngoingNotification();
+    });
     ref.listen<AsyncValue<BluetoothAdapterState>>(
       bluetoothAdapterStateProvider,
       (prev, next) {
