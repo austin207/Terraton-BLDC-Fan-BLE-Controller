@@ -15,3 +15,9 @@ build_output.log
 secrets.env
 ml/.r2.env
 *.keystore
+
+# Terraton's proprietary MCU firmware source — reference only, never publish.
+# This repo is public. FW_bug.md quotes short snippets for the vendor bug
+# report; the full files stay local.
+IRScan.c
+Customer.h

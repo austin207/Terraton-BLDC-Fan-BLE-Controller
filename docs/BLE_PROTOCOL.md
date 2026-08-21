@@ -52,9 +52,22 @@ the type. **Never scan before connecting** — `startScan()` clears the scan cac
 checksum = (0x55 + 0xAA + packetId + command + dataLen + Σ data) & 0xFF
 ```
 
-> **RPM checksum quirk:** responses for command `0x24` (RPM) arrive with
-> `checksum = (correct − 1) & 0xFF`. The parser accepts both the exact and the
-> off-by-one value (`BleResponseParser._checksumOk`).
+> **The firmware does NOT use that formula.** `calculate_crc()` (`IRScan.c:1455`)
+> sums only `packetId + command + Σ data` — it omits the `55 AA` header and the
+> `dataLen` byte. The difference is `0x55 + 0xAA + dataLen`, so:
+>
+> | dataLen | difference | effect |
+> | --- | --- | --- |
+> | 1 | `0x100` | cancels exactly — both formulas agree |
+> | 2 | `0x101` | the formula above is exactly **+1** too high |
+>
+> That is the whole of the old "RPM checksum quirk": `0x24` (RPM) and `0x08`
+> (runtime) are the only 2-byte responses. `BleResponseParser._checksumOk`
+> therefore keys the tolerance on **dataLen == 2**, not on the command byte.
+> Keying it on `0x24` alone silently discarded every runtime reply.
+>
+> `check_crc()` (`IRScan.c:1462`) applies the same formula to requests. Our
+> request checksums work because every request carries a 1-byte payload.
 
 ---
 
@@ -80,7 +93,7 @@ including these AT strings and the trailing `0D 0A` after each frame.
 
 **The same rule applies in the phone direction — with reassembly.** The BLE60
 forwards the MCU's UART output in notification-sized chunks cut at **arbitrary
-byte boundaries**, not frame boundaries. A multi-frame burst (e.g. the 3-frame
+byte boundaries**, not frame boundaries. A multi-frame burst (e.g. the 4-frame
 Motor State reply plus a runtime frame on connect, ~29 bytes) is routinely
 split **mid-frame** across two notifications. The app therefore never parses a
 notification in isolation: `FrameStreamAssembler`
@@ -119,7 +132,7 @@ Manually verified against real hardware.
 | Query power (watts) | `55 AA 06 23 01 00 29` | `55 AA 07 23 01 WW cs` — `WW` = watts byte |
 | Query speed (RPM) | `55 AA 06 24 01 00 2A` | `55 AA 07 24 02 HH LL cs` — RPM = `(HH << 8) \| LL` |
 | Status poll | `55 AA 00 00 01 00 00` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below |
-| Motor State poll | `55 AA 00 01 01 00 01` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below — always 3 frames |
+| Motor State poll | `55 AA 00 01 01 00 01` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below — 4 frames, each applied independently |
 | Query runtime | `55 AA 00 08 01 00 08` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | `55 AA 07 08 02 HH LL cs` — runtime = `(HH << 8) \| LL) × 5` seconds |
 | Lighting ON/OFF/colour temp | *Pending — bytes not yet provided by Terraton* | *Pending* |
 
@@ -135,11 +148,25 @@ Manually verified against real hardware.
 | `0x24` | RPM (2 bytes) | `parseRpm` |
 | `0x08` | Runtime (2 bytes) — `(HH << 8 \| LL) × 5` seconds | `parseRuntimeSeconds` |
 
-**Mode exclusivity (app-side):** Boost is mutually exclusive with ALL modes —
-Nature, Smart, and Reverse. Activating Boost clears any active mode highlight and
-activating any mode clears Boost, matching the firmware's Motor State model where
-frame [2] reports exactly one active state. (An IR-remote Boost press must replace
-the Reverse highlight in the app — coexistence was removed 2026-07-02.)
+**Mode highlight (app-side):** a `0x21` frame names exactly one mode, so applying
+it lights that chip and unlights the others — that is reading the byte, not
+inferring. **No received frame ever clears a chip**, `0x04` included and with no
+exception for Reverse.
+
+A chip is turned off only by a tap, using the frame the firmware actually honours
+as an exit for that mode:
+
+| Tap | Frame sent | Firmware reason |
+| --- | --- | --- |
+| lit Nature / Boost / Reverse chip | `setSpeed(1..6)` | `SetSpeed()` clears `NatureFlage` (`:187`); `case SPEED` clears `direction` (`:1361`) and `boost_flag` (`:1369`) |
+| lit Smart chip | Power ON | only `case POWER`'s on-branch clears `smart_mode` (`:1347`), and it keeps the speed (`:1344`) |
+| any speed dot | `setSpeed(n)` | clears Nature / Boost / Reverse — **Smart stays lit**, `case SPEED` does not clear it |
+| timer 2h / 4h / 8h | that timer frame | `case TIMER` clears `smart_mode` (`:1424`/`:1428`/`:1432`) |
+
+Boost exits with a speed frame because **speed 7 is Boost** — Power ON would
+restore `OldTargetSpeed = 7` and re-enter it. Reverse exits with a speed frame
+because Power ON never touches `direction`, and because re-sending Reverse
+(`direction ^= 1`, `:1396`) would flip the fan back.
 
 ---
 
@@ -161,52 +188,53 @@ unconditionally, so no special-casing is needed.
 
 ---
 
-## Motor State poll (a.k.a. Machine State poll): always 3 frames
+## Motor State poll (a.k.a. Machine State poll)
 
-Sent once immediately after connecting and again every 90 s when the fan is ON and
-in Smart / Nature / Reverse mode (those modes can change speed autonomously). Also
-retried on a spontaneous remote power-ON so a bare wake frame gets its full state.
+Sent on every 3 s poll tick, alongside the status poll. Both frames are enqueued
+in one synchronous turn and paced 60 ms apart by `WriteQueue`.
 
 | Frame | Command byte | Meaning |
 | --- | --- | --- |
 | 1 | `0x02` | Power state — `data[0] == 0x01` = on |
-| 2 | `0x04` **or** `0x21` | Speed (1–6) **or** active mode — mutually exclusive; this frame is the **exclusive truth** for the current speed/mode; clear all other highlight state |
+| 2 | `0x04` **or** `0x21` | Speed (1–6) **or** active mode |
 | 3 | `0x22` | Timer code |
+| 4 | `0x22` | Duplicate of frame [3] — see below |
 
-**Detection rule:** a Motor State response always includes a `0x22` timer frame.
-Status-poll responses never do. `isMotorStateResponse = responses.any((r) => BleResponseParser.parseTimer(r) != null)`.
+Any subset is fine: **each frame is applied on its own as it arrives**, straight
+to its own field. There is no reply assembly, no ordering rule, and no trust
+decision — see "The control screen is a dumb remote" in [CLAUDE.md](../CLAUDE.md).
+Frames may still be split mid-frame across notifications, which is why
+`FrameStreamAssembler` runs first (see "BLE60 bridge behaviour" above).
 
-**Frames may arrive split across notifications — even mid-frame.** The BLE60
-chunks the MCU's UART stream at arbitrary byte boundaries (see "BLE60 bridge
-behaviour" above), so the 3 frames need not land in one notification, and a
-frame may be cut in half. Byte-level reassembly (`FrameStreamAssembler`)
-recovers mid-frame splits first; then, rather than assume same-notification
-ordering, the app **buffers** power/speed/mode/timer frames while a poll reply
-is pending and applies them **atomically** once complete (or after a short
-debounce if a frame is still in flight):
+**Frame [2] IS exclusive.** `get_mc_state()` (`IRScan.c:1264`) is a single
+if/else chain: `direction` → `21 03`, else `NatureFlage` → `21 02`, else
+`smart_mode` → `21 04`, else `OldTargetSpeed == 7` → `21 01`, else → `04 0N`.
+A `0x04` here provably means no mode is running, and the app can never learn the
+speed while a mode is on. (Earlier revisions of this doc claimed the opposite.)
 
-- If frame [1] (power) has not arrived yet, nothing is applied — the buffer holds
-  until it does, and retry polling continues.
-- If power = OFF, the visible state is cleared (no speed dot may light on an
-  inactive fan) — but frame [2] is **retained as the power-on memory**: it is the
-  firmware's stored last speed/mode (EEPROM). The IR remote's ON button restores
-  that memory in firmware; a bare BLE powerOn (`0x02 0x01`) does not. So when the
-  user taps Power ON in the app, the captured speed/mode is re-sent right after the
-  powerOn frame, mirroring the remote's behaviour, then a wake-poll burst confirms.
-- If power = ON but no speed/mode has arrived yet (MCU still booting), the reply is
-  treated as incomplete and polling keeps retrying until the real state lands. The
-  same applies when the timer frame is still missing — a Motor State reply always
-  carries `0x22`, so the connect polls only stop once power, frame [2] AND the
-  timer have all been applied (insurance against a lost frame).
-- Watts/RPM/runtime frames are applied live throughout, since status-poll telemetry
-  interleaves with the connect burst independently of the Machine State reply.
+**The app still never changes a mode chip on a `0x04`.** The same bytes also
+arrive as the echo of a speed tap (`case SPEED`, `:1357`), which clears
+`direction`, `NatureFlage` and `boost_flag` but **not** `smart_mode`. The receive
+path cannot tell an echo from a poll reply, so it acts on neither; turning a chip
+off happens on the tap path instead.
 
-**Sleep-timer note:** frame [3] reports only WHICH duration is active (2H/4H/8H),
-never the remaining time. The app keeps the countdown start timestamp itself and,
-for timers set from the remote while the app was disconnected, counts down from
-detection (an upper bound). A firmware "remaining seconds" query would make
-remote-set countdowns exact — recommended for a future firmware revision, along
-with making BLE powerOn trigger the same EEPROM restore as IR ON.
+**There is a 4th frame.** `get_mc_state()` sends its three frames itself, then
+`Process_Response()`'s unconditional trailing `calculate_crc(); send_response();`
+(`:1450`) emits a duplicate of frame [3]. Harmless — a reported `0x22` code of 0
+is ignored.
+
+**No checksum alternation.** Only `55 AA 00 01 01 00 01` is ever sent. The vendor
+doc's `55 AA 00 01 01 00 02` is **rejected by the fan**: `check_crc()` computes
+`0x00 + 0x01 + 0x00 = 0x01`, so `read_request()` never sets `recv_flag` and
+`Process_Response()` is never called. The app used to alternate the two, which
+meant every second tick got no reply at all.
+
+**Sleep-timer note:** frame [3] reports `22 01 00` for any BLE-set timer whatever
+is armed. `SetAutoPower()` (`:197`) *does* set `IRControl.FlagAutoPower`, but
+`AutoPowerControl()` (`:857`) consumes and clears it one tick later (`:864`) — and
+`get_mc_state()` (`:1292`) gates the timer field on exactly that flag. The app
+therefore owns the countdown start, display and end. A reported code of `0` is
+**neutral, never a cancellation**. See `FW_bug.md` item 2.
 
 ---
 

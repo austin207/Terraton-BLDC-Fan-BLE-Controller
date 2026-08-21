@@ -68,12 +68,14 @@ class BleServiceImpl implements BleService {
   /// Spacing enforced between consecutive BLE writes.
   ///
   /// The BLE60 is a BLE-to-UART bridge: it only flushes to the MCU on \r\n,
-  /// and the MCU parses one request frame at a time. Two writes issued in the
-  /// same connection interval cost the second frame — which is every control
-  /// path that sends more than one frame per tap (exit-reverse then Mode:
-  /// nature in _onMode, the documented mode-before-speed sequences, the
-  /// power-on restore). Raise this if a multi-frame action still fails on
-  /// hardware; it is the first thing to try.
+  /// and the MCU parses one request frame at a time (read_request(),
+  /// IRScan.c:1483). Two writes issued in the same connection interval cost the
+  /// second frame. Since the dumb-remote rewrite every TAP sends exactly one
+  /// frame, so the path that depends on this is the 3 s poll, which enqueues
+  /// statusPoll() and Get Motor State in one synchronous turn. Unpaced, the fan
+  /// would answer only the first and the display would never update. Raise this
+  /// if a multi-frame action still fails on hardware; it is the first thing to
+  /// try.
   static const Duration _writeGap = Duration(milliseconds: 60);
 
   /// Serialises and paces every frame written to the fan.

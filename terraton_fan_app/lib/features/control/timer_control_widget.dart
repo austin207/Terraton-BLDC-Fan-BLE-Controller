@@ -46,8 +46,11 @@ class TimerControlWidget extends StatelessWidget {
               label: label == 'OFF' ? 'Timer off' : '$label timer',
               selected: isActive,
               enabled: enabled,
+              // Re-tapping the active button still sends its frame. A button
+              // press means "send this command", the same as on the remote —
+              // the highlight is a report of what the fan said, not a lock.
               child: GestureDetector(
-                onTap: !enabled || isActive ? null : () {
+                onTap: !enabled ? null : () {
                   unawaited(HapticFeedback.lightImpact());
                   onTimer(label.toLowerCase());
                 },

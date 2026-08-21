@@ -10,8 +10,8 @@
 //
 // Pure Dart on purpose: no Flutter, no Riverpod, no ObjectBox, no
 // flutter_blue_plus — fully deterministic under fake_async (see
-// test/unit/write_queue_test.dart). Not wired into BleServiceImpl yet; that
-// is a later task.
+// test/unit/write_queue_test.dart). Wired into BleServiceImpl since
+// 2026-08-07: every writeFrame() call goes through it.
 import 'dart:async';
 
 /// Serialises and paces BLE frame writes.

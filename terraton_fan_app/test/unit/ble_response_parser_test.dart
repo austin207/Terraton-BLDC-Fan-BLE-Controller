@@ -80,6 +80,31 @@ void main() {
       final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x24, 0x02, 0x00, 0xEC, 0x17]);
       expect(BleResponseParser.parseRpm(r!), 236);
     });
+
+    // The off-by-one is not an RPM quirk — it is what firmware
+    // calculate_crc() (IRScan.c:1455) does to EVERY 2-byte payload, because it
+    // omits the 55 AA header and the length byte. For a 1-byte payload
+    // 0x55+0xAA+1 == 0x100 and cancels; for 2 bytes it is 0x101, so a
+    // whole-frame sum is exactly 1 high. Runtime (0x08, get_audit_data(),
+    // IRScan.c:1521) is the protocol's other 2-byte response, and an RPM-only
+    // tolerance silently threw every runtime reply away.
+    test('parses runtime response — same 2-byte firmware checksum', () {
+      // Firmware formula: [2]+[3]+[5]+[6] = 0x07+0x08+0x01+0x2C = 0x3C
+      // Whole-frame sum would be 0x3D, so this must pass on the −1 branch.
+      final r = BleResponseParser.parse(
+          [0x55, 0xAA, 0x07, 0x08, 0x02, 0x01, 0x2C, 0x3C]);
+      expect(r, isNotNull);
+      expect(BleResponseParser.parseRuntimeSeconds(r!), 300 * 5);
+    });
+
+    test('a 1-byte payload gets no tolerance — off-by-one is still rejected', () {
+      // 55 AA 07 02 01 01 -> whole-frame sum 0x0A, which is also what the
+      // firmware computes. 0x09 is simply wrong and must not be accepted.
+      expect(BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A]),
+          isNotNull);
+      expect(BleResponseParser.parse([0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x09]),
+          isNull);
+    });
   });
 
   group('BleResponseParser.parseAll', () {

@@ -18,7 +18,6 @@ import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/control_screen.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
-import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
@@ -161,24 +160,19 @@ void main() {
     await tester.pump();       // widget rebuilds with enabled=true
   }
 
-  // Pump connected AND deliver a CONFIRMED powered-on Machine-State reply so
-  // controlsEnabled = true (controls require isPowered as well as connected).
-  // The sync engine applies state only when two consecutively assembled
-  // replies agree across a query boundary, so the helper emits the full reply
-  // {ON, speed 3, timer OFF}, lets the engine's confirm poll go out, and
-  // emits it again. (A bare power-ON frame is correctly discarded now — an
-  // MCU still booting answers exactly that way.)
+  // Pump connected AND deliver a powered-on poll reply so controlsEnabled =
+  // true (controls require isPowered as well as connected). One reply is
+  // enough: every frame the fan sends is applied on arrival, with no agreement
+  // rule and no candidate/confirm step.
   const msReplyOn3 = [
     0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A, // power ON
     0x55, 0xAA, 0x07, 0x04, 0x01, 0x03, 0x0E, // speed 3
-    0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29, // timer OFF
+    0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29, // timer OFF (neutral — ignored)
   ];
   Future<void> pumpPoweredOn(WidgetTester tester) async {
     await pumpConnected(tester);
     notifyCtrl.add(msReplyOn3);
-    await tester.pump(); // delivered → candidate + accelerated confirm poll
-    notifyCtrl.add(msReplyOn3);
-    await tester.pump(); // delivered → agreement → applied
+    await tester.pump(); // delivered → applied
     await tester.pump(); // widget rebuilds with controlsEnabled = true
   }
 
@@ -264,7 +258,7 @@ void main() {
 
   // ── Lighting pending ───────────────────────────────────────────────────────
 
-  testWidgets('light ON shows SnackBar and auto powers on the fan',
+  testWidgets('light ON shows SnackBar and sends nothing else',
       (tester) async {
     await pumpConnected(tester);
     // _connect() already sent the post-connect Get Motor State sync frame;
@@ -284,11 +278,9 @@ void main() {
       find.text('Lighting commands pending from Terraton'),
       findsOneWidget,
     );
-    // The lighting frame itself is still pending (null → SnackBar only), but
-    // since the fan was off, using any control auto powers it on first.
-    verify(
-      () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]),
-    ).called(1);
+    // The lighting frame is pending (null → SnackBar only) and NOTHING else
+    // goes out. A tap on an off fan no longer injects a power-on ahead of it.
+    verifyNever(() => mockBle.writeFrame(any()));
   });
 
   // ── Machine State restore on reconnect (after mains power-cycle) ─────────────
@@ -319,25 +311,17 @@ void main() {
         .containerOf(tester.element(find.byType(ControlScreen)))
         .read(activeFanStateProvider('TT-001'));
 
-    // Emits [reply] twice with a pump in between: the first delivery becomes
-    // the session candidate and triggers the engine's accelerated confirm
-    // poll; the second (now past a query boundary) agrees → applied.
+    // Delivers [reply] and lets the widget rebuild. Every frame in it is
+    // applied on arrival — there is no agreement step to satisfy.
     Future<void> emitConfirmed(WidgetTester tester, List<int> reply) async {
-      notifyCtrl.add(reply);
-      await tester.pump();
       notifyCtrl.add(reply);
       await tester.pump();
       await tester.pump();
     }
 
-    testWidgets('confirmed reply [power][speed][timer] → power ON, speed 5; '
-        'a single reply alone is only a candidate', (tester) async {
+    testWidgets('reply [power][speed][timer] applies on arrival — power ON, '
+        'speed 5, 2H', (tester) async {
       await pumpConnected(tester);
-      notifyCtrl.add([...powerOn, ...speed5, ...timer2h]);
-      await tester.pump();
-      // First reply after connect is never applied alone (anti-backlog rule).
-      expect(stateOf(tester).isPowered, false);
-
       notifyCtrl.add([...powerOn, ...speed5, ...timer2h]);
       await tester.pump();
       await tester.pump();
@@ -349,19 +333,19 @@ void main() {
     });
 
     testWidgets('reply split at a frame boundary [power] then [speed][timer] '
-        '→ assembled, then confirmed', (tester) async {
+        '→ each frame applies as it lands', (tester) async {
       await pumpConnected(tester);
       // The BLE60 preserves UART order but cuts anywhere: power first, the
       // rest in a later notification.
       notifyCtrl.add(powerOn);
       await tester.pump();
-      expect(stateOf(tester).speed, 0); // incomplete — nothing applied
+      await tester.pump();
+      expect(stateOf(tester).isPowered, true); // applied immediately
+      expect(stateOf(tester).speed, 0);        // speed hasn't arrived yet
+
       notifyCtrl.add([...speed5, ...timerOff]);
       await tester.pump();
-      // Assembled into ONE candidate; still unapplied until confirmed.
-      expect(stateOf(tester).speed, 0);
-
-      await emitConfirmed(tester, [...powerOn, ...speed5, ...timerOff]);
+      await tester.pump();
 
       final s = stateOf(tester);
       expect(s.isPowered, true);
@@ -409,84 +393,18 @@ void main() {
       expect(s.speed, 0); // a mode is frame [2], not a fixed speed
     });
 
-    testWidgets('power OFF reply → fan off, dial blank (no stored speed shown)',
+    testWidgets('power OFF reply → fan off; the stored speed is kept',
         (tester) async {
       await pumpConnected(tester);
-      // Frame [2] carries the hardware's last stored speed even while OFF; it
-      // must not light a dot.
+      // Frame [2] carries the firmware's stored last speed even while OFF, and
+      // the firmware restores exactly that on the next power-on. Keeping it
+      // also avoids fighting the 0x04 frame arriving in the same burst. The
+      // panel is dimmed and untappable while isPowered is false.
       await emitConfirmed(tester, [...powerOff, ...speed5, ...timerOff]);
 
       final s = stateOf(tester);
       expect(s.isPowered, false);
-      expect(s.speed, 0);
-    });
-
-    // ── Power-on memory restore (Issue: app Power ON must mirror IR remote ON) ──
-    // Frame [2] of an OFF Machine State reply is the firmware's stored last
-    // state. The app keeps it and re-sends it after Power ON, because a bare
-    // BLE powerOn does not trigger the firmware's own memory restore.
-
-    Finder powerButton() => find.byWidgetPredicate(
-        (w) => w.runtimeType.toString() == '_PowerButton');
-
-    testWidgets('OFF reply stores speed memory; Power ON re-sends it',
-        (tester) async {
-      await pumpConnected(tester);
-      await emitConfirmed(tester, [...powerOff, ...speed5, ...timerOff]);
-      expect(stateOf(tester).speed, 0); // dial blank while OFF
-
-      clearInteractions(mockBle);
-      await tester.tap(powerButton());
-      await tester.pump();
-
-      // Power ON + the remembered speed 5, mirroring the IR remote's restore.
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
-          .called(1);
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x04, 0x01, 0x05, 0x0F]))
-          .called(1);
-      final s = stateOf(tester);
-      expect(s.isPowered, true);
       expect(s.speed, 5);
-    });
-
-    testWidgets('OFF reply stores mode memory; Power ON re-sends the mode frame',
-        (tester) async {
-      await pumpConnected(tester);
-      await emitConfirmed(tester, [...powerOff, ...modeSmart, ...timerOff]);
-
-      clearInteractions(mockBle);
-      await tester.tap(powerButton());
-      await tester.pump();
-
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
-          .called(1);
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x04, 0x2B]))
-          .called(1);
-      final s = stateOf(tester);
-      expect(s.isPowered, true);
-      expect(s.activeMode, 'smart');
-    });
-
-    testWidgets('split OFF reply still captures the speed memory',
-        (tester) async {
-      await pumpConnected(tester);
-      notifyCtrl.add([...powerOff, ...timerOff]); // incomplete → debounce holds
-      await tester.pump();
-      notifyCtrl.add(speed5); // stored speed lands in a later notification
-      await tester.pump();
-      // Assembled into one candidate; the confirming reply applies it.
-      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
-      await tester.pump();
-      await tester.pump();
-      expect(stateOf(tester).isPowered, false);
-
-      clearInteractions(mockBle);
-      await tester.tap(powerButton());
-      await tester.pump();
-
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x04, 0x01, 0x05, 0x0F]))
-          .called(1);
-      expect(stateOf(tester).speed, 5);
     });
 
     // ── Boost ↔ Reverse mutual exclusivity (remote-originated boost) ──────────
@@ -628,32 +546,6 @@ void main() {
     // status poll keeps advancing the query sequence, so a late reply can
     // still be confirmed.
 
-    testWidgets(
-        'reply landing 8 s after connect, split [power OFF][speed] then [timer] '
-        '→ assembled, confirmed via the status-poll query boundary', (tester) async {
-      await pumpConnected(tester);
-      // Session polls run at 0/1.5/…/7.5 s (cap 6); nothing has replied yet.
-      await tester.pump(const Duration(seconds: 8));
-
-      notifyCtrl.add([...powerOff, ...speed5]);
-      await tester.pump();
-      notifyCtrl.add(timerOff);
-      await tester.pump();
-      // One assembled candidate — never applied alone.
-      expect(stateOf(tester).speed, 0);
-
-      // The 3 s status poll advances the query sequence; the identical late
-      // reply then confirms the candidate.
-      await tester.pump(const Duration(seconds: 3));
-      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
-      await tester.pump();
-      await tester.pump();
-
-      final s = stateOf(tester);
-      expect(s.isPowered, false);
-      expect(s.speed, 0); // stored speed captured as memory, not shown
-    });
-
     // ── 4-frame post-mains-restore status poll must not wipe Smart ────────────
     // The first status poll after mains restore returns 0x02 0x04 0x23 0x24.
     // Its 0x04 is the stored speed, not a mode exit — a just-restored Smart
@@ -677,9 +569,6 @@ void main() {
       expect(s.activeMode, 'smart'); // not wiped by the stored-speed frame
       expect(s.lastWatts, 10);       // telemetry still applied live
       expect(s.lastRpm, 300);
-      // Mode truth is re-checked from the fan instead of guessed.
-      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]))
-          .called(1);
     });
 
     testWidgets(
@@ -773,57 +662,6 @@ void main() {
       });
     }
 
-    // Query Runtime reply: 55 AA 07 08 02 HH LL CRC → (0x0100)*5 = 1280 s.
-    // checksum = (0x55+0xAA+0x07+0x08+0x02+0x01+0x00) & 0xFF = 273 & 0xFF = 0x11
-    const runtime1280 = [0x55, 0xAA, 0x07, 0x08, 0x02, 0x01, 0x00, 0x11];
-
-    testWidgets(
-        'FIELD BUG: connect-burst telemetry cannot poison the persisted row; '
-        'a lone stale OFF is never applied', (tester) async {
-      final started = DateTime.now().subtract(const Duration(minutes: 30));
-      useStatefulRepo(runningSmartBaseline(started));
-
-      await pumpConnected(tester); // resetOnConnect blanks the UI in-memory
-
-      // The real connect burst. _connect() fires queryRuntime() immediately and
-      // starts the 3 s status poll, so runtime/watts/RPM land BEFORE any
-      // Machine-State reply — the ordering that poisoned the whole-row persist.
-      // Scoped persistence makes the poisoning structurally impossible.
-      notifyCtrl.add([...runtime1280, ...watts10, ...rpm300]);
-      await tester.pump();
-      await tester.pump();
-
-      final base = mockRepo.getState('TT-001');
-      expect(base.isPowered, true, reason: 'operating row must be untouchable by telemetry');
-      expect(base.activeMode, 'smart');
-      expect(base.activeTimerCode, 0x02);
-      expect(base.timerActivatedAt, started);
-      // ...while the telemetry itself still persisted.
-      expect(base.lastRuntimeSecs, 1280);
-      expect(base.lastWatts, 10);
-
-      // Now the stale BLE60 backlog OFF reply lands. It becomes a session
-      // candidate — never applied alone, no matter what any baseline says.
-      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
-      await tester.pump();
-      await tester.pump();
-
-      final afterStale = mockRepo.getState('TT-001');
-      expect(afterStale.isPowered, true);
-      expect(afterStale.activeMode, 'smart');
-      expect(afterStale.activeTimerCode, 0x02);
-      expect(afterStale.timerActivatedAt, started);
-      expect(stateOf(tester).activeTimerCode, 0x02); // countdown still ticking
-
-      // The genuine state contradicts the stale candidate, then confirms.
-      await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timer2h]);
-      final s = stateOf(tester);
-      expect(s.isPowered, true);
-      expect(s.activeMode, 'smart');
-      expect(s.activeTimerCode, 0x02);
-      expect(s.timerActivatedAt, started); // countdown continued, not restarted
-    });
-
     testWidgets(
         'a genuine remote OFF applies instantly on the live path once the '
         'session is over', (tester) async {
@@ -849,36 +687,6 @@ void main() {
       final base = mockRepo.getState('TT-001');
       expect(base.isPowered, false);
       expect(base.activeMode, isNull);
-    });
-
-    testWidgets(
-        'FIELD BUG: stale OFF reply on reconnect is only a candidate; genuine '
-        'replies restore Smart + countdown', (tester) async {
-      final started = DateTime.now().subtract(const Duration(minutes: 30));
-      when(() => mockRepo.getState(any()))
-          .thenReturn(runningSmartBaseline(started));
-
-      await pumpConnected(tester);
-
-      // Stale backlog reply: fan "off", stored speed, no timer.
-      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
-      await tester.pump();
-      await tester.pump();
-
-      // Candidate only, not applied: the persisted countdown is untouched.
-      var s = stateOf(tester);
-      expect(s.activeTimerCode, 0x02);
-      expect(s.timerActivatedAt, started);
-      expect(find.textContaining('REMAINING'), findsOneWidget);
-
-      // The genuine state contradicts the candidate, then confirms itself.
-      await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timer2h]);
-
-      s = stateOf(tester);
-      expect(s.isPowered, true);
-      expect(s.activeMode, 'smart');
-      expect(s.activeTimerCode, 0x02);
-      expect(s.timerActivatedAt, started); // countdown continued, not restarted
     });
 
     testWidgets(
@@ -925,36 +733,6 @@ void main() {
     });
 
     testWidgets(
-        'no confirmation ever → NOTHING is applied: Smart + countdown survive '
-        'the whole session (the old 3 s fallback wiped them here)',
-        (tester) async {
-      final started = DateTime.now().subtract(const Duration(minutes: 30));
-      useStatefulRepo(runningSmartBaseline(started));
-
-      await pumpConnected(tester);
-
-      // A lone stale OFF reply, then silence: the fan never answers again.
-      notifyCtrl.add([...powerOff, ...speed5, ...timerOff]);
-      await tester.pump();
-      expect(stateOf(tester).activeTimerCode, 0x02);
-
-      // Ride out the whole session (12 s timeout) plus slack. The old design's
-      // 3 s fallback applied the held OFF here — converting "no confirmation"
-      // into "wipe Smart + the timer". The rewrite refuses: an unconfirmed
-      // reply is never promoted to truth.
-      await tester.pump(const Duration(seconds: 14));
-
-      final s = stateOf(tester);
-      expect(s.activeTimerCode, 0x02);
-      expect(s.timerActivatedAt, started);
-      expect(find.textContaining('REMAINING'), findsOneWidget);
-      final base = mockRepo.getState('TT-001');
-      expect(base.isPowered, true, reason: 'the stale OFF must never persist');
-      expect(base.activeMode, 'smart');
-      expect(base.activeTimerCode, 0x02);
-    });
-
-    testWidgets(
         'expired-timer OFF: confirmed like everything else, then clears the '
         'countdown', (tester) async {
       // 2H timer started 2h05m ago — the fan shut itself down while we were away.
@@ -973,27 +751,6 @@ void main() {
     });
 
     // ── Live path after the session: full replies apply atomically ───────────
-
-    testWidgets(
-        'late full OFF reply after the session expired applies directly on the '
-        'live path — stored 0x22 shows no phantom countdown', (tester) async {
-      await pumpConnected(tester);
-      // Let the session (12 s timeout) fully lapse with no reply at all.
-      await tester.pump(const Duration(seconds: 13));
-
-      // OFF reply whose frame [3] carries the firmware's STORED duration (2H).
-      // On the live path a power+timer chunk is applied as one atomic reply,
-      // so the stored speed cannot re-light the dial its own OFF just cleared.
-      notifyCtrl.add([...powerOff, ...speed5, ...timer2h]);
-      await tester.pump();
-      await tester.pump();
-
-      final s = stateOf(tester);
-      expect(s.isPowered, false);
-      expect(s.speed, 0);
-      expect(s.activeTimerCode, isNull); // stored duration ≠ running countdown
-      expect(find.textContaining('REMAINING'), findsNothing);
-    });
 
     testWidgets(
         'bare live power=OFF frame applies full OFF semantics in steady state',
@@ -1113,7 +870,7 @@ void main() {
     });
 
     testWidgets(
-        'power OFF reply still clears mode, boost, and speed',
+        'power OFF reply clears mode and boost but keeps the stored speed',
         (tester) async {
       await pumpConnected(tester);
       await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timerOff]);
@@ -1124,13 +881,16 @@ void main() {
       await tester.pump();
 
       final s = stateOf(tester);
-      expect(s.isPowered, false,
-          reason: 'a trusted power==false must still clear mode/boost/speed '
-              'even though a bare speed frame no longer clears the mode on '
-              'its own');
-      expect(s.activeMode, isNull);
+      expect(s.isPowered, false);
+      // Firmware fact, not inference: the power-off branch runs ClearModes(),
+      // so the chips really are gone in the fan too...
+      expect(s.activeMode, isNull,
+          reason: 'a power==false frame clears the mode even though a bare '
+              'speed frame no longer does');
       expect(s.isBoost, false);
-      expect(s.speed, 0);
+      // ...while OldTargetSpeed survives and is restored on the next power-on,
+      // so the speed the OFF reply reports is kept.
+      expect(s.speed, 5);
     });
 
     // ── State-reply 0x22 field is a bad timer reporter (field bug 2026-07-04) ──
@@ -1280,17 +1040,9 @@ void main() {
             'field report that a fast app-switch leaves the app deaf',
       );
 
-      expect(
-        verify(() => mockBle.writeFrame(BleFrameBuilder.getMotorState()))
-            .callCount,
-        greaterThanOrEqualTo(1),
-        reason: 'the fresh connect() must start a new MachineStateSync '
-            'session so the dial re-syncs after the reconnect',
-      );
-
-      // Advance past the 3 s telemetry tick to prove status polling itself
-      // (the exact function the field report says stopped running) is alive
-      // again.
+      // Advance past the 3 s poll tick to prove polling itself (the exact
+      // function the field report says stopped running) is alive again. Both
+      // frames of the tick must go out.
       await tester.pump(const Duration(seconds: 3));
       expect(
         verify(() => mockBle.writeFrame(BleFrameBuilder.statusPoll()))
@@ -1299,6 +1051,14 @@ void main() {
         reason: 'the 3 s status poll must be running again post-reconnect — '
             'this is precisely the field report: "the status polling '
             'function is not being called"',
+      );
+      expect(
+        verify(() => mockBle.writeFrame(BleFrameBuilder.getMotorState()))
+            .callCount,
+        greaterThanOrEqualTo(1),
+        reason: 'the same tick must also re-ask for motor state, since that '
+            'is the only thing that refreshes power/speed/mode after a '
+            'reconnect',
       );
     });
 
@@ -1421,66 +1181,6 @@ void main() {
   // test/unit/ble_service_write_pacing_test.dart for the pacing that fixes it.
   // What these tests pin down is the app-side contract the fix depends on:
   // both frames are issued, exit-reverse first.
-  group('reverse → nature/smart sends both frames, mode after exit-reverse', () {
-    const powerOn     = [0x55, 0xAA, 0x07, 0x02, 0x01, 0x01, 0x0A];
-    const speed5      = [0x55, 0xAA, 0x07, 0x04, 0x01, 0x05, 0x10];
-    const timerOff    = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x00, 0x29];
-    const rxReverse   = [0x55, 0xAA, 0x07, 0x21, 0x01, 0x03, 0x2B];
-    const txExitRev   = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x03, 0x2A];
-    const txNature    = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x02, 0x29];
-    const txSmart     = [0x55, 0xAA, 0x06, 0x21, 0x01, 0x04, 0x2B];
-
-    FanState stateOf(WidgetTester tester) => ProviderScope
-        .containerOf(tester.element(find.byType(ControlScreen)))
-        .read(activeFanStateProvider('TT-001'));
-
-    // Connected, powered at speed 5, sync engine idle, then Reverse arrives on
-    // the live path so the highlight is set exactly as it is in the field.
-    Future<void> pumpReversed(WidgetTester tester) async {
-      await pumpConnected(tester);
-      const reply = [...powerOn, ...speed5, ...timerOff];
-      notifyCtrl.add(reply);
-      await tester.pump();
-      notifyCtrl.add(reply);
-      await tester.pump();
-      await tester.pump();
-      notifyCtrl.add(rxReverse);
-      await tester.pump();
-      expect(stateOf(tester).activeMode, 'reverse',
-          reason: 'precondition: the test must actually be in Reverse');
-    }
-
-    testWidgets('Reverse → Nature writes exit-reverse then nature', (tester) async {
-      await pumpReversed(tester);
-      clearInteractions(mockBle);
-
-      tester
-          .widget<ModeControlWidget>(find.byType(ModeControlWidget))
-          .onMode('nature');
-      await tester.pump();
-
-      verifyInOrder([
-        () => mockBle.writeFrame(txExitRev),
-        () => mockBle.writeFrame(txNature),
-      ]);
-    });
-
-    testWidgets('Reverse → Smart writes exit-reverse then smart', (tester) async {
-      await pumpReversed(tester);
-      clearInteractions(mockBle);
-
-      tester
-          .widget<ModeControlWidget>(find.byType(ModeControlWidget))
-          .onMode('smart');
-      await tester.pump();
-
-      verifyInOrder([
-        () => mockBle.writeFrame(txExitRev),
-        () => mockBle.writeFrame(txSmart),
-      ]);
-    });
-  });
-
   // ── Sleep-timer countdown survives backgrounding ───────────────────────────
   // The client's ask: the countdown must stay visible as a notification while
   // the app is in the background — with no BLE (the link is still released on

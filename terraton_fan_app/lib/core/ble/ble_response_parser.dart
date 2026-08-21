@@ -13,15 +13,24 @@ class FanResponse {
 }
 
 class BleResponseParser {
-  // Hardware quirk: RPM responses (cmd 0x24) arrive with checksum = (correct − 1) & 0xFF.
-  // The tolerance is scoped to RPM frames ONLY: applied to every command it
-  // doubled the odds (~2/256 per candidate offset) of accepting BLE60 junk —
-  // AT strings, FF padding, stale backlog fragments — as a valid frame, and a
-  // junk frame that parses as a state command corrupts the reconnect sync.
-  static bool _checksumOk(int computed, int received, int command) {
+  // Firmware `calculate_crc()` (IRScan.c:1455) sums ONLY packetId + command +
+  // the data bytes. It leaves out the 0x55 0xAA header and the length byte,
+  // which this parser includes. The difference is 0x55 + 0xAA + dataLen:
+  //
+  //   dataLen 1 -> 0x55+0xAA+1 = 0x100 -> cancels, checksums agree exactly
+  //   dataLen 2 -> 0x55+0xAA+2 = 0x101 -> our sum is exactly 1 too high
+  //
+  // Verified against the 2026-07-04 field capture:
+  //   55 AA 07 23 01 18 42  (1 byte) -> 0x07+0x23+0x18 = 0x42, agrees
+  //   55 AA 07 24 02 01 68 94 (2 byte) -> 0x07+0x24+0x01+0x68 = 0x94, we get 0x95
+  //
+  // Keyed on dataLen, not on the command byte, because that is what the
+  // firmware itself branches on. This also covers 0x08 runtime
+  // (get_audit_data(), IRScan.c:1521), the protocol's other 2-byte response —
+  // an RPM-only tolerance silently threw every runtime reply away.
+  static bool _checksumOk(int computed, int received, int dataLen) {
     if ((computed & 0xFF) == received) return true;
-    return command == CommandLoader.responseCommand('running_rpm') &&
-        ((computed - 1) & 0xFF) == received;
+    return dataLen == 2 && ((computed - 1) & 0xFF) == received;
   }
 
   /// Parses a single frame starting at byte 0.
@@ -38,7 +47,7 @@ class BleResponseParser {
     final received = bytes[5 + dataLen];
     int sum = bytes[0] + bytes[1] + bytes[2] + bytes[3] + bytes[4];
     for (final b in data) { sum += b; }
-    if (!_checksumOk(sum, received, command)) return null;
+    if (!_checksumOk(sum, received, dataLen)) return null;
     return FanResponse(command: command, data: data);
   }
 
@@ -63,7 +72,7 @@ class BleResponseParser {
       final received = bytes[i + 5 + dataLen];
       int sum = bytes[i] + bytes[i + 1] + bytes[i + 2] + bytes[i + 3] + bytes[i + 4];
       for (final b in data) { sum += b; }
-      if (_checksumOk(sum, received, command)) {
+      if (_checksumOk(sum, received, dataLen)) {
         results.add(FanResponse(command: command, data: data));
       }
       i = end;
@@ -102,10 +111,15 @@ class BleResponseParser {
     if (r.command != cmd || r.data.isEmpty) return null;
     final t = r.data[0];
     // Only the four real codes (off / 2 h / 4 h / 8 h — commands.yaml
-    // timers.actions). parseTimer != null is what classifies a burst as a
-    // Machine-State reply, so an out-of-range byte in a junk 0x22 frame must
-    // not be allowed to reroute a whole response set. Mirrors parseSpeed's
-    // 1–6 range check.
+    // timers.actions), so an out-of-range byte in a junk 0x22 frame cannot arm
+    // a phantom countdown. Mirrors parseSpeed's 1–6 range check.
+    //
+    // Keep 0x00 on the whitelist: it is what lets a genuine user Timer-OFF tap
+    // round-trip. _applyFrame is what decides a REPORTED 0 is neutral.
+    //
+    // If Terraton ever fixes the timer reporting (FW_bug.md item 2), a running
+    // 4 h timer will count 4 -> 3 -> 2 -> 1 -> 0 in data[0], and codes 3 and 1
+    // would be dropped here. Widen this to 0..8 at that point.
     return const {0x00, 0x02, 0x04, 0x08}.contains(t) ? t : null;
   }
 
@@ -180,7 +194,7 @@ class FrameStreamAssembler {
       if (end > _buf.length) break; // frame split mid-frame — retain
       var sum = _buf[i] + _buf[i + 1] + _buf[i + 2] + _buf[i + 3] + _buf[i + 4];
       for (var j = i + 5; j < i + 5 + dataLen; j++) { sum += _buf[j]; }
-      if (BleResponseParser._checksumOk(sum, _buf[end - 1], _buf[i + 3])) {
+      if (BleResponseParser._checksumOk(sum, _buf[end - 1], dataLen)) {
         results.add(FanResponse(
           command: _buf[i + 3],
           data: _buf.sublist(i + 5, i + 5 + dataLen),

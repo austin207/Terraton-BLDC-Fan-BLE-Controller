@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
+import 'package:terraton_fan_app/shared/theme.dart';
 
 Widget _build({
   int? activeTimerCode,
@@ -99,8 +100,11 @@ void main() {
       expect(received, '8h');
     });
 
-    testWidgets('tapping OFF when already active is a no-op', (tester) async {
-      // Default (null code) = OFF is active; tapping OFF must not fire callback.
+    // A button press means "send this command", exactly as on the IR remote.
+    // The highlight reports what the fan last said; it is not a lock.
+
+    testWidgets('tapping OFF when already active still fires', (tester) async {
+      // Default (null code) = OFF is the active button.
       String? received;
       await tester.pumpWidget(_build(onTimer: (s) => received = s));
       await tester.pumpAndSettle();
@@ -108,10 +112,10 @@ void main() {
       await tester.tap(find.text('OFF'));
       await tester.pump();
 
-      expect(received, isNull);
+      expect(received, 'off');
     });
 
-    testWidgets('tapping active 2H button is a no-op', (tester) async {
+    testWidgets('tapping the active 2H button still fires', (tester) async {
       String? received;
       await tester.pumpWidget(_build(
         activeTimerCode: 0x02,
@@ -122,7 +126,7 @@ void main() {
       await tester.tap(find.text('2H'));
       await tester.pump();
 
-      expect(received, isNull);
+      expect(received, '2h');
     });
 
     testWidgets('disabled widget does not fire onTimer', (tester) async {
@@ -149,19 +153,12 @@ void main() {
       await tester.pumpWidget(_build(activeTimerCode: 0x04));
       await tester.pumpAndSettle();
 
-      // Widget rebuilds — 4H should now be visually active.
-      // We verify by tapping 4H and confirming no callback fires (it is now active).
-      String? received;
-      await tester.pumpWidget(_build(
-        activeTimerCode: 0x04,
-        onTimer: (s) => received = s,
-      ));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('4H'));
-      await tester.pump();
-
-      expect(received, isNull); // 4H is active — tap is a no-op
+      // Widget rebuilds — 4H should now be visually active. Read the active
+      // styling directly; a tap is no longer a usable probe for "is active",
+      // because every button fires whether or not it is the current one.
+      expect(tester.widget<Text>(find.text('4H')).style?.color, kYellow);
+      expect(tester.widget<Text>(find.text('OFF')).style?.color,
+          isNot(kYellow));
     });
   });
 }

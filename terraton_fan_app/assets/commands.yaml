@@ -27,19 +27,19 @@ status_poll:
   frame: [0x55, 0xAA, 0x00, 0x00, 0x01, 0x00, 0x00]
 
 # Special case: get motor state uses a fixed non-standard frame.
-# Sent once after every connection/reconnection to sync button states
-# (power, speed, mode, timer). The 5-second status poll above continues
-# to handle ongoing RPM/watts telemetry.
+# Sent on every 3-second poll tick to sync button states (power,
+# speed-or-mode, timer). The status poll above carries RPM/watts telemetry.
 get_motor_state:
   frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x01]
 
-# Vendor-formula checksum variant of get_motor_state. Terraton's protocol doc
-# defines checksum = lower byte of the frame sum excluding the header, which
-# yields 0x02 here — but the lab fan answers the 0x01 variant above
-# (hardware-verified). Newer field firmware may validate checksums and drop
-# the 0x01 frame, so reconnect sync polls alternate between both variants;
-# whichever the fan answers wins. Harmless on firmware that answers both —
-# duplicate replies simply agree.
+# Vendor-formula checksum variant of get_motor_state. NO LONGER SENT.
+#
+# Terraton's protocol doc computes 0x02 for this frame. The firmware source
+# settles it: check_crc() (IRScan.c:1462) sums request_frame[2]+[3]+[5] only,
+# giving 0x00+0x01+0x00 = 0x01. The 0x02 frame therefore fails the check,
+# read_request() never sets recv_flag, and Process_Response() is never called.
+# The app used to alternate the two variants, which meant every second poll
+# tick got no reply at all. Kept here for reference only.
 get_motor_state_vendor:
   frame: [0x55, 0xAA, 0x00, 0x01, 0x01, 0x00, 0x02]
 

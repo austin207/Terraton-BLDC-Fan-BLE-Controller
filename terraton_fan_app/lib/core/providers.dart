@@ -131,46 +131,42 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
         isOn:       state.lastLightIsOn,
       ));
 
+  // ── Frame → field ──────────────────────────────────────────────────────────
+  // One reported byte writes one thing. Nothing here infers a second field from
+  // a first: a mode does not imply power, a speed does not imply "no mode".
+  // Whatever the fan reports is what the UI shows.
+  //
+  // Every mutator no-ops when the value is unchanged. The 3 s poll sends both a
+  // status poll and a Get Motor State, so ~6 frames arrive per tick; without
+  // these guards each one allocates a new FanState (identity-compared, so
+  // Riverpod rebuilds the whole screen) and fires an ObjectBox write, forever.
+
   void updatePower(bool powered) {
+    if (state.isPowered == powered) return;
     state = state.copyWith(isPowered: powered);
     _persistOperating();
   }
 
   void updateSpeed(int speed) {
+    if (state.speed == speed) return;
     state = state.copyWith(speed: speed);
     _persistOperating();
   }
 
-  // Accepts the mode name string from BleResponseParser.parseModeString.
-  // Boost is mutually exclusive with ALL modes (Nature, Smart, Reverse) —
-  // matching the firmware's Machine-State model where frame [2] reports exactly
-  // one active state. A 'boost' notification clears any active mode; any mode
-  // notification clears isBoost.
-  void updateMode(String? modeName) {
-    switch (modeName) {
-      case 'boost':
-        // Hardware confirmed boost — set isBoost. An active mode means the fan
-        // is running, so mark it powered (a Boost from the remote must ungrey
-        // the UI and turn the power button green). Boost replaces any active
-        // mode highlight — including Reverse.
-        state = state.copyWith(
-          isPowered: true,
-          isBoost: true,
-          activeMode: () => null,
-        );
-      case 'nature':
-        // Nature is mutually exclusive with boost. Active mode ⇒ powered.
-        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'nature');
-      case 'smart':
-        // Smart is mutually exclusive with boost; clear isBoost. Active mode ⇒ powered.
-        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => 'smart');
-      case null:
-        // Fan reported no active mode — clear both. No power assumption here.
-        state = state.copyWith(isBoost: false, activeMode: () => null);
-      default:
-        // 'reverse' — clears isBoost (symmetric exclusivity). Active mode ⇒ powered.
-        state = state.copyWith(isPowered: true, isBoost: false, activeMode: () => modeName);
-    }
+  /// Sets which mode chip is lit, from a `0x21` frame's mode name — or clears
+  /// it with null.
+  ///
+  /// `isBoost` and `activeMode` are one UI concept (which chip is lit) stored
+  /// in two columns, so writing both is writing one field, not cross-field
+  /// inference. A `0x21` frame names exactly one mode, so lighting that one
+  /// necessarily unlights the others.
+  ///
+  /// Deliberately does NOT touch `isPowered`: only a `0x02` frame may do that.
+  void setModeHighlight(String? name) {
+    final boost = name == 'boost';
+    final mode  = boost ? null : name;
+    if (state.isBoost == boost && state.activeMode == mode) return;
+    state = state.copyWith(isBoost: boost, activeMode: () => mode);
     _persistOperating();
   }
 
@@ -184,6 +180,7 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
   //      remote while disconnected): count down from detection (upper bound).
   void updateTimer(int timerCode, {DateTime? activatedAt}) {
     if (timerCode == 0) {
+      if (state.activeTimerCode == null && state.timerActivatedAt == null) return;
       state = state.copyWith(
         activeTimerCode:  () => null,
         timerActivatedAt: () => null,
@@ -201,6 +198,9 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
       resolved = DateTime.now();
     }
+    if (state.activeTimerCode == timerCode && state.timerActivatedAt == resolved) {
+      return;
+    }
     state = state.copyWith(
       activeTimerCode:  () => timerCode,
       timerActivatedAt: () => resolved,
@@ -208,108 +208,78 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     _persistTimer();
   }
 
-  /// Blanks volatile connection-state fields so reconnects don't show stale
-  /// data; the Machine-State sync then restores the actual values.
-  /// Display-only BY CONSTRUCTION: this assigns `state` without persisting,
-  /// and every mutator persists only its own field group — so no later write
-  /// of any kind can carry this blank into ObjectBox. (Under the old
-  /// whole-row persist, the first telemetry frame after this call re-wrote
-  /// the blanked operating fields to the DB — the root of the reconnect
-  /// state-loss field bug.)
+  /// Blanks the instantaneous readings on (re)connect so a reconnect never
+  /// shows watts/RPM from before the gap. Display-only: assigns `state`
+  /// without persisting.
   ///
-  /// The sleep timer is deliberately NOT cleared: the countdown keeps ticking
-  /// from the persisted start time across the reconnect, and the Machine State
-  /// timer frame (0x22) then confirms it (same code keeps the start time via
-  /// updateTimer's current-state rule) or corrects it (OFF or code 0 clears; a
-  /// different code restarts from detection).
-  void resetOnConnect() {
+  /// Operating state (power, speed, mode) is deliberately NOT blanked. The app
+  /// disconnects on every background and reconnects on every resume, so
+  /// blanking it here would collapse the dial visibly on every single resume
+  /// while the poll refilled it. Watts and RPM are instantaneous and genuinely
+  /// cannot be stale-displayed; power/speed/mode are the fan's own memory and
+  /// are very likely still correct. The sleep timer is untouched — the
+  /// countdown ticks from its persisted start time straight through the gap.
+  void resetTelemetryOnConnect() {
     state = state.copyWith(
-      isPowered:  false,
-      isBoost:    false,
-      activeMode: () => null,
-      speed:      0,
-      lastWatts:  () => null,
-      lastRpm:    () => null,
+      lastWatts: () => null,
+      lastRpm:   () => null,
     );
   }
 
-  /// Applied when Motor State frame [1] (0x02) reports the fan is powered OFF.
-  /// Clears all operating state atomically — speed, mode, and boost are
-  /// undefined when the fan is off; do not preserve previous-session values.
-  void applyMotorStatePowerOff() {
+  /// Applied when a `0x02` frame reports the fan is OFF.
+  ///
+  /// Clearing the mode chips and the timer is not inference — the firmware's
+  /// power-off branch runs `ClearModes()` and `FlagAutoPower = 0`, so those
+  /// really are gone in the fan. `speed` is deliberately KEPT: the firmware
+  /// preserves `OldTargetSpeed` across off/on and restores it on power-on, an
+  /// OFF state reply reports that stored speed in frame [2], and clearing it
+  /// here would fight that frame two bytes later in the same burst.
+  void applyPowerOff() {
+    if (!state.isPowered &&
+        !state.isBoost &&
+        state.activeMode == null &&
+        state.activeTimerCode == null) {
+      return;
+    }
     state = state.copyWith(
-      isPowered:  false,
-      isBoost:    false,
-      activeMode: () => null,
-      speed:      0,
-      lastWatts:  () => null,
-      lastRpm:    () => null,
+      isPowered:        false,
+      isBoost:          false,
+      activeMode:       () => null,
+      activeTimerCode:  () => null,
+      timerActivatedAt: () => null,
     );
     _persistOperating();
-    _persistTelemetry();
+    _persistTimer();
   }
 
   void updateWatts(int watts) {
+    if (state.lastWatts == watts) return;
     state = state.copyWith(lastWatts: () => watts);
     _persistTelemetry();
   }
 
   void updateRpm(int rpm) {
+    if (state.lastRpm == rpm) return;
     state = state.copyWith(lastRpm: () => rpm);
     _persistTelemetry();
   }
 
   void updateRuntime(int secs) {
+    if (state.lastRuntimeSecs == secs) return;
     state = state.copyWith(lastRuntimeSecs: () => secs);
     _persistTelemetry();
   }
 
   void clearWatts() {
+    if (state.lastWatts == null) return;
     state = state.copyWith(lastWatts: () => null);
     _persistTelemetry();
   }
 
   void clearRpm() {
+    if (state.lastRpm == null) return;
     state = state.copyWith(lastRpm: () => null);
     _persistTelemetry();
-  }
-
-  /// Toggle boost. Nature mode blocks boost activation (the UI clears Nature
-  /// first). Activating boost exits ANY active mode — Boost is mutually
-  /// exclusive with Nature, Smart, and Reverse.
-  void setBoostActive(bool on) {
-    if (on && state.activeMode == 'nature') return;
-    state = state.copyWith(
-      isBoost: on,
-      activeMode: () => on ? null : state.activeMode,
-    );
-    _persistOperating();
-  }
-
-  /// Activate or clear a non-boost mode. Every mode (Nature, Smart, Reverse)
-  /// clears boost — Boost is mutually exclusive with all of them.
-  void setActiveMode(String? mode) {
-    state = state.copyWith(
-      isBoost: mode != null ? false : state.isBoost,
-      activeMode: () => mode,
-    );
-    _persistOperating();
-  }
-
-  /// Applied when Motor State (getMotorState) frame [2] is received.
-  /// Frame [2] is the exclusive truth: one speed OR one special mode is active,
-  /// never both simultaneously. Clears all other mode state atomically.
-  void applyMotorStateTruth(String? mode) {
-    switch (mode) {
-      case 'boost':
-        state = state.copyWith(isBoost: true, activeMode: () => null);
-      case null:
-        // Speed was frame [2] — fan is in plain speed mode, no special mode active.
-        state = state.copyWith(isBoost: false, activeMode: () => null);
-      default: // 'nature', 'smart', 'reverse'
-        state = state.copyWith(isBoost: false, activeMode: () => mode);
-    }
-    _persistOperating();
   }
 
   void updateLighting({
