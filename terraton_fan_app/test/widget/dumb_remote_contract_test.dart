@@ -279,28 +279,31 @@ void main() {
       verifyNoMoreInteractions(mockBle);
     });
 
-    // Re-tapping a LIT chip means "turn this off". The fan has no frame that
-    // says "no mode" — get_mc_state() (IRScan.c:1264) answers a plain 0x04
-    // instead, and Table C below proves the receive path ignores that for mode
-    // purposes. So the exit has to be driven from the tap, using whichever
-    // frame the firmware actually honours as an exit for that mode.
+    // Re-tapping a LIT chip means "turn this off" — but only for Reverse.
+    // Confirmed against the firmware source: none of the remote's own mode
+    // buttons (IRNatureWind/IRSmartMode/IRSpeed7) exit on a repeat press —
+    // Nature is guarded idempotent, Smart/Boost just re-arm unconditionally.
+    // Reverse alone is a genuine toggle (`direction ^= 0x01`), which is why
+    // it needs a dedicated exit path instead of re-sending its own frame —
+    // Table C below proves the receive path ignores a plain 0x04 for mode
+    // purposes in the one ambiguous case (ignore that, it does not apply
+    // here since Reverse's own echo is what is untrustworthy, not a 0x04).
 
-    testWidgets('re-tapping Nature exits it with a speed frame', (tester) async {
-      // SetSpeed() clears NatureFlage (IRScan.c:187), so a speed frame is a
-      // real Nature exit.
+    testWidgets('re-tapping Nature re-sends the Nature frame, does not exit',
+        (tester) async {
+      // Matches the remote's own IRNatureWind: still lit means still active,
+      // so a repeat tap is just another "enter Nature" command.
       await pumpReady(tester);
       await emit(tester, rNature);
-      await emit(tester, rSpeed5);
-      expect(stateOf(tester).speed, 5);
+      expect(stateOf(tester).activeMode, 'nature');
       clearInteractions(mockBle);
 
       tester.widget<ModeControlWidget>(find.byType(ModeControlWidget))
           .onMode('nature');
       await tester.pump();
 
-      verify(() => mockBle.writeFrame(BleFrameBuilder.setSpeed(5)!)).called(1);
-      verifyNever(() => mockBle.writeFrame(BleFrameBuilder.setNature()!));
-      expect(stateOf(tester).activeMode, isNull);
+      verify(() => mockBle.writeFrame(BleFrameBuilder.setNature()!)).called(1);
+      expect(stateOf(tester).activeMode, 'nature');
     });
 
     testWidgets('re-tapping Reverse exits with a speed frame, NOT another '
@@ -308,10 +311,13 @@ void main() {
       // Firmware Reverse is `direction ^= 0x01` (IRScan.c:1396) and always
       // echoes 21 01 03 (IRScan.c:1402) whichever way it ended up. Re-sending
       // it would flip the fan back; a speed frame clears `direction` outright
-      // (IRScan.c:1361).
+      // (IRScan.c:1361) — which is also why speed must be seeded BEFORE
+      // Reverse is engaged here: a speed frame arriving after Reverse would
+      // now correctly clear the chip itself, defeating the "still lit"
+      // precondition this test needs.
       await pumpReady(tester);
-      await emit(tester, rReverse);
       await emit(tester, rSpeed5);
+      await emit(tester, rReverse);
       clearInteractions(mockBle);
 
       tester.widget<ModeControlWidget>(find.byType(ModeControlWidget))
@@ -323,10 +329,11 @@ void main() {
       expect(stateOf(tester).activeMode, isNull);
     });
 
-    testWidgets('re-tapping Smart exits it with power-ON', (tester) async {
-      // Power-ON is the ONLY command that clears smart_mode
-      // (case POWER, IRScan.c:1347). It does not stop the fan: the on-branch
-      // restores TargetSpeed = OldTargetSpeed (IRScan.c:1344).
+    testWidgets('re-tapping Smart re-sends the Smart frame, does not exit',
+        (tester) async {
+      // Matches the remote's own IRSmartMode: it has no "already active"
+      // guard at all, it just re-arms (SpeedCnt reset, SetSpeed(6)) — never
+      // toggles off. Smart is exited only by selecting a speed.
       await pumpReady(tester);
       await emit(tester, rSmart);
       expect(stateOf(tester).activeMode, 'smart');
@@ -336,16 +343,17 @@ void main() {
           .onMode('smart');
       await tester.pump();
 
-      verify(() => mockBle.writeFrame(BleFrameBuilder.powerOn()!)).called(1);
-      verifyNever(() => mockBle.writeFrame(BleFrameBuilder.setSmart()!));
-      expect(stateOf(tester).activeMode, isNull);
+      verify(() => mockBle.writeFrame(BleFrameBuilder.setSmart()!)).called(1);
+      verifyNever(() => mockBle.writeFrame(BleFrameBuilder.powerOn()!));
+      expect(stateOf(tester).activeMode, 'smart');
     });
 
-    testWidgets('re-tapping Boost exits it with a speed frame', (tester) async {
-      // Speed 7 IS Boost, so the exit must land on 1-6 — power-ON would restore
-      // OldTargetSpeed == 7 and re-enter Boost.
+    testWidgets('re-tapping Boost re-sends the Boost frame, does not exit',
+        (tester) async {
+      // Matches the remote's own IRSpeed7: it unconditionally re-sends
+      // SetSpeed(7) with no "already active" check — never toggles off.
+      // Boost is exited only by selecting a speed.
       await pumpReady(tester);
-      await emit(tester, rSpeed5);
       await emit(tester, rBoost);
       expect(stateOf(tester).isBoost, true);
       clearInteractions(mockBle);
@@ -353,10 +361,8 @@ void main() {
       tester.widget<ModeControlWidget>(find.byType(ModeControlWidget)).onBoost();
       await tester.pump();
 
-      verify(() => mockBle.writeFrame(BleFrameBuilder.setSpeed(5)!)).called(1);
-      verifyNever(() => mockBle.writeFrame(BleFrameBuilder.setBoost()!));
-      verifyNever(() => mockBle.writeFrame(BleFrameBuilder.powerOn()!));
-      expect(stateOf(tester).isBoost, false);
+      verify(() => mockBle.writeFrame(BleFrameBuilder.setBoost()!)).called(1);
+      expect(stateOf(tester).isBoost, true);
     });
 
     testWidgets('an exit falls back to speed 3 when the stored speed is unusable',
@@ -396,10 +402,12 @@ void main() {
       }
     });
 
-    testWidgets('a speed dot leaves Smart lit — firmware keeps smart_mode',
+    testWidgets(
+        'a speed dot exits Smart with power-ON, then applies the tapped speed',
         (tester) async {
-      // The BLE speed path does not clear smart_mode; only the IR remote's
-      // speed buttons do (IRScan.c:592). Unlighting it here would be a lie.
+      // The BLE speed path alone does not clear smart_mode; only power-ON
+      // does (case POWER's on-branch). So a speed tap taken while Smart is
+      // lit must send that exit frame first, then the tapped speed.
       await pumpReady(tester);
       await emit(tester, rSmart);
       clearInteractions(mockBle);
@@ -408,8 +416,9 @@ void main() {
           .onSpeedSelected(4);
       await tester.pump();
 
+      verify(() => mockBle.writeFrame(BleFrameBuilder.powerOn()!)).called(1);
       verify(() => mockBle.writeFrame(BleFrameBuilder.setSpeed(4)!)).called(1);
-      expect(stateOf(tester).activeMode, 'smart');
+      expect(stateOf(tester).activeMode, isNull);
     });
 
     testWidgets('arming a real timer clears Smart, and Timer OFF does not',
@@ -527,47 +536,59 @@ void main() {
       expect(s.isPowered, true);
     });
 
-    testWidgets('0x04 leaves an active Nature highlight alone', (tester) async {
-      // The decision at the centre of this rewrite: this firmware reports the
-      // SPEED, not the mode, while a mode drives the fan. Treating a speed as
-      // "no mode active" is what deleted Smart on every reconnect.
+    testWidgets('0x04 DOES clear an active Nature highlight', (tester) async {
+      // Confirmed against the actual firmware source in use: SetSpeed()
+      // (called by case SPEED, the remote's speed buttons, and
+      // get_mc_state()'s own fallthrough) unconditionally clears NatureFlage
+      // before a bare speed value can ever be reported — there is no code
+      // path where a 04 coexists with Nature still genuinely active. Smart
+      // stays the one exception (case SPEED never clears smart_mode); see the
+      // next test.
       await pumpReady(tester);
       await emit(tester, rNature);
       await emit(tester, rSpeed5);
       final s = stateOf(tester);
-      expect(s.activeMode, 'nature');
+      expect(s.activeMode, isNull);
       expect(s.speed, 5);
     });
 
-    testWidgets('0x04 leaves an active Smart highlight alone', (tester) async {
+    testWidgets('0x04 DOES clear an active Smart highlight too', (tester) async {
+      // A remote speed press clears smart_mode unconditionally (IRSpeed1..6),
+      // and an app-originated speed tap now sends an explicit power-ON exit
+      // frame before the speed frame (see onSpeedSelected) — so a bare 0x04
+      // can no longer arrive while Smart is genuinely still active, from
+      // either origin. Safe to treat it the same as Nature/Reverse/Boost.
       await pumpReady(tester);
       await emit(tester, rSmart);
       await emit(tester, rSpeed5);
-      expect(stateOf(tester).activeMode, 'smart');
+      expect(stateOf(tester).activeMode, isNull);
     });
 
-    testWidgets('0x04 leaves Boost alone', (tester) async {
+    testWidgets('0x04 DOES clear Boost', (tester) async {
+      // boost_flag is always cleared before a bare speed value can be
+      // reported on this firmware — see the Nature test above.
       await pumpReady(tester);
       await emit(tester, rBoost);
       await emit(tester, rSpeed5);
-      expect(stateOf(tester).isBoost, true);
+      expect(stateOf(tester).isBoost, false);
     });
 
-    testWidgets('0x04 leaves Reverse alone too — no exceptions at all',
+    testWidgets('0x04 DOES clear Reverse too — no exceptions left',
         (tester) async {
-      // There is no longer any frame that may clear a chip. A 0x04 does mean
-      // "no mode" when it comes from get_mc_state() (IRScan.c:1264), but the
-      // identical bytes also arrive as the echo of a speed tap (case SPEED,
-      // IRScan.c:1357), which does NOT clear smart_mode. The receive path
-      // cannot tell the two apart, so it acts on neither. Turning a chip off
-      // belongs to the tap path — see Table A.
+      // Confirmed against the actual firmware source in use: a bare 0x04 is
+      // proof a mode has ended, whether it arrives from get_mc_state()'s own
+      // fallthrough or as the echo of a speed command — direction is always
+      // cleared first. Smart used to be an exception (case SPEED never
+      // clears smart_mode on its own), but onSpeedSelected now sends an
+      // explicit power-ON exit frame before a speed frame whenever Smart is
+      // lit, so that ambiguity no longer exists from either origin.
       await pumpReady(tester);
       await emit(tester, rReverse);
       expect(stateOf(tester).activeMode, 'reverse');
 
       await emit(tester, rSpeed5);
       final s = stateOf(tester);
-      expect(s.activeMode, 'reverse');
+      expect(s.activeMode, isNull);
       expect(s.speed, 5);
     });
 
@@ -593,22 +614,26 @@ void main() {
       expect(s.timerActivatedAt, isNotNull);
     });
 
-    testWidgets('0x22 code 0 while powered is NEUTRAL — it never cancels',
+    testWidgets(
+        '0x22 code 0 while powered DOES cancel now (2026-08-22 firmware fix)',
         (tester) async {
-      // This firmware answers 22 01 00 on every state reply regardless of what
-      // is armed (case TIMER never sets IRControl.FlagAutoPower). Reading that
-      // as a cancellation kills the countdown one poll tick after arming it.
+      // get_mc_state() now gates the timer field on AutoPowerState.FlagAutoPower
+      // (previously IRControl.FlagAutoPower, which case TIMER never set and
+      // AutoPowerControl() cleared one tick after arming regardless — that old
+      // bug is what made a reported 0 meaningless). AutoPowerState.FlagAutoPower
+      // persists correctly for the whole armed duration and is genuinely
+      // cleared by both case TIMER and case IRTimerOFF, so a reported 0 is now
+      // trustworthy.
       await pumpReady(tester);
       tester.widget<TimerControlWidget>(find.byType(TimerControlWidget))
           .onTimer('4h');
       await tester.pump();
-      final armedAt = stateOf(tester).timerActivatedAt;
 
       await emit(tester, [...rPowerOn, ...rSpeed5, ...rTimer0]);
 
       final s = stateOf(tester);
-      expect(s.activeTimerCode, 0x04);
-      expect(s.timerActivatedAt, armedAt);
+      expect(s.activeTimerCode, isNull);
+      expect(s.timerActivatedAt, isNull);
     });
 
     testWidgets('0x02 OFF clears power, chips and timer but keeps the speed',

@@ -18,6 +18,13 @@ class CircularSpeedDial extends StatelessWidget {
   final bool isNature;    // dial fully locked, leaf icon in centre
   final bool isSmart;     // dial fully locked, smart icon in centre
   final bool isReverse;   // dial fully locked, reverse icon in centre
+  // Display-only: blanks the dots, arc and centre readout while the fan is
+  // powered off, WITHOUT touching [enabled] — tapping a dot while off must
+  // still register (it is how the app sends a speed frame that also powers
+  // the fan on), so hit-area tappability stays keyed on [enabled] alone.
+  // Defaults true so callers that don't care about power state (tests, any
+  // future non-power-gated use) render exactly as before.
+  final bool isPowered;
   final Set<int> disabledSpeeds;
   final void Function(int speed) onSpeedSelected;
 
@@ -32,6 +39,7 @@ class CircularSpeedDial extends StatelessWidget {
     this.isNature = false,
     this.isSmart = false,
     this.isReverse = false,
+    this.isPowered = true,
     this.disabledSpeeds = const {},
   });
 
@@ -46,6 +54,7 @@ class CircularSpeedDial extends StatelessWidget {
       isNature: isNature,
       isSmart: isSmart,
       isReverse: isReverse,
+      isPowered: isPowered,
       disabledSpeeds: disabledSpeeds,
       onSpeedTap: (s) {
         // Nature/Smart dim certain dots for visual feedback, but a tap on a
@@ -73,10 +82,11 @@ _DotState _dotStateOf({
   bool isNature = false,
   bool isSmart = false,
   bool isReverse = false,
+  bool isPowered = true,
   Set<int> disabledSpeeds = const {},
 }) {
   if (isNature || isSmart || isReverse) return _DotState.off;
-  if (!enabled) return _DotState.off;
+  if (!enabled || !isPowered) return _DotState.off;
   // Boost overrides disabled-speed dimming so the full ring glows in BOOST+SMART/REVERSE.
   // Hit-target tappability still respects disabledSpeeds (handled separately).
   if (boost) return _DotState.selected;
@@ -97,6 +107,7 @@ class _RadialDial extends StatelessWidget {
   final bool isNature;
   final bool isSmart;
   final bool isReverse;
+  final bool isPowered;
   final Set<int> disabledSpeeds;
   final void Function(int) onSpeedTap;
 
@@ -109,6 +120,7 @@ class _RadialDial extends StatelessWidget {
     required this.isNature,
     required this.isSmart,
     required this.isReverse,
+    required this.isPowered,
     required this.disabledSpeeds,
     required this.onSpeedTap,
   });
@@ -128,7 +140,7 @@ class _RadialDial extends StatelessWidget {
   _DotState _stateOf(int i) => _dotStateOf(
     index: i, speed: speed, boost: boost, enabled: enabled,
     isNature: isNature, isSmart: isSmart, isReverse: isReverse,
-    disabledSpeeds: disabledSpeeds,
+    isPowered: isPowered, disabledSpeeds: disabledSpeeds,
   );
 
   @override
@@ -152,6 +164,7 @@ class _RadialDial extends StatelessWidget {
               isNature: isNature,
               isSmart: isSmart,
               isReverse: isReverse,
+              isPowered: isPowered,
               disabledSpeeds: disabledSpeeds,
               pos: _pos,
               r: _r,
@@ -221,6 +234,7 @@ class _RadialDial extends StatelessWidget {
               isSmart: isSmart,
               isReverse: isReverse,
               enabled: enabled,
+              isPowered: isPowered,
             ),
           ),
         ],
@@ -238,6 +252,7 @@ class _DialPainter extends CustomPainter {
   final bool isNature;
   final bool isSmart;
   final bool isReverse;
+  final bool isPowered;
   final Set<int> disabledSpeeds;
   final int pos;
   final double r;
@@ -251,6 +266,7 @@ class _DialPainter extends CustomPainter {
     required this.isNature,
     required this.isSmart,
     required this.isReverse,
+    required this.isPowered,
     required this.disabledSpeeds,
     required this.pos,
     required this.r,
@@ -266,7 +282,7 @@ class _DialPainter extends CustomPainter {
   _DotState _stateOf(int i) => _dotStateOf(
     index: i, speed: speed, boost: boost, enabled: enabled,
     isNature: isNature, isSmart: isSmart, isReverse: isReverse,
-    disabledSpeeds: disabledSpeeds,
+    isPowered: isPowered, disabledSpeeds: disabledSpeeds,
   );
 
   @override
@@ -304,7 +320,7 @@ class _DialPainter extends CustomPainter {
     }
 
     // Boost: glowing closed ring (suppressed during any locked mode)
-    if (enabled && boost && !isNature && !isSmart && !isReverse) {
+    if (enabled && isPowered && boost && !isNature && !isSmart && !isReverse) {
       final paint = Paint()
         ..color = kYellow
         ..style = PaintingStyle.stroke
@@ -320,8 +336,8 @@ class _DialPainter extends CustomPainter {
       );
     }
 
-    // Active arc: suppressed during any locked mode
-    if (enabled && !boost && !isNature && !isSmart && !isReverse && speed > 1) {
+    // Active arc: suppressed during any locked mode, and while powered off
+    if (enabled && isPowered && !boost && !isNature && !isSmart && !isReverse && speed > 1) {
       final startRad = (0 - 90) * math.pi / 180;
       final sweepRad = (speed - 1) * angStep * math.pi / 180;
       canvas.drawArc(
@@ -391,6 +407,7 @@ class _DialPainter extends CustomPainter {
   bool shouldRepaint(_DialPainter old) =>
       old.speed != speed || old.boost != boost || old.enabled != enabled
       || old.isNature != isNature || old.isSmart != isSmart || old.isReverse != isReverse
+      || old.isPowered != isPowered
       || !setEquals(old.disabledSpeeds, disabledSpeeds);
 }
 
@@ -405,6 +422,7 @@ class _CenterReadout extends StatelessWidget {
   final bool isSmart;
   final bool isReverse;
   final bool enabled;
+  final bool isPowered;
 
   const _CenterReadout({
     required this.speed,
@@ -415,6 +433,7 @@ class _CenterReadout extends StatelessWidget {
     required this.isSmart,
     required this.isReverse,
     required this.enabled,
+    required this.isPowered,
   });
 
   @override
@@ -472,10 +491,10 @@ class _CenterReadout extends StatelessWidget {
               )),
           const SizedBox(height: 2),
           Text(
-            enabled && speed > 0 ? '$speed' : '—',
+            enabled && isPowered && speed > 0 ? '$speed' : '—',
             style: GoogleFonts.jetBrainsMono(
               fontSize: 80, fontWeight: FontWeight.w600,
-              color: enabled ? kText : kTextDim,
+              color: enabled && isPowered ? kText : kTextDim,
               letterSpacing: -3,
               height: 1,
             ),
@@ -488,12 +507,12 @@ class _CenterReadout extends StatelessWidget {
           children: [
             _Stat(
               label: 'RPM',
-              value: (enabled && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (rpm != null ? '$rpm' : '—') : '—',
+              value: (enabled && isPowered && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (rpm != null ? '$rpm' : '—') : '—',
             ),
             Container(width: 1, height: 28, color: kHairline, margin: const EdgeInsets.symmetric(horizontal: 18)),
             _Stat(
               label: 'WATTS',
-              value: (enabled && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (watts != null ? '$watts' : '—') : '—',
+              value: (enabled && isPowered && (speed > 0 || boost || isNature || isSmart || isReverse)) ? (watts != null ? '$watts' : '—') : '—',
             ),
           ],
         ),

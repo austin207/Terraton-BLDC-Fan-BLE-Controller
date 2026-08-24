@@ -690,29 +690,33 @@ void main() {
     });
 
     testWidgets(
-        'stale [ON][speed][timer-0] reply is only a candidate; genuine replies '
-        'keep Smart + timer', (tester) async {
+        'a genuine [ON][speed][timer-0] reply DOES clear the timer '
+        '(2026-08-22 firmware fix)', (tester) async {
+      // get_mc_state()'s timer field now gates on AutoPowerState.FlagAutoPower,
+      // which is correctly cleared by both case TIMER and case IRTimerOFF —
+      // so this reply is trustworthy, not stale, and a reported 0 is a real
+      // cancellation.
       final started = DateTime.now().subtract(const Duration(minutes: 30));
       when(() => mockRepo.getState(any()))
           .thenReturn(runningSmartBaseline(started));
 
       await pumpConnected(tester);
 
-      // Stale/default reply: plain speed instead of Smart, timer code 0.
       notifyCtrl.add([...powerOn, ...speed5, ...timerOff]);
       await tester.pump();
       await tester.pump();
 
       var s = stateOf(tester);
-      expect(s.activeTimerCode, 0x02);   // not cleared by the suspect reply
-      expect(s.timerActivatedAt, started);
+      expect(s.activeMode, isNull);      // plain speed also clears Smart
+      expect(s.activeTimerCode, isNull); // and the timer-0 report is trusted
+      expect(s.timerActivatedAt, isNull);
 
+      // A later genuine Smart + 2H reply still re-arms both normally.
       await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timer2h]);
 
       s = stateOf(tester);
       expect(s.activeMode, 'smart');
       expect(s.activeTimerCode, 0x02);
-      expect(s.timerActivatedAt, started);
     });
 
     testWidgets(
@@ -777,21 +781,21 @@ void main() {
       expect(find.textContaining('REMAINING'), findsNothing);
     });
 
-    // ── Frame [2] = speed is NOT proof no mode is active (field bug 2026-07-04) ──
-    // Proof capture: test/unit/field_capture_2026_07_04_test.dart. Smart is
-    // tapped at speed 5; the firmware raises the fan to speed 6 on its own
-    // (Smart adjusting speed autonomously) and every subsequent state reply
-    // reports frame [2] as "04 01 06" — never "21 01 04" — even though the
-    // app never sends a speed command. The old code read that as "the
-    // hardware exited the mode" and cleared it on every reconnect. A reply
-    // carrying BOTH a power frame and a timer frame is applied atomically by
-    // _dispatchLive's first branch straight into _applyMachineState, so a
-    // single such chunk exercises the fixed code path directly — no session,
-    // no agreement, no poll pumping required.
+    // ── A mode-driven speed-6 reply now DOES clear Smart too (2026-08-22) ──────
+    // The 2026-07-04 field report (test/unit/field_capture_2026_07_04_test.dart)
+    // was from older/other-batch firmware whose periodic status push lacked a
+    // smart_mode check entirely, so it could report a bare speed while Smart
+    // was genuinely still active. On the actual firmware source now in use,
+    // get_mc_state()'s fallthrough only ever reports 04 once smart_mode is
+    // already 0, and the app itself never sends a bare speed command while
+    // Smart is lit anymore (onSpeedSelected sends power-ON first) — so there
+    // is no remaining path, from the app or from the remote, where a genuine
+    // 04 coexists with Smart still running. Treating it as proof of exit is
+    // now correct rather than the read that caused the original regression.
 
     testWidgets(
-        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Smart',
-        (tester) async {
+        'a mode-driven speed-6 reply DOES clear Smart — no ambiguity left on '
+        'this firmware', (tester) async {
       await pumpConnected(tester);
       await emitConfirmed(tester, [...powerOn, ...modeSmart, ...timerOff]);
       expect(stateOf(tester).activeMode, 'smart');
@@ -803,17 +807,25 @@ void main() {
       await tester.pump();
 
       final s = stateOf(tester);
-      expect(s.activeMode, 'smart',
-          reason: 'field report: "Smart is not retained after reconnecting" — '
-              'the firmware reports speed (04 01 06), not mode (21 01 04), '
-              'once Smart drives the fan to speed 6, and the app must not '
-              'read that as a mode exit');
+      expect(s.activeMode, isNull,
+          reason: 'a genuine 04 is proof Smart ended on this firmware — see '
+              'the comment above for why the old field-bug protection no '
+              'longer applies');
       expect(s.speed, 6);
     });
 
+    // ── A bare speed reply DOES clear Nature/Reverse/Boost (2026-08-22) ────────
+    // Confirmed against the actual firmware source in use: SetSpeed() (called
+    // by case SPEED, the remote's IRSpeed1..7, and get_mc_state()'s own
+    // fallthrough) unconditionally clears NatureFlage/direction, and the
+    // relevant handlers clear boost_flag too, every time a speed value is
+    // reported — there is no code path on this firmware where a bare 04
+    // coexists with Nature/Reverse/Boost still genuinely active. Smart is the
+    // one exception (case SPEED never clears smart_mode), so it keeps the old
+    // protection above.
     testWidgets(
-        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Nature',
-        (tester) async {
+        'a bare speed-6 reply DOES clear Nature — current firmware always '
+        'clears NatureFlage before reporting a speed', (tester) async {
       await pumpConnected(tester);
       await emitConfirmed(tester, [...powerOn, ...modeNature, ...timerOff]);
       expect(stateOf(tester).activeMode, 'nature');
@@ -823,16 +835,15 @@ void main() {
       await tester.pump();
 
       final s = stateOf(tester);
-      expect(s.activeMode, 'nature',
-          reason: 'field report: "Nature is restored but does not work at '
-              'Speed 6" — the same speed-report-not-mode-exit mechanism as '
-              'Smart, just for a different mode driven to speed 6');
+      expect(s.activeMode, isNull,
+          reason: 'a genuine 04 is proof Nature ended on this firmware — '
+              'SetSpeed() always clears NatureFlage before it can be sent');
       expect(s.speed, 6);
     });
 
     testWidgets(
-        'FIELD BUG 2026-07-04: mode-driven speed-6 reply must not clear Boost',
-        (tester) async {
+        'a bare speed-6 reply DOES clear Boost — current firmware always '
+        'clears boost_flag before reporting a speed', (tester) async {
       await pumpConnected(tester);
       await emitConfirmed(tester, [...powerOn, ...modeBoost, ...timerOff]);
       expect(stateOf(tester).isBoost, true);
@@ -842,10 +853,9 @@ void main() {
       await tester.pump();
 
       final s = stateOf(tester);
-      expect(s.isBoost, true,
-          reason: 'field report: "Boost is restored but does not work at '
-              'Speed 6" — Boost must survive a firmware speed-6 report the '
-              'same way Smart and Nature do');
+      expect(s.isBoost, false,
+          reason: 'a genuine 04 is proof Boost ended on this firmware — '
+              'boost_flag is always cleared before it can be sent');
       expect(s.speed, 6);
     });
 
@@ -893,36 +903,34 @@ void main() {
       expect(s.speed, 5);
     });
 
-    // ── State-reply 0x22 field is a bad timer reporter (field bug 2026-07-04) ──
-    // Proof capture: test/unit/field_capture_2026_07_04_test.dart. The firmware
-    // echoes/re-reports a set 4 h timer as active, yet every Get Motor State
-    // reply carries 22 01 00 — an explicit zero, not a missing frame — and the
-    // capture contains no timer-off command. machine_state_timer_policy.dart's
-    // timerFromStateReply() treats that explicit 0 as neutral (like an absent
-    // 0x22 frame already was) so it can no longer wipe the countdown.
+    // ── State-reply 0x22 field is a trustworthy timer reporter (fixed 2026-08-22) ──
+    // The 2026-07-04 field report was against firmware whose get_mc_state()
+    // gated the timer field on IRControl.FlagAutoPower — a flag AutoPowerControl()
+    // clears one tick after ANY timer is armed, so every reply reported 0
+    // regardless of whether a timer was genuinely running. The fix (confirmed
+    // in the firmware source now in use) gates on AutoPowerState.FlagAutoPower
+    // instead, which persists correctly for the whole armed duration and is
+    // properly cleared by both case TIMER (BLE) and case IRTimerOFF (remote).
+    // A reported 0 is therefore real information now, not noise — this is what
+    // makes a remote-driven Timer OFF observable at all.
     const timer4h = [0x55, 0xAA, 0x07, 0x22, 0x01, 0x04, 0x2D];
 
     testWidgets(
-        'FIELD BUG 2026-07-04: powered reply reporting timer 0 must not clear '
-        'an active 4 h countdown', (tester) async {
+        'a powered reply reporting timer 0 DOES clear an active 4 h countdown '
+        'now — no ambiguity left on this firmware', (tester) async {
       await pumpConnected(tester);
       await emitConfirmed(tester, [...powerOn, ...speed5, ...timer4h]);
       expect(stateOf(tester).activeTimerCode, 0x04);
 
-      // Session is over; this full reply (power + timer both present)
-      // dispatches on the live path and applies atomically straight into
-      // _applyMachineState.
       notifyCtrl.add([...powerOn, ...speed5, ...timerOff]);
       await tester.pump();
       await tester.pump();
 
-      expect(stateOf(tester).activeTimerCode, 0x04,
-          reason: 'field report: "The Timer does not display the remaining '
-              'countdown after the app is sent to the background and '
-              'reopened. Instead, it appears to have been reset or cleared, '
-              'even if the timer is still active on the device" — this '
-              "firmware's state-reply 0x22 field always reports 0 and must "
-              'not be read as a cancellation');
+      expect(stateOf(tester).activeTimerCode, isNull,
+          reason: 'get_mc_state() now gates the timer field on '
+              'AutoPowerState.FlagAutoPower, which is genuinely cleared by a '
+              'remote Timer OFF press — see the comment above for why the '
+              'old field-bug protection no longer applies');
     });
 
     testWidgets(

@@ -116,11 +116,20 @@ class BleResponseParser {
     //
     // Keep 0x00 on the whitelist: it is what lets a genuine user Timer-OFF tap
     // round-trip. _applyFrame is what decides a REPORTED 0 is neutral.
-    //
-    // If Terraton ever fixes the timer reporting (FW_bug.md item 2), a running
-    // 4 h timer will count 4 -> 3 -> 2 -> 1 -> 0 in data[0], and codes 3 and 1
-    // would be dropped here. Widen this to 0..8 at that point.
     return const {0x00, 0x02, 0x04, 0x08}.contains(t) ? t : null;
+  }
+
+  // Firmware fix (2026-08-24): get_mc_state()'s 0x22 frame is now 2 bytes —
+  // data[0] is the unchanged duration code, data[1] is the remaining time in
+  // 2-minute ticks ((ShutDowntime - CurrentTime) / 12 on the MCU), chosen so
+  // an 8 h timer's remaining value still fits one byte (max 240). Returns
+  // null for the old 1-byte frame shape (firmware not yet updated, or the
+  // demo path, which never sends a second byte) — callers must treat null as
+  // "unknown", never as zero remaining.
+  static int? parseTimerRemainingMinutes(FanResponse r) {
+    final cmd = CommandLoader.responseCommand('timer');
+    if (r.command != cmd || r.data.length < 2) return null;
+    return r.data[1] * 2;
   }
 
   /// Response: `55 AA 07 08 02 HH LL CRC` — runtime = (HH<<8|LL) × 5 seconds.

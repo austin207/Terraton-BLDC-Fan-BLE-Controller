@@ -170,15 +170,27 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     _persistOperating();
   }
 
-  // The fan only reports WHICH duration is active (2H/4H/8H), never the time
-  // remaining, so the countdown start timestamp is app-side. Resolution order:
+  // The fan reports WHICH duration is active (2H/4H/8H) and, on updated
+  // firmware, remaining time in 2-minute ticks (BleResponseParser.
+  // parseTimerRemainingMinutes) — but never a start time, so the countdown
+  // anchor (timerActivatedAt) is still computed and owned app-side.
+  //
+  // When [remainingMinutes] is available, it is firmware ground truth for
+  // *this instant* and is used to re-derive the anchor directly
+  // (endsAt = now + remaining; activatedAt = endsAt - duration) — see
+  // _reconcileFromRemaining. This is what closes the reconnect-ambiguity gap:
+  // a timer of the same code that was cancelled and re-armed while the app
+  // was away now has a different true end time, which shows up as a large
+  // jump in the derived endsAt and forces a re-anchor, instead of the old
+  // code-only check silently keeping the stale start time.
+  //
+  // When it isn't available (firmware not yet updated, or the demo path),
+  // resolution falls back to the original heuristic:
   //   1. explicit [activatedAt] — the UI passes DateTime.now() on a user tap;
-  //   2. the current start time, when the reported code hasn't changed —
-  //      resetOnConnect() never touches the timer, so this also confirms the
-  //      running countdown across reconnects;
+  //   2. the current start time, when the reported code hasn't changed;
   //   3. DateTime.now() — timer discovered mid-flight (e.g. set from the IR
   //      remote while disconnected): count down from detection (upper bound).
-  void updateTimer(int timerCode, {DateTime? activatedAt}) {
+  void updateTimer(int timerCode, {DateTime? activatedAt, int? remainingMinutes}) {
     if (timerCode == 0) {
       if (state.activeTimerCode == null && state.timerActivatedAt == null) return;
       state = state.copyWith(
@@ -188,15 +200,20 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
       _persistTimer();
       return;
     }
-    var resolved = activatedAt
-        ?? (state.activeTimerCode == timerCode ? state.timerActivatedAt : null)
-        ?? DateTime.now();
-    // Sanity: the firmware says this timer is ACTIVE, so a start time implying
-    // it already expired is wrong (e.g. a stale persisted value from a previous
-    // run of the same duration) — fall back to counting from detection.
     final durationHours = switch (timerCode) { 0x02 => 2, 0x04 => 4, _ => 8 };
-    if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
-      resolved = DateTime.now();
+    DateTime resolved;
+    if (remainingMinutes != null) {
+      resolved = _reconcileFromRemaining(timerCode, durationHours, remainingMinutes);
+    } else {
+      resolved = activatedAt
+          ?? (state.activeTimerCode == timerCode ? state.timerActivatedAt : null)
+          ?? DateTime.now();
+      // Sanity: the firmware says this timer is ACTIVE, so a start time
+      // implying it already expired is wrong (e.g. a stale persisted value
+      // from a previous run of the same duration) — count from detection.
+      if (DateTime.now().difference(resolved) >= Duration(hours: durationHours)) {
+        resolved = DateTime.now();
+      }
     }
     if (state.activeTimerCode == timerCode && state.timerActivatedAt == resolved) {
       return;
@@ -206,6 +223,32 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
       timerActivatedAt: () => resolved,
     );
     _persistTimer();
+  }
+
+  // Firmware quantizes remaining time to 2-minute ticks, so re-deriving
+  // `now + remaining` on every 3 s poll wobbles by up to that quantum even
+  // while the SAME timer keeps running — recomputing the anchor on every
+  // wobble would both jitter the on-screen countdown and defeat the mutator
+  // no-op guard (a write every poll, forever, while a timer is armed). So
+  // this only re-anchors when there is no comparable existing anchor, or the
+  // firmware-derived end time has drifted from it by more than the
+  // quantization noise can explain — which is exactly the signature of a
+  // genuinely different timer (cancelled + re-armed while disconnected),
+  // not the same one still counting down.
+  DateTime _reconcileFromRemaining(
+      int timerCode, int durationHours, int remainingMinutes) {
+    final firmwareEndsAt =
+        DateTime.now().add(Duration(minutes: remainingMinutes));
+    final sameCode = state.activeTimerCode == timerCode;
+    final currentEndsAt = sameCode && state.timerActivatedAt != null
+        ? state.timerActivatedAt!.add(Duration(hours: durationHours))
+        : null;
+    if (currentEndsAt == null ||
+        firmwareEndsAt.difference(currentEndsAt).abs() >
+            const Duration(minutes: 3)) {
+      return firmwareEndsAt.subtract(Duration(hours: durationHours));
+    }
+    return state.timerActivatedAt!;
   }
 
   /// Blanks the instantaneous readings on (re)connect so a reconnect never

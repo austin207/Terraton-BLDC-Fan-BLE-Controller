@@ -295,8 +295,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
       final notifier =
           ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+      // The exceptional post-mains-restore status poll bundles a STALE speed
+      // (0x04) alongside telemetry (0x23/0x24) instead of alongside a timer
+      // frame the way a genuine Get Motor State reply always does — see the
+      // speed branch in _applyFrame for why that specific combination must
+      // not be trusted to clear a mode chip.
+      final batchHasTelemetry = responses.any((r) =>
+          BleResponseParser.parsePowerWatts(r) != null ||
+          BleResponseParser.parseRpm(r) != null);
       for (final r in responses) {
-        _applyFrame(r, notifier);
+        _applyFrame(r, notifier, batchHasTelemetry: batchHasTelemetry);
       }
     });
     unawaited(old?.cancel() ?? Future<void>.value());
@@ -313,7 +321,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
   /// Note the fan echoes every command it accepts, so a tap is normally
   /// reflected in ~100 ms by its own echo, not after a full poll interval.
   /// The 3 s poll is the backstop that also catches IR-remote changes.
-  void _applyFrame(FanResponse r, ActiveFanStateNotifier notifier) {
+  void _applyFrame(FanResponse r, ActiveFanStateNotifier notifier,
+      {required bool batchHasTelemetry}) {
     // ── Telemetry ───────────────────────────────────────────────────────────
     final watts = BleResponseParser.parsePowerWatts(r);           // 0x23
     if (watts != null) {
@@ -359,17 +368,31 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
 
     final speed = BleResponseParser.parseSpeed(r);                // 0x04
     if (speed != null) {
-      // Speed only. A 0x04 never touches a mode chip, with no exceptions.
-      //
-      // Frame [2] of a Motor State reply IS exclusive — get_mc_state()
-      // (IRScan.c:1264) picks exactly one of reverse / nature / smart / boost /
-      // speed — so a 0x04 does mean "no mode running". We still do not act on
-      // that here, because the same 0x04 bytes also arrive as the echo of a
-      // speed tap (case SPEED, IRScan.c:1357), which does NOT clear smart_mode.
-      // Acting on the echo would unlight Smart for one poll interval and then
-      // relight it. Turning a chip off is handled on the tap path instead,
-      // where we know which command we sent — see _onMode and onSpeedSelected.
       notifier.updateSpeed(speed);
+      // Firmware ground truth (IRScan.c, confirmed against the actual source
+      // in use, 2026-08-22): every path that produces a bare 0x04 — case
+      // SPEED (BLE), the remote's IRSpeed1..7 buttons, and get_mc_state()'s
+      // own fallthrough — only does so once direction, NatureFlage, and the
+      // boost condition are already false. So on this firmware a genuine 0x04
+      // is proof, not inference, that Nature/Reverse/Boost have ended,
+      // whichever end sent it. Without this, a mode exited from the physical
+      // remote left the chip (and the dial's icon overlay) stranded forever,
+      // since nothing else in this app ever clears it from an incoming frame.
+      //
+      // Smart no longer needs an exception here: the remote's speed buttons
+      // already clear smart_mode unconditionally, and onSpeedSelected now
+      // sends an explicit power-ON exit frame before a speed frame whenever
+      // a dot is tapped while Smart is lit — so a bare 0x04 can no longer
+      // arrive while smart_mode is genuinely still set, from either origin.
+      //
+      // One remaining exception: the exceptional post-mains-restore status
+      // poll bundles a STALE speed alongside telemetry (0x23/0x24) instead of
+      // a timer frame, unlike every path above — that 0x04 is not derived
+      // from get_mc_state()'s live exclusive chain at all, so a just-restored
+      // mode must survive it; the next Get Motor State poll re-checks properly.
+      if (!batchHasTelemetry) {
+        notifier.setModeHighlight(null);
+      }
       ConnectionLogService.machineState('speed=$speed');
       return;
     }
@@ -382,16 +405,27 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     }
 
     final timer = BleResponseParser.parseTimer(r);                // 0x22
-    // A reported 0 is NOT a cancellation. This firmware answers 22 01 00 on
-    // every state reply whatever is running: case TIMER sets the auto-power
-    // time but never sets IRControl.FlagAutoPower, and get_mc_state() gates the
-    // timer field on exactly that flag. Treating the 0 as a clear would kill
-    // the countdown within one poll tick of arming it — the "timer resets on
-    // reconnect" field bug. Only a non-zero code is information; everything
-    // else about the countdown is owned by the app (see _scheduleTimerExpiry).
-    if (timer != null && timer != 0) {
-      notifier.updateTimer(timer);
-      ConnectionLogService.machineState('timer=$timer');
+    // A reported 0 IS a real cancellation now (2026-08-22 firmware fix):
+    // get_mc_state()'s timer branch gates on AutoPowerState.FlagAutoPower,
+    // which persists correctly for the whole armed duration and is properly
+    // cleared by both case TIMER (BLE) and case IRTimerOFF (remote) — unlike
+    // the old IRControl.FlagAutoPower, which get_mc_state() used to read
+    // instead, and which AutoPowerControl() clears one tick after ANY timer
+    // is armed regardless of whether it is later cancelled. That old bug is
+    // what forced 0 to be treated as neutral; on this firmware every report
+    // is trustworthy, so a remote-driven Timer OFF is finally observable.
+    if (timer != null) {
+      // 2026-08-24 firmware fix widened this frame to 2 bytes: the second is
+      // remaining time in 2-minute ticks. ActiveFanStateNotifier.updateTimer
+      // uses it to re-derive the countdown anchor from firmware truth instead
+      // of trusting a locally-remembered start time — see its doc comment for
+      // why that's what fixes the reconnect ambiguity (same code reported
+      // does not mean the same timer instance).
+      final remainingMinutes = BleResponseParser.parseTimerRemainingMinutes(r);
+      notifier.updateTimer(timer, remainingMinutes: remainingMinutes);
+      ConnectionLogService.machineState(
+        'timer=$timer${remainingMinutes != null ? ' remaining=${remainingMinutes}m' : ''}',
+      );
     }
   }
 
@@ -1220,69 +1254,48 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   bool _isLit(FanState s, String m) =>
       m == 'boost' ? s.isBoost : s.activeMode == m;
 
-  /// Turns OFF the mode that is currently lit.
+  /// Turns OFF Reverse — the only mode with a "tap the lit chip again to
+  /// exit" gesture. Confirmed against the actual firmware source in use:
+  /// none of the remote's own mode buttons (IRNatureWind/IRSmartMode/
+  /// IRSpeed7) exit on a repeat press — Nature is guarded idempotent,
+  /// Smart/Boost just re-arm from the same starting point. Reverse alone is
+  /// a genuine toggle (`direction ^= 0x01`), which is exactly why it can't
+  /// be exited by re-sending Reverse: the echo is unconditional whichever
+  /// way the fan ended up (IRScan.c), so it can't be trusted, and a
+  /// duplicate would flip it straight back — the same hazard that keeps
+  /// WriteQueue on `retries: 0`. SetSpeed clears `direction` safely instead.
   ///
-  /// The fan never sends a frame that means "no mode". get_mc_state()
-  /// (IRScan.c:1264) answers a 0x21 while a mode runs and a plain 0x04 once it
-  /// stops, and the receive path deliberately ignores that 0x04 — so the chip
-  /// has to be cleared here, on the tap that caused it.
-  ///
-  /// Which frame actually turns each mode off is read from the firmware:
-  ///
-  ///   reverse  SetSpeed clears `direction`      (case SPEED, IRScan.c:1361)
-  ///   nature   SetSpeed clears `NatureFlage`    (SetSpeed,   IRScan.c:187)
-  ///   boost    a speed < 7 drops OldTargetSpeed (case SPEED, IRScan.c:1369)
-  ///   smart    ONLY power-ON clears smart_mode  (case POWER, IRScan.c:1347)
-  ///
-  /// Two deliberate choices:
-  ///
-  /// - Reverse is exited with a SPEED frame, never by re-sending Reverse.
-  ///   Firmware Reverse is `direction ^= 0x01` (IRScan.c:1396) and its echo is
-  ///   an unconditional `21 01 03` (IRScan.c:1402) whichever way the fan ended
-  ///   up, so the echo cannot be trusted and a duplicate flips it straight back.
-  ///   This is the same hazard that keeps WriteQueue on `retries: 0`.
-  /// - Smart is exited with power-ON, which does NOT stop a running fan:
-  ///   case POWER's on-branch restores `TargetSpeed = OldTargetSpeed`
-  ///   (IRScan.c:1344), so the speed is unchanged.
-  void _exitMode(String m, FanState s) {
-    // Speed 7 IS Boost in this firmware, so a Boost exit must land on 1-6.
+  /// Nature, Smart, and Boost are exited only by the user picking a speed —
+  /// see onSpeedSelected.
+  void _exitReverse(FanState s) {
     // Where the stored speed is unusable, 3 matches what the firmware itself
-    // falls back to when OldTargetSpeed is 0 (MoveForward, IRScan.c:763).
+    // falls back to when OldTargetSpeed is 0 (MoveForward, IRScan.c).
     final speed = (s.speed >= 1 && s.speed <= 6) ? s.speed : 3;
-    final (List<int>? frame, String label) = switch (m) {
-      // Power-ON is the ONLY thing that clears smart_mode. It cannot be used
-      // for the others: its on-branch restores TargetSpeed = OldTargetSpeed,
-      // which re-enters Boost when that is 7, and it never touches `direction`,
-      // so it cannot exit Reverse either.
-      'smart' => (BleFrameBuilder.powerOn(), 'Exit smart (power on)'),
-      _       => (BleFrameBuilder.setSpeed(speed), 'Exit $m (speed $speed)'),
-    };
-
     _flushSegment(newGear: speed, newMode: null);
     // The second and last sanctioned optimistic write on this screen, next to
-    // the sleep timer. Required, not a convenience: none of the frames above
-    // produce a 0x21 reply, and the 0x04 that does come back is ignored by
-    // _applyFrame. Without this the chip could never turn off.
+    // the sleep timer. Required, not a convenience: the SPEED frame below
+    // produces no 0x21 reply, so nothing else would turn the chip off as
+    // quickly as this local write does.
     ref
         .read(activeFanStateProvider(widget.fan.deviceId).notifier)
         .setModeHighlight(null);
-    unawaited(widget.send(frame, label: label));
+    unawaited(widget.send(BleFrameBuilder.setSpeed(speed),
+        label: 'Exit reverse (speed $speed)'));
   }
 
-  /// Mode button: one tap, one frame.
-  ///
-  /// Turning a mode ON is still pure dumb-remote — send that mode's frame and
-  /// write no local state; the fan's own 0x21 echo lights the chip. Turning one
-  /// OFF is the one case the fan cannot tell us about, so it is handled by
-  /// [_exitMode].
+  /// Mode button: one tap, one frame — always. Turning a mode ON, and
+  /// re-tapping a lit Nature/Smart chip, are both pure dumb-remote: send that
+  /// mode's frame and write no local state, matching the physical remote,
+  /// where none of these buttons exit on a repeat press either. Reverse is
+  /// the sole exception — see [_exitReverse].
   ///
   /// Still absent, and must stay absent: exit-reverse-first, mode-before-speed
   /// ordering, a Smart speed floor, and pre-Nature speed save/restore.
   void _onMode(String m) {
     final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
 
-    if (_isLit(fanState, m)) {
-      _exitMode(m, fanState);
+    if (m == 'reverse' && _isLit(fanState, m)) {
+      _exitReverse(fanState);
       return;
     }
 
@@ -1304,13 +1317,12 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     unawaited(widget.send(frame, label: 'Mode: $m'));
   }
 
-  /// Boost button: send the Boost frame, or exit Boost if it is already lit.
+  /// Boost button: always (re)sends the Boost frame — re-tapping a lit Boost
+  /// chip does not exit it, matching the remote's own Boost button, which
+  /// just re-sends SetSpeed(7) unconditionally. Boost is exited only by the
+  /// user picking a speed — see onSpeedSelected.
   void _onBoost() {
     final fanState = ref.read(activeFanStateProvider(widget.fan.deviceId));
-    if (_isLit(fanState, 'boost')) {
-      _exitMode('boost', fanState);
-      return;
-    }
     _flushSegment(newGear: fanState.speed, newMode: 'boost');
     unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
   }
@@ -1369,25 +1381,46 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
               isNature: fanState.activeMode == 'nature',
               isSmart: fanState.activeMode == 'smart',
               isReverse: fanState.activeMode == 'reverse',
+              // Display-only blank while off — [enabled] stays connection-only
+              // (see its class doc) so a tap here still sends its speed frame
+              // and powers the fan on; this only stops the dial from showing
+              // the last-known speed, faded, while nothing is actually running.
+              isPowered: fanState.isPowered,
               disabledSpeeds: const {},
-              // One dot, one speed frame — that part is unchanged.
+              // One dot, one speed frame — for Nature/Reverse/Boost. For
+              // Smart, one dot means TWO frames.
               //
-              // The chips are then updated from what this frame is KNOWN to do
-              // in firmware, not from anything the fan replies. `case SPEED`
-              // (IRScan.c:1357) runs SetSpeed(), which clears NatureFlage
-              // (:187), and clears `direction` (:1361) and boost_flag (:1369).
-              // It pointedly does NOT clear smart_mode — the IR remote's speed
-              // buttons do (:592), the BLE path does not — so Smart stays lit.
-              // Without this, leaving Nature by tapping a dot would strand the
-              // Nature chip on forever: the fan answers 0x04, and _applyFrame
-              // ignores a 0x04 for mode purposes.
+              // Firmware confirmed (2026-08-22): `case SPEED` clears
+              // NatureFlage and `direction`, but never `smart_mode` — so a
+              // plain speed frame taken while Smart is lit leaves Smart
+              // genuinely still running underneath (SmartMode()'s own ramp
+              // keeps fighting the tapped speed). The only thing that clears
+              // `smart_mode` is a power-ON (`case POWER`'s on-branch) — the
+              // same frame `_exitMode` already sends when the Smart chip
+              // itself is tapped. So exiting Smart via a speed dot uses that
+              // same exit frame first, then the tapped speed overrides
+              // whatever power-ON restored it to.
               onSpeedSelected: (s) {
-                final keepSmart = fanState.activeMode == 'smart';
-                _flushSegment(newGear: s, newMode: keepSmart ? 'smart' : null);
-                if (!keepSmart) {
-                  ref
-                      .read(activeFanStateProvider(fan.deviceId).notifier)
-                      .setModeHighlight(null);
+                final wasSmart = fanState.activeMode == 'smart';
+                final wasModeActive = fanState.isBoost || fanState.activeMode != null;
+                _flushSegment(newGear: s, newMode: null);
+                final notifier =
+                    ref.read(activeFanStateProvider(fan.deviceId).notifier);
+                notifier.setModeHighlight(null);
+                // Clearing the mode chip alone reveals whatever speed was on
+                // screen from BEFORE the mode started — stale, since no
+                // 0x04 arrives while a mode is active (get_mc_state()'s
+                // reply is exclusive) to ever refresh it. Left alone, the
+                // dial flashes that stale number for the ~100 ms echo
+                // round-trip, then jumps to the tapped speed once the real
+                // reply lands. Applying the tapped speed here too — the same
+                // value the frame below asks for — closes that gap; it is
+                // not a new guess, it is completing the one optimistic write
+                // this tap already makes.
+                if (wasModeActive) notifier.updateSpeed(s);
+                if (wasSmart) {
+                  unawaited(widget.send(BleFrameBuilder.powerOn(),
+                      label: 'Exit smart (power on)'));
                 }
                 unawaited(widget.send(BleFrameBuilder.setSpeed(s), label: 'Speed $s'));
               },
