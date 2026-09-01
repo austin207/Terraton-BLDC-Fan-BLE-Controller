@@ -28,6 +28,7 @@ import 'package:terraton_fan_app/core/storage/fan_repository.dart';
 import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/models/usage_log.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/demo_fan.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 /// Callback type for sending a BLE frame from the controls panel.
@@ -719,7 +720,13 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     final data    = frame[5];
     final notifier = ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
     if (cmd == CommandLoader.responseCommand('power')) {
-      notifier.updatePower(data == 0x01);
+      final on = data == 0x01;
+      notifier.updatePower(on);
+      // Come up on a visible speed so the demo dial isn't blank on power-on
+      // (a real fan restores its last gear).
+      if (on && ref.read(activeFanStateProvider(widget.fan.deviceId)).speed == 0) {
+        notifier.updateSpeed(3);
+      }
     } else if (cmd == CommandLoader.responseCommand('speed')) {
       notifier.updateSpeed(data);
     } else if (cmd == CommandLoader.responseCommand('mode')) {
@@ -744,6 +751,25 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     } else if (cmd == CommandLoader.responseCommand('timer')) {
       notifier.updateTimer(data);
     }
+    _pushDemoTelemetry(notifier);
+  }
+
+  // Demo has no fan to poll, so synthesise plausible watts/RPM from the current
+  // speed/mode so the dial lights up like the real thing. Keeps the demo
+  // "interactable" per the spec.
+  static const _demoGearWatts = [0, 4, 7, 10, 15, 21, 28]; // index = gear
+  void _pushDemoTelemetry(ActiveFanStateNotifier notifier) {
+    final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
+    if (!s.isPowered) {
+      notifier.clearWatts();
+      notifier.clearRpm();
+      return;
+    }
+    final gear = s.speed.clamp(0, 6);
+    final watts = s.isBoost ? 33 : _demoGearWatts[gear];
+    final rpm   = s.isBoost ? 430 : gear * 62;
+    notifier.updateWatts(watts);
+    notifier.updateRpm(rpm);
   }
 
   Future<void> _send(List<int>? frame, {String? pendingMsg, String label = ''}) async {
@@ -1043,8 +1069,10 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
   // Cached in initState — ref.read() is forbidden inside dispose().
   late final UsageLogRepository _usageLogRepo;
   late final FanRepository      _fanRepo;
-  // Cached because fan.model is immutable for the widget's lifetime.
-  late final ApplianceType? _applianceType;
+  // The remote layout for this fan, resolved from its stored model in
+  // initState. Non-final only so the demo screen's remote switcher can swap it
+  // live (see _switchDemoRemote); for a real fan it never changes.
+  late RemoteProfile _remote;
 
   // The gear the fan was on when Smart was last engaged. ANALYTICS ONLY — it is
   // the efficiency baseline UsageLog.smartBaselineGear compares against, since
@@ -1057,7 +1085,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     super.initState();
     _usageLogRepo    = ref.read(usageLogRepositoryProvider);
     _fanRepo         = ref.read(fanRepositoryProvider);
-    _applianceType   = ApplianceLoader.typeForModel(widget.fan.model);
+    _remote          = ApplianceLoader.remoteForModel(widget.fan.model);
     WidgetsBinding.instance.addObserver(this);
     final s = ref.read(activeFanStateProvider(widget.fan.deviceId));
     // Seed the analytics baseline if the screen opens with Smart already
@@ -1240,10 +1268,8 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     _persistOpenSegment();
   }
 
-  /// Returns true when the appliance type for this fan declares [control],
-  /// OR when the device has no stored model (legacy BLE-paired fan → show all).
-  bool _has(String control) =>
-      _applianceType == null || _applianceType.hasControl(control);
+  /// Returns true when this fan's resolved remote layout declares [control].
+  bool _has(String control) => _remote.hasControl(control);
 
   static String _timerLabel(int? code) => switch (code) {
     0x02 => '2H',
@@ -1329,6 +1355,32 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
   }
 
+  /// Speed-indication LED toggle (CF-02). UI-state only for now — the frame
+  /// is null until Terraton supplies the bytes, so `send` shows a pending
+  /// SnackBar. Mirrors how the mood-lighting toggle behaves today.
+  void _onLed(bool on) {
+    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).updateLed(on);
+    unawaited(widget.send(
+      on ? BleFrameBuilder.ledOn() : BleFrameBuilder.ledOff(),
+      pendingMsg: 'Speed LED command pending from Terraton',
+    ));
+  }
+
+  bool get _isDemoFan => widget.fan.deviceId == kDemoDeviceId;
+
+  /// Demo-only: swap the rendered remote layout and blank any chip/timer/LED
+  /// that the new layout has no button for, so nothing stale lingers.
+  void _switchDemoRemote(String model) {
+    final next = ApplianceLoader.remoteForModel(model);
+    if (next.name == _remote.name) return;
+    final notifier =
+        ref.read(activeFanStateProvider(widget.fan.deviceId).notifier);
+    notifier.setModeHighlight(null);
+    notifier.updateTimer(0);
+    notifier.updateLed(false);
+    setState(() => _remote = next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final fan      = widget.fan;
@@ -1357,16 +1409,23 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
       }
     });
 
-    // Custom (non-built-in) controls declared in appliances.yaml for this type.
-    // _applianceType is cached in initState — fan.model is immutable.
-    final customControls = _applianceType == null
-        ? const <String>[]
-        : _applianceType.controls
-            .where((String c) => !ControlRegistry.isBuiltIn(c))
-            .toList(growable: false);
+    // Custom (non-built-in) controls declared for this fan's remote.
+    // _remote is cached in initState — fan.model is immutable.
+    final customControls = _remote.controls
+        .where((String c) => !ControlRegistry.isBuiltIn(c))
+        .toList(growable: false);
 
     return Column(
       children: [
+
+        // ── Demo remote switcher (tester demo fan only) ─────────────────────
+        if (_isDemoFan) ...[
+          _DemoRemoteSwitcher(
+            current: _remote.name,
+            onSelect: _switchDemoRemote,
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // ── Speed dial ──────────────────────────────────────────────────────
         if (_has('speed'))
@@ -1436,12 +1495,15 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
           const _SectionHeader('OPERATING MODES'),
           const SizedBox(height: 10),
           ModeControlWidget(
+            modes: _remote.modes,
             activeMode: fanState.activeMode,
             isBoost: fanState.isBoost,
+            ledOn: fanState.lastLedIsOn,
             enabled: enabled,
             currentSpeed: fanState.speed,
             onMode: _onMode,
             onBoost: _onBoost,
+            onLed: _onLed,
           ),
           const SizedBox(height: 20),
         ],
@@ -1562,6 +1624,81 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             )),
 
       ],
+    );
+  }
+}
+
+// ── Demo remote switcher ──────────────────────────────────────────────────────
+// Tester-demo only. Segmented CF-01 / CF-02 / CF-03; the parent swaps the
+// rendered RemoteProfile on select.
+
+class _DemoRemoteSwitcher extends StatelessWidget {
+  final String current; // RemoteProfile.name, e.g. "CF-02"
+  final void Function(String model) onSelect;
+  const _DemoRemoteSwitcher({required this.current, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader('DEMO · REMOTE'),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kHairline),
+          ),
+          child: Row(
+            children: [
+              for (final model in kDemoRemoteModels)
+                Builder(builder: (_) {
+                  final name = ApplianceLoader.remoteForModel(model).name;
+                  return Expanded(
+                    child: _seg(
+                      label: name, // CF-01
+                      selected: current == name,
+                      onTap: () => onSelect(model),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _seg({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? kYellow.withAlpha(28) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? kYellow.withAlpha(110) : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.jetBrainsMono(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? kYellow : kTextMut,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
     );
   }
 }

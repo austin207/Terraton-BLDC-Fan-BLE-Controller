@@ -16,7 +16,12 @@ import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
 class BleScanScreen extends ConsumerStatefulWidget {
-  const BleScanScreen({super.key});
+  /// Model ID chosen in the remote picker (Automatic Connect path); stored on
+  /// the new [FanDevice] so the control screen resolves the right remote.
+  /// Empty when paired via a flow that carries no pre-selected model.
+  final String model;
+
+  const BleScanScreen({super.key, this.model = ''});
 
   @override
   ConsumerState<BleScanScreen> createState() => _BleScanScreenState();
@@ -241,6 +246,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                               final device = FanDevice()
                                 ..deviceId   = fan.macAddress
                                 ..macAddress = fan.macAddress
+                                ..model      = widget.model
                                 ..nickname   = ''
                                 ..addedAt    = DateTime.now();
                               unawaited(

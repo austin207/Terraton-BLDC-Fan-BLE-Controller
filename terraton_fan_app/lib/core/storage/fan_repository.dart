@@ -12,6 +12,11 @@ abstract class FanRepository {
   Future<void> updateMac(String deviceId, String macAddress);
   Future<void> deleteFan(String deviceId);
   Future<void> renameFan(String deviceId, String newNickname);
+
+  /// Rebinds a paired fan to a different remote/model ID (the "Change remote"
+  /// action). Persisted on [FanDevice.model]; the control screen re-resolves
+  /// its [RemoteProfile] from it on next build.
+  Future<void> setModel(String deviceId, String model);
   FanState getState(String deviceId);
   Future<void> saveState(FanState fanState);
 
@@ -58,6 +63,9 @@ abstract class FanRepository {
     required double brightness,
     required bool isOn,
   });
+
+  /// Speed-indication LED toggle state (CF-02 remote).
+  Future<void> saveLed(String deviceId, {required bool isOn});
 
   /// Persists the "open" usage-log segment for Last Known State Continuation —
   /// independent of [saveState] so frequent telemetry-driven writes don't
@@ -140,6 +148,16 @@ class FanRepositoryImpl implements FanRepository {
     final fan = getFanByDeviceId(deviceId);
     if (fan != null) {
       fan.nickname = newNickname;
+      _fanBox.put(fan);
+    }
+    return Future<void>.value();
+  }
+
+  @override
+  Future<void> setModel(String deviceId, String model) {
+    final fan = getFanByDeviceId(deviceId);
+    if (fan != null) {
+      fan.model = model;
       _fanBox.put(fan);
     }
     return Future<void>.value();
@@ -233,6 +251,12 @@ class FanRepositoryImpl implements FanRepository {
       ..lastLightColorType  = colorType
       ..lastLightBrightness = brightness
       ..lastLightIsOn       = isOn;
+    _stateBox.put(row);
+  }
+
+  @override
+  Future<void> saveLed(String deviceId, {required bool isOn}) async {
+    final row = getState(deviceId)..lastLedIsOn = isOn;
     _stateBox.put(row);
   }
 

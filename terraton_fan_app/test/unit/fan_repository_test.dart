@@ -60,6 +60,13 @@ class _FakeRepo implements FanRepository {
   }
 
   @override
+  Future<void> setModel(String deviceId, String model) async {
+    final fan = getFanByDeviceId(deviceId);
+    if (fan == null) return;
+    fan.model = model;
+  }
+
+  @override
   FanState getState(String deviceId) {
     try {
       return _states.firstWhere((s) => s.deviceId == deviceId);
@@ -133,6 +140,11 @@ class _FakeRepo implements FanRepository {
       ..lastLightColorType  = colorType
       ..lastLightBrightness = brightness
       ..lastLightIsOn       = isOn;
+  }
+
+  @override
+  Future<void> saveLed(String deviceId, {required bool isOn}) async {
+    _row(deviceId).lastLedIsOn = isOn;
   }
 
   @override

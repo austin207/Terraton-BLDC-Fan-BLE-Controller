@@ -5,11 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:terraton_fan_app/core/appliances/appliance_loader.dart';
 import 'package:terraton_fan_app/core/ble/ble_connection_state.dart';
 import 'package:terraton_fan_app/core/providers.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/appliance.dart';
+import 'package:terraton_fan_app/shared/app_config.dart';
 import 'package:terraton_fan_app/shared/app_routes.dart';
+import 'package:terraton_fan_app/shared/demo_fan.dart';
 import 'package:terraton_fan_app/shared/router.dart';
 import 'package:terraton_fan_app/shared/terraton_fan_icon.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
@@ -63,7 +66,7 @@ class FansListScreen extends ConsumerWidget {
             child: _Fab(
               onTap: () {
                 if (fanType != null) {
-                  unawaited(_showFanModelSheet(context, fanType!));
+                  unawaited(_showConnectSheet(context, fanType!));
                 } else {
                   goToOnboarding(context);
                 }
@@ -76,20 +79,13 @@ class FansListScreen extends ConsumerWidget {
   }
 }
 
-// ── Fan model sheet ───────────────────────────────────────────────────────────
+// ── Pairing sheets ───────────────────────────────────────────────────────────
+//
+// Connection method first, then — for Automatic Connect only — the remote
+// picker. The QR path carries the model in its sticker payload, so it goes
+// straight to the scanner.
 
-Future<void> _showFanModelSheet(BuildContext context, ApplianceType fanType) async {
-  final model = await showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _FanModelSheet(fanType: fanType),
-  );
-  if (model == null || !context.mounted) return;
-  await _showConnectModal(context, model);
-}
-
-Future<void> _showConnectModal(BuildContext context, String model) async {
+Future<void> _showConnectSheet(BuildContext context, ApplianceType fanType) async {
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: kSurface,
@@ -97,16 +93,33 @@ Future<void> _showConnectModal(BuildContext context, String model) async {
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
     builder: (sheetCtx) => _ConnectModal(
-      model: model,
       onScanQr: () {
         if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
         if (context.mounted) unawaited(context.push(AppRoutes.scanQr));
       },
       onAutoConnect: () {
         if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
-        if (context.mounted) unawaited(context.push(AppRoutes.scanBle));
+        if (context.mounted) unawaited(_pickModelThenScan(context, fanType));
       },
     ),
+  );
+}
+
+Future<void> _pickModelThenScan(
+    BuildContext context, ApplianceType fanType) async {
+  final model = await _showModelPicker(context, fanType);
+  if (model == null || !context.mounted) return;
+  await context.push(AppRoutes.scanBle, extra: model);
+}
+
+/// Bottom sheet listing the models/remotes to pair as. Returns the chosen
+/// model ID, or null if dismissed. Also used by the "Change remote" action.
+Future<String?> _showModelPicker(BuildContext context, ApplianceType fanType) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _FanModelSheet(fanType: fanType),
   );
 }
 
@@ -119,6 +132,9 @@ class _FanModelSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final models = fanType.modelNumbers;
+    final hasRemotes = fanType.remotes.isNotEmpty;
+    final title  = hasRemotes ? 'Select Remote' : 'Select Fan Model';
+    final noun   = hasRemotes ? 'REMOTES' : 'MODELS';
     return DraggableScrollableSheet(
       initialChildSize: 0.65,
       minChildSize: 0.4,
@@ -147,7 +163,7 @@ class _FanModelSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Select Fan Model',
+                    title,
                     style: GoogleFonts.manrope(
                       fontSize: 18, fontWeight: FontWeight.w700, color: kText,
                     ),
@@ -162,7 +178,7 @@ class _FanModelSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '${models.length} MODELS AVAILABLE',
+                    '${models.length} $noun AVAILABLE',
                     style: GoogleFonts.jetBrainsMono(
                       fontSize: 10, fontWeight: FontWeight.w700,
                       color: kTextDim, letterSpacing: 2.0,
@@ -184,6 +200,7 @@ class _FanModelSheet extends StatelessWidget {
                   child: FanModelCard(
                     model: models[i],
                     index: i + 1,
+                    subtitle: hasRemotes ? fanType.remotes[i].name : null,
                     onTap: () => Navigator.of(context).pop(models[i]),
                   ),
                 ),
@@ -203,12 +220,15 @@ class FanModelCard extends StatefulWidget {
   final String model;
   final int index;
   final VoidCallback onTap;
+  /// Optional secondary line (e.g. the remote name "CF-02").
+  final String? subtitle;
 
   const FanModelCard({
     super.key,
     required this.model,
     required this.index,
     required this.onTap,
+    this.subtitle,
   });
 
   @override
@@ -266,7 +286,7 @@ class _FanModelCardState extends State<FanModelCard> {
                 ),
               ),
               const SizedBox(width: 14),
-              // Model ID + status
+              // Model ID + optional remote name
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,6 +300,16 @@ class _FanModelCardState extends State<FanModelCard> {
                         letterSpacing: 0.6,
                       ),
                     ),
+                    if (widget.subtitle != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        widget.subtitle!,
+                        style: GoogleFonts.manrope(
+                          fontSize: 11, fontWeight: FontWeight.w600,
+                          color: kTextMut,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -298,12 +328,10 @@ class _FanModelCardState extends State<FanModelCard> {
 // ── Connect modal ─────────────────────────────────────────────────────────────
 
 class _ConnectModal extends StatelessWidget {
-  final String model;
   final VoidCallback onScanQr;
   final VoidCallback onAutoConnect;
 
   const _ConnectModal({
-    required this.model,
     required this.onScanQr,
     required this.onAutoConnect,
   });
@@ -331,16 +359,14 @@ class _ConnectModal extends StatelessWidget {
                 fontSize: 20, fontWeight: FontWeight.w700, color: kText,
               ),
             ),
-            if (model.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Choose a connection method for $model',
-                style: GoogleFonts.manrope(
-                  fontSize: 13, color: kTextMut, height: 1.4,
-                ),
-                textAlign: TextAlign.center,
+            const SizedBox(height: 6),
+            Text(
+              'Choose how to pair your fan',
+              style: GoogleFonts.manrope(
+                fontSize: 13, color: kTextMut, height: 1.4,
               ),
-            ],
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 24),
             ConnectOptionButton(
               icon: Icons.qr_code_scanner_rounded,
@@ -514,35 +540,48 @@ class _FanList extends ConsumerWidget {
   final ApplianceType? fanType;
   const _FanList({required this.fans, this.fanType});
 
+  // The demo fan is a tester-only entry for walking the control screens
+  // without hardware. Shown on the generic list and the ceiling-fan list.
+  bool get _showDemo =>
+      !kIsClientVariant &&
+      (fanType == null || fanType!.id == 'ceiling_fan');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (fans.isEmpty) {
       final noun = fanType != null
           ? fanType!.pluralLabel.toLowerCase()
           : 'fans';
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const TerratonFanIcon(
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+        children: [
+          if (_showDemo) ...[
+            const _DemoFanCard(),
+            const SizedBox(height: 24),
+          ],
+          const SizedBox(height: 24),
+          const Center(
+            child: TerratonFanIcon(
               size: 64,
               color: kTextDim,
               imagePath: 'assets/icons/3 Fan.png',
             ),
-            const SizedBox(height: 16),
-            Text(
-              'No $noun paired yet.',
-              style: GoogleFonts.manrope(
-                fontSize: 16, color: kTextMut, fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No $noun paired yet.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(
+              fontSize: 16, color: kTextMut, fontWeight: FontWeight.w600,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Tap + to add one.',
-              style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Tap + to add one.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(fontSize: 13, color: kTextDim),
+          ),
+        ],
       );
     }
 
@@ -560,18 +599,91 @@ class _FanList extends ConsumerWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 120),
-            itemCount: fans.length,
-            itemBuilder: (_, i) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: RepaintBoundary(
-                child: _FanRow(key: ValueKey(fans[i].deviceId), fan: fans[i]),
-              ),
-            ),
+            children: [
+              if (_showDemo) ...[
+                const _DemoFanCard(),
+                const SizedBox(height: 12),
+              ],
+              for (final fan in fans)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: RepaintBoundary(
+                    child: _FanRow(key: ValueKey(fan.deviceId), fan: fan),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Demo fan card (tester variant only) ──────────────────────────────────────
+
+class _DemoFanCard extends StatelessWidget {
+  const _DemoFanCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Open demo fan',
+      child: GestureDetector(
+        onTap: () =>
+            unawaited(context.push(AppRoutes.control, extra: demoFanDevice())),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [kYellow.withAlpha(26), kYellow.withAlpha(8)],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kYellow.withAlpha(70)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52, height: 52,
+                decoration: BoxDecoration(
+                  color: kYellow.withAlpha(28),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.play_circle_outline_rounded,
+                    color: kYellow, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Demo Fan',
+                      style: GoogleFonts.manrope(
+                        fontSize: 15, fontWeight: FontWeight.w700,
+                        color: kText, letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Try the controls · switch CF-01 / 02 / 03',
+                      style: GoogleFonts.manrope(
+                        fontSize: 11, fontWeight: FontWeight.w600,
+                        color: kTextMut,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: kTextDim, size: 22),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -598,9 +710,23 @@ class _FanRowState extends ConsumerState<_FanRow> {
     _showActions();
   }
 
+  /// The type whose remotes the "Change remote" action offers, or null when
+  /// this fan isn't a multi-remote type (so the row is hidden).
+  ApplianceType? get _remoteType {
+    final byModel = ApplianceLoader.typeForModel(widget.fan.model);
+    if (byModel != null) {
+      return byModel.remotes.isNotEmpty ? byModel : null;
+    }
+    // No / unknown stored model → offer the ceiling-fan remotes as the default.
+    final ceiling = ApplianceLoader.typeById('ceiling_fan');
+    return (ceiling?.remotes.isNotEmpty ?? false) ? ceiling : null;
+  }
+
   void _showActions() {
+    final remoteType = _remoteType;
     unawaited(showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: kSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -611,6 +737,12 @@ class _FanRowState extends ConsumerState<_FanRow> {
           Navigator.of(sheetCtx).pop();
           _showRename();
         },
+        onChangeRemote: remoteType == null
+            ? null
+            : () {
+                Navigator.of(sheetCtx).pop();
+                unawaited(_changeRemote(remoteType));
+              },
         onRemove: () {
           Navigator.of(sheetCtx).pop();
           _confirmDelete();
@@ -618,6 +750,21 @@ class _FanRowState extends ConsumerState<_FanRow> {
         onClose: () => Navigator.of(sheetCtx).pop(),
       ),
     ));
+  }
+
+  Future<void> _changeRemote(ApplianceType type) async {
+    final model = await _showModelPicker(context, type);
+    if (model == null || model == widget.fan.model || !mounted) return;
+    try {
+      await ref.read(fanRepositoryProvider).setModel(widget.fan.deviceId, model);
+      if (mounted) ref.invalidate(savedFansProvider);
+    } on Exception catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not change the remote. Please try again.')),
+        );
+      }
+    }
   }
 
   void _showRename() => unawaited(_doRename());
@@ -780,12 +927,15 @@ class _FanRowState extends ConsumerState<_FanRow> {
 class _ActionSheet extends StatelessWidget {
   final FanDevice fan;
   final VoidCallback onRename;
+  /// Null when this fan's type has no alternative remotes — the row is hidden.
+  final VoidCallback? onChangeRemote;
   final VoidCallback onRemove;
   final VoidCallback onClose;
 
   const _ActionSheet({
     required this.fan,
     required this.onRename,
+    required this.onChangeRemote,
     required this.onRemove,
     required this.onClose,
   });
@@ -803,41 +953,58 @@ class _ActionSheet extends StatelessWidget {
               color: kCardHi, borderRadius: BorderRadius.circular(2),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(fan.nickname,
-                    style: GoogleFonts.manrope(
-                      fontSize: 16, fontWeight: FontWeight.w700, color: kText,
-                    )),
-                if (fan.model.isNotEmpty)
-                  Text(fan.model.toUpperCase(),
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10, fontWeight: FontWeight.w600,
-                        color: kTextMut, letterSpacing: 1.2,
-                      )),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                _ActionRow(
-                  icon: Icons.edit_outlined,
-                  label: 'Rename Fan',
-                  onTap: onRename,
-                ),
-                const SizedBox(height: 8),
-                _ActionRow(
-                  icon: Icons.delete_outline,
-                  label: 'Remove Device',
-                  danger: true,
-                  onTap: onRemove,
-                ),
-              ],
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(fan.nickname,
+                            style: GoogleFonts.manrope(
+                              fontSize: 16, fontWeight: FontWeight.w700, color: kText,
+                            )),
+                        if (fan.model.isNotEmpty)
+                          Text(fan.model.toUpperCase(),
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10, fontWeight: FontWeight.w600,
+                                color: kTextMut, letterSpacing: 1.2,
+                              )),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        _ActionRow(
+                          icon: Icons.edit_outlined,
+                          label: 'Rename Fan',
+                          onTap: onRename,
+                        ),
+                        if (onChangeRemote != null) ...[
+                          const SizedBox(height: 8),
+                          _ActionRow(
+                            icon: Icons.settings_remote_outlined,
+                            label: 'Change Remote',
+                            onTap: onChangeRemote!,
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        _ActionRow(
+                          icon: Icons.delete_outline,
+                          label: 'Remove Device',
+                          danger: true,
+                          onTap: onRemove,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Padding(

@@ -325,6 +325,16 @@ To add a new fan type:
 Each `FanType` auto-generates 21 model IDs: `TN-CF-01` … `TN-CF-21`, etc.
 To change the count or format, edit `modelNumbers` getter in `fan_type.dart`.
 
+**Exception — ceiling fans use explicit remote profiles.** `ceiling_fan` in
+`assets/appliances.yaml` (and `appliances_client.yaml`) declares a `remotes:`
+list of three entries (`TN-CF-01/02/03`), each with its own `controls:` and
+`modes:`. When a type has `remotes:`, its pairing list shows exactly those
+models and the control screen renders the matching `RemoteProfile`
+(`ApplianceLoader.remoteForModel`). To add or change a ceiling remote, edit
+that YAML only — `modes` entries are `nature | smart | reverse | boost | led`,
+`controls` are `speed | mode | timer | lighting`. No Dart change needed unless
+a genuinely new control widget or mode button is introduced.
+
 ### 8.3 Fan type icons
 
 Icons live in `assets/icons/`. Current files:

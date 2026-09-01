@@ -6,6 +6,7 @@
 | --- | --- |
 | **Onboarding** | BLE scan or full-screen immersive QR scanner; profile setup on first launch |
 | **Fan control** | Power, 6 speed steps, Boost / Nature / Reverse / Smart modes, 2 / 4 / 8 h sleep timer |
+| **Fan remotes** | Three ceiling-fan remotes selected by model: **CF-01** (default — no mood light), **CF-02** (LED toggle replaces Nature), **CF-03** (Reverse + Boost only, adds mood light). Chosen at pairing (Automatic Connect) or from the QR payload; switchable later via long-press → *Change Remote*. See `RemoteProfile` / `appliances.yaml`. |
 | **Nature mode** | Locks the speed dial and disables other modes; restores pre-nature speed on switch to Smart/Reverse |
 | **Mood lighting** | ON/OFF + warm↔cool colour-temperature slider *(bytes pending from Terraton)* |
 | **Telemetry** | Live watts and RPM polled every 3 s; stale values auto-clear after 5 s |

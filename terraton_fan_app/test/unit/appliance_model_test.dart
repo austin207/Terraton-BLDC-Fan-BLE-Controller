@@ -209,6 +209,59 @@ void main() {
       };
       expect(ApplianceType.fromYaml(yaml).controls, isEmpty);
     });
+
+    test('remotes default to empty list when absent', () {
+      final yaml = <Object?, Object?>{
+        'id': 't', 'displayName': 'T', 'modelPrefix': 'T', 'icon': '',
+      };
+      expect(ApplianceType.fromYaml(yaml).remotes, isEmpty);
+    });
+
+    test('parses a remotes list and derives modelNumbers from it', () {
+      final yaml = <Object?, Object?>{
+        'id': 'ceiling_fan', 'displayName': 'Ceiling Fan',
+        'modelPrefix': 'CF', 'icon': '', 'modelCount': 21,
+        'remotes': <Object?>[
+          <Object?, Object?>{
+            'model': 'tn-cf-01', 'name': 'CF-01',
+            'controls': <Object?>['speed', 'mode'],
+            'modes': <Object?>['nature', 'boost'],
+          },
+        ],
+      };
+      final type = ApplianceType.fromYaml(yaml);
+      expect(type.remotes, hasLength(1));
+      expect(type.remotes.first.model, 'TN-CF-01'); // upper-cased
+      expect(type.remotes.first.name, 'CF-01');
+      expect(type.modelNumbers, ['TN-CF-01']); // from remotes, not the 21 count
+      expect(type.remoteFor('TN-CF-01')?.name, 'CF-01');
+      expect(type.remoteFor('TN-CF-99'), isNull);
+    });
+  });
+
+  group('RemoteProfile', () {
+    test('fromYaml parses fields and upper-cases the model', () {
+      final r = RemoteProfile.fromYaml(<Object?, Object?>{
+        'model': 'tn-cf-02', 'name': 'CF-02',
+        'controls': <Object?>['speed', 'mode', 'timer'],
+        'modes': <Object?>['led', 'smart', 'reverse', 'boost'],
+      });
+      expect(r.model, 'TN-CF-02');
+      expect(r.hasControl('timer'), isTrue);
+      expect(r.hasControl('lighting'), isFalse);
+      expect(r.hasMode('led'), isTrue);
+      expect(r.hasMode('nature'), isFalse);
+    });
+
+    test('legacy() builds the classic four-mode profile from a type', () {
+      const type = ApplianceType(
+        id: 'table_fan', displayName: 'Table Fan', modelPrefix: 'TF',
+        iconPath: '', modelCount: 21, controls: ['speed', 'mode', 'timer'],
+      );
+      final r = RemoteProfile.legacy(type);
+      expect(r.controls, ['speed', 'mode', 'timer']);
+      expect(r.modes, ['nature', 'smart', 'reverse', 'boost']);
+    });
   });
 
   group('ApplianceCategory.fromYaml', () {

@@ -117,11 +117,9 @@ void main() {
   });
 
   group('ApplianceLoader — ApplianceType helpers', () {
-    test('modelNumbers generates TN-CF-01 … TN-CF-21 for ceiling_fan', () {
+    test('ceiling_fan modelNumbers come from its three remotes', () {
       final nums = ApplianceLoader.typeById('ceiling_fan')!.modelNumbers;
-      expect(nums.first, 'TN-CF-01');
-      expect(nums.last,  'TN-CF-21');
-      expect(nums.length, 21);
+      expect(nums, ['TN-CF-01', 'TN-CF-02', 'TN-CF-03']);
     });
 
     test('modelNumbers for ro_filter generates 10 entries', () {
@@ -147,6 +145,54 @@ void main() {
     test('pluralLabel appends s to displayName', () {
       expect(ApplianceLoader.typeById('ceiling_fan')!.pluralLabel,
           'Ceiling Fans');
+    });
+  });
+
+  group('ApplianceLoader — remoteForModel', () {
+    test('ceiling_fan declares three remotes', () {
+      expect(ApplianceLoader.typeById('ceiling_fan')!.remotes, hasLength(3));
+    });
+
+    test('TN-CF-01 → CF-01: four modes, no lighting', () {
+      final r = ApplianceLoader.remoteForModel('TN-CF-01');
+      expect(r.name, 'CF-01');
+      expect(r.modes, ['nature', 'smart', 'reverse', 'boost']);
+      expect(r.hasControl('lighting'), isFalse);
+    });
+
+    test('TN-CF-02 → CF-02: LED replaces Nature, no lighting', () {
+      final r = ApplianceLoader.remoteForModel('tn-cf-02');
+      expect(r.name, 'CF-02');
+      expect(r.modes, ['led', 'smart', 'reverse', 'boost']);
+      expect(r.hasControl('lighting'), isFalse);
+    });
+
+    test('TN-CF-03 → CF-03: only reverse + boost, has lighting', () {
+      final r = ApplianceLoader.remoteForModel('TN-CF-03');
+      expect(r.name, 'CF-03');
+      expect(r.modes, ['reverse', 'boost']);
+      expect(r.hasControl('lighting'), isTrue);
+    });
+
+    test('unknown ceiling model (TN-CF-09) falls back to CF-01', () {
+      expect(ApplianceLoader.remoteForModel('TN-CF-09').name, 'CF-01');
+    });
+
+    test('empty model (legacy BLE-paired) falls back to CF-01', () {
+      expect(ApplianceLoader.remoteForModel('').name, 'CF-01');
+    });
+
+    test('a non-ceiling type gets its legacy four-mode profile', () {
+      final r = ApplianceLoader.remoteForModel('TN-TF-05'); // table fan
+      expect(r.modes, ['nature', 'smart', 'reverse', 'boost']);
+      expect(r.hasControl('lighting'), isFalse); // table fans have no lighting
+      expect(r.hasControl('timer'), isTrue);
+    });
+
+    test('a completely unknown string shows every control (all-controls fallback)', () {
+      final r = ApplianceLoader.remoteForModel('Terraton X1');
+      expect(r.hasControl('lighting'), isTrue);
+      expect(r.modes, ['nature', 'smart', 'reverse', 'boost']);
     });
   });
 

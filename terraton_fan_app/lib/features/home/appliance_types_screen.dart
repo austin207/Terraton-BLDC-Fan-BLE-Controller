@@ -58,7 +58,7 @@ class ApplianceTypesScreen extends StatelessWidget {
                   applianceType: types[i],
                   subtitle: (cat?.comingSoon ?? false)
                       ? 'Coming soon'
-                      : '${types[i].modelCount} models',
+                      : '${types[i].modelNumbers.length} models',
                   // Non-fan categories aren't supported yet → show Coming Soon
                   // instead of dropping the user into the fan pairing flow.
                   onTap: () => unawaited(

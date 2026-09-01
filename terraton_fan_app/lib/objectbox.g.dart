@@ -96,7 +96,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(2, 6584660752010918141),
     name: 'FanState',
-    lastPropertyId: const obx_int.IdUid(22, 1685620198763572186),
+    lastPropertyId: const obx_int.IdUid(23, 6151799983119338361),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -230,6 +230,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(22, 1685620198763572186),
         name: 'timerActivatedAt',
         type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(23, 6151799983119338361),
+        name: 'lastLedIsOn',
+        type: 1,
         flags: 0,
       ),
     ],
@@ -485,7 +491,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final openSegmentModeOffset = object.openSegmentMode == null
             ? null
             : fbb.writeString(object.openSegmentMode!);
-        fbb.startTable(23);
+        fbb.startTable(24);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, deviceIdOffset);
         fbb.addInt64(2, object.speed);
@@ -508,6 +514,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
         fbb.addInt64(19, object.openSegmentRpmCount);
         fbb.addInt64(20, object.lastRuntimeSecs);
         fbb.addInt64(21, object.timerActivatedAt?.millisecondsSinceEpoch);
+        fbb.addBool(22, object.lastLedIsOn);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -618,7 +625,13 @@ obx_int.ModelDefinition getObjectBoxModel() {
           )
           ..timerActivatedAt = timerActivatedAtValue == null
               ? null
-              : DateTime.fromMillisecondsSinceEpoch(timerActivatedAtValue);
+              : DateTime.fromMillisecondsSinceEpoch(timerActivatedAtValue)
+          ..lastLedIsOn = const fb.BoolReader().vTableGet(
+            buffer,
+            rootOffset,
+            48,
+            false,
+          );
 
         return object;
       },
@@ -928,6 +941,11 @@ class FanState_ {
   /// See [FanState.timerActivatedAt].
   static final timerActivatedAt = obx.QueryDateProperty<FanState>(
     _entities[1].properties[21],
+  );
+
+  /// See [FanState.lastLedIsOn].
+  static final lastLedIsOn = obx.QueryBooleanProperty<FanState>(
+    _entities[1].properties[22],
   );
 }
 

@@ -73,4 +73,51 @@ abstract final class ApplianceLoader {
     return null;
   }
 
+  /// Universal fallback layout — every built-in section, the classic four modes.
+  /// Used for a non-empty model string that matches no known type prefix
+  /// (old QR payloads, hand-typed values); preserves the pre-remote-profile
+  /// behaviour of "unknown model → show everything".
+  static const RemoteProfile _allControls = RemoteProfile(
+    model: '',
+    name: 'Fan',
+    controls: ['speed', 'mode', 'timer', 'lighting'],
+    modes: ['nature', 'smart', 'reverse', 'boost'],
+  );
+
+  /// Resolves the remote layout for a fan's stored [model].
+  ///
+  /// Resolution order:
+  ///   1. exact match against any type's `remotes:` entry (`TN-CF-01/02/03`);
+  ///   2. known type prefix → that type's first remote (e.g. an unknown
+  ///      `TN-CF-09` falls back to CF-01), or its legacy four-mode profile
+  ///      when the type declares no remotes (table / pedestal / wall / exhaust);
+  ///   3. empty model (legacy BLE-paired fan) → the ceiling fan's first remote
+  ///      (CF-01), so those fans get a concrete layout and can be switched via
+  ///      "Change remote";
+  ///   4. anything else → [_allControls].
+  static RemoteProfile remoteForModel(String model) {
+    final up = model.trim().toUpperCase();
+
+    for (final t in allTypes) {
+      final r = t.remoteFor(up);
+      if (r != null) return r;
+    }
+
+    final type = typeForModel(up);
+    if (type != null) {
+      return type.remotes.isNotEmpty
+          ? type.remotes.first
+          : RemoteProfile.legacy(type);
+    }
+
+    if (up.isEmpty) {
+      final ceiling = typeById('ceiling_fan');
+      if (ceiling != null && ceiling.remotes.isNotEmpty) {
+        return ceiling.remotes.first;
+      }
+    }
+
+    return _allControls;
+  }
+
 }

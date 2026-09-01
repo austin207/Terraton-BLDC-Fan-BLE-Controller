@@ -18,6 +18,7 @@ import 'package:terraton_fan_app/core/storage/usage_log_repository.dart';
 import 'package:terraton_fan_app/features/control/circular_speed_dial.dart';
 import 'package:terraton_fan_app/features/control/control_screen.dart';
 import 'package:terraton_fan_app/features/control/lighting_control_widget.dart';
+import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 import 'package:terraton_fan_app/features/control/timer_control_widget.dart';
 import 'package:terraton_fan_app/models/fan_device.dart';
 import 'package:terraton_fan_app/models/fan_state.dart';
@@ -30,13 +31,14 @@ class _MockUsageLogRepo   extends Mock implements UsageLogRepository {}
 // throws out of the notify handler and silently drops the rest of the burst.
 class _MockDailyRuntimeRepo extends Mock implements DailyRuntimeRepository {}
 
-FanDevice _testFan() => FanDevice()
-  ..deviceId   = 'TT-001'
-  ..macAddress = 'AA:BB:CC:DD:EE:FF'
-  ..nickname   = 'Bedroom Fan'
-  ..model      = 'Terraton X1'
-  ..fwVersion  = '1.0'
-  ..addedAt    = DateTime(2026, 1, 1);
+FanDevice _testFan({String model = 'Terraton X1', String deviceId = 'TT-001'}) =>
+    FanDevice()
+      ..deviceId   = deviceId
+      ..macAddress = deviceId == '__demo__' ? '' : 'AA:BB:CC:DD:EE:FF'
+      ..nickname   = 'Bedroom Fan'
+      ..model      = model
+      ..fwVersion  = '1.0'
+      ..addedAt    = DateTime(2026, 1, 1);
 
 void main() {
   setUpAll(() async {
@@ -118,6 +120,9 @@ void main() {
           brightness: any(named: 'brightness'),
           isOn: any(named: 'isOn'),
         )).thenAnswer((_) async {});
+    when(() => mockRepo.saveLed(any(), isOn: any(named: 'isOn')))
+        .thenAnswer((_) async {});
+    when(() => mockRepo.setModel(any(), any())).thenAnswer((_) async {});
     when(() => mockRepo.saveOpenSegment(
           any(),
           start: any(named: 'start'),
@@ -137,14 +142,17 @@ void main() {
     await notifyCtrl.close();
   });
 
-  Widget buildScreen() => ProviderScope(
+  Widget buildScreen({String model = 'Terraton X1', String deviceId = 'TT-001'}) =>
+      ProviderScope(
         overrides: [
           bleServiceProvider.overrideWithValue(mockBle),
           fanRepositoryProvider.overrideWithValue(mockRepo),
           usageLogRepositoryProvider.overrideWithValue(mockUsageLogRepo),
           dailyRuntimeRepositoryProvider.overrideWithValue(mockDailyRuntimeRepo),
         ],
-        child: MaterialApp(home: ControlScreen(fan: _testFan())),
+        child: MaterialApp(
+          home: ControlScreen(fan: _testFan(model: model, deviceId: deviceId)),
+        ),
       );
 
   // Pump the screen and emit a connected state.
@@ -1257,6 +1265,97 @@ void main() {
         reason: 'with no countdown to show, a backgrounded app must not leave '
             'an ongoing notification behind showing stale telemetry',
       );
+    });
+  });
+
+  // ── Per-remote layout (CF-01 / CF-02 / CF-03) ────────────────────────────────
+  // The mode-row buttons and control sections come from the fan's resolved
+  // RemoteProfile (ApplianceLoader.remoteForModel). Frame behaviour is covered
+  // elsewhere; this only checks the wiring.
+  group('remote profiles', () {
+    testWidgets('CF-01 has the four modes and no mood lighting', (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-01'));
+      await tester.pumpAndSettle();
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(modeWidget.modes, ['nature', 'smart', 'reverse', 'boost']);
+      expect(find.byType(LightingControlWidget), findsNothing);
+    });
+
+    testWidgets('CF-02 swaps Nature for an LED toggle, still no lighting',
+        (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-02'));
+      await tester.pumpAndSettle();
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(modeWidget.modes, ['led', 'smart', 'reverse', 'boost']);
+      expect(find.byType(LightingControlWidget), findsNothing);
+    });
+
+    testWidgets('CF-03 shows only Reverse + Boost and adds mood lighting',
+        (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-03'));
+      await tester.pumpAndSettle();
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(modeWidget.modes, ['reverse', 'boost']);
+      expect(find.byType(LightingControlWidget), findsOneWidget);
+    });
+  });
+
+  // ── Demo fan ────────────────────────────────────────────────────────────────
+  group('demo fan', () {
+    testWidgets('shows the remote switcher and starts on CF-01', (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-01', deviceId: '__demo__'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEMO · REMOTE'), findsOneWidget);
+      expect(find.text('CF-01'), findsOneWidget);
+      expect(find.text('CF-02'), findsOneWidget);
+      expect(find.text('CF-03'), findsOneWidget);
+
+      final mode =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(mode.modes, ['nature', 'smart', 'reverse', 'boost']);
+    });
+
+    testWidgets('switching to CF-03 swaps the layout and clears a stale mode',
+        (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-01', deviceId: '__demo__'));
+      await tester.pumpAndSettle();
+
+      // Light Nature, then switch to CF-03 (which has no Nature button).
+      tester
+          .widget<ModeControlWidget>(find.byType(ModeControlWidget))
+          .onMode('nature');
+      await tester.pump();
+
+      await tester.tap(find.text('CF-03'));
+      await tester.pumpAndSettle();
+
+      final mode =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(mode.modes, ['reverse', 'boost']);
+      expect(mode.activeMode, isNull, reason: 'stale Nature chip must be cleared');
+      expect(find.byType(LightingControlWidget), findsOneWidget);
+    });
+
+    testWidgets('a demo tap drives the fan (power on → dial + telemetry light up)',
+        (tester) async {
+      await tester.pumpWidget(buildScreen(model: 'TN-CF-01', deviceId: '__demo__'));
+      await tester.pumpAndSettle();
+
+      // Power button is a 56 dp circle above the panel.
+      await tester.tap(find.byIcon(Icons.power_settings_new_rounded));
+      await tester.pumpAndSettle();
+
+      final dial = tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));
+      expect(dial.currentSpeed, greaterThan(0));
+      expect(dial.watts, isNotNull);
+      expect(dial.rpm, isNotNull);
     });
   });
 }

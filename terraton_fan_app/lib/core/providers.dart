@@ -131,6 +131,8 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
         isOn:       state.lastLightIsOn,
       ));
 
+  void _persistLed() => _persist(_repo.saveLed(arg, isOn: state.lastLedIsOn));
+
   // ── Frame → field ──────────────────────────────────────────────────────────
   // One reported byte writes one thing. Nothing here infers a second field from
   // a first: a mode does not imply power, a speed does not imply "no mode".
@@ -341,6 +343,14 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
       lastLightIsOn:       isOn,
     );
     _persistLighting();
+  }
+
+  /// Speed-indication LED toggle (CF-02). UI-state only — no BLE frame exists
+  /// yet; the control screen sends the (currently null) frame separately.
+  void updateLed(bool isOn) {
+    if (state.lastLedIsOn == isOn) return;
+    state = state.copyWith(lastLedIsOn: isOn);
+    _persistLed();
   }
 }
 

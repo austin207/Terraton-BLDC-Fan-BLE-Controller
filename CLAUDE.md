@@ -141,11 +141,56 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 
 ### Onboarding flow
 
-`goToOnboarding(context)` in `router.dart` shows a bottom sheet with two options:
-- **Bluetooth pairing** → `/scan/ble` — BLE scan list; 15 s timeout; `dispose()` calls `stopScan()`
-- **QR code pairing** → `/scan/qr` — reads `device_id`, `model`, `fw_version` from QR JSON
+From a fan-type list (`/fans` with an `ApplianceType`), the **+** FAB opens
+`_showConnectSheet` — **connection method first**:
+- **Scan QR Code** → `/scan/qr` directly. The sticker payload carries `model`
+  (`device_id`, `model`, `fw_version` from QR JSON), which selects the remote —
+  no picker shown.
+- **Automatic Connect** → the **remote picker** (`_FanModelSheet`). For ceiling
+  fans it lists exactly the three `remotes:` from `appliances.yaml`
+  (`TN-CF-01/02/03`); every other type keeps the generated `TN-<prefix>-NN`
+  list. The pick is passed to `/scan/ble` via GoRouter `extra` (a `String`) and
+  `BleScanScreen` writes it to `FanDevice.model`.
 
 Both paths end at `/name-fan` (receives `FanDevice` as GoRouter `extra`), then `/control`.
+
+`goToOnboarding(context)` (`router.dart`) — the older *Bluetooth pairing / QR
+code pairing* sheet — is still defined but currently **unreachable** (`/fans` is
+only ever opened scoped to a type). Left in place intentionally; do not wire it
+up or delete it without asking.
+
+### Fan remote profiles — CF-01 / CF-02 / CF-03
+
+A ceiling fan's `FanDevice.model` selects a `RemoteProfile`
+(`ApplianceLoader.remoteForModel`, declared under `ceiling_fan.remotes:` in
+`appliances.yaml` / `appliances_client.yaml`). The profile drives **which
+control sections** (`RemoteProfile.controls`) and **which mode-row buttons**
+(`RemoteProfile.modes`) `_FanControlsPanel` renders — nothing else about the
+control screen changes.
+
+| Model | Mode row | Mood lighting |
+| --- | --- | --- |
+| `TN-CF-01` (default) | Nature · Smart · Reverse · Boost | **hidden** |
+| `TN-CF-02` | **LED** · Smart · Reverse · Boost | hidden |
+| `TN-CF-03` | Reverse · Boost | **shown** (still stub — bytes pending) |
+
+- **LED** is a UI-state-only toggle (`FanState.lastLedIsOn`, persisted via
+  `saveLed`). `BleFrameBuilder.ledOn/ledOff` are `null` until Terraton supplies
+  bytes — the tap shows a pending SnackBar, exactly like mood lighting.
+- **CF-03** buttons are plain relabels: "Reverse" → `21 01 03`, "Boost" →
+  `21 01 01`. Nature and Smart are gone entirely (no button, no frame).
+- **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
+  ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
+  type's legacy four-mode profile; anything else → an all-controls profile
+  (preserves the pre-profile "unknown model shows everything" behaviour, which
+  several widget tests rely on).
+- **"Change remote"** — a row in the fan long-press action sheet
+  (`_ActionSheet`) → the remote picker → `FanRepository.setModel` rewrites
+  `FanDevice.model`. This is how a legacy (empty-model) fan gets a real profile;
+  there is no automatic migration.
+- `ModeControlWidget` takes `modes: List<String>` and renders 2- to 4-button
+  rows. The `ValueKey('boost_button')` / `ValueKey('led_button')` keys are
+  load-bearing for tests.
 
 ### Home screen architecture (`lib/features/home/home_screen.dart`)
 
@@ -181,12 +226,12 @@ Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`).
 ### Storage
 
 ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known control state), `UsageLog` (energy segment per mode/speed change), `DailyRuntime` (one record per fan per calendar day; upserted from the runtime-query response every 90 s).
-`FanDevice.deviceId` is the stable primary key. `macAddress` starts empty; filled by `FanRepository.updateMac()` on first successful BLE connection.
-`FanState.==` and `hashCode` include `deviceId`.
+`FanDevice.deviceId` is the stable primary key. `macAddress` starts empty; filled by `FanRepository.updateMac()` on first successful BLE connection. `FanDevice.model` selects the remote layout (`FanRepository.setModel` rewrites it for "Change remote"); it is set at pairing from the QR payload or the remote picker.
+`FanState.==` and `hashCode` include `deviceId`. `FanState.lastLedIsOn` holds the CF-02 speed-LED toggle (UI state only).
 `DailyRuntime` keyed by `(deviceId, date)` (local midnight); never treat a missing day as zero — `AnalyticsCalculations.normalizeDailyRuntimes` fills gaps with the average of available days.
 `objectbox.g.dart` is generated — run `build_runner` after changing any model.
 
-**Field-scoped persistence (`FanRepository` / `ActiveFanStateNotifier`).** `FanState` is written through four scoped read-modify-write methods on `FanRepository` — `saveOperatingState` (`isPowered`/`isBoost`/`speed`/`activeMode`), `saveTimerState` (`activeTimerCode`/`timerActivatedAt`), `saveTelemetry` (`lastWatts`/`lastRpm`/`lastRuntimeSecs`), `saveLighting` (`lastLightColorType`/`lastLightBrightness`/`lastLightIsOn`) — modeled on the pre-existing `saveOpenSegment` pattern. Every `ActiveFanStateNotifier` mutator (`lib/core/providers.dart`) persists through exactly one of these (`_persistOperating`/`_persistTimer`/`_persistTelemetry`/`_persistLighting`); there is no whole-row writer left in that path — the old `update()` + whole-row `saveState`-per-mutation funnel is gone, along with `_restorePending`, `_toPersist`, and `markRestored()`. Consequence: a telemetry or runtime write is now structurally **unable** to touch `isPowered`/`activeMode` — `updateRuntime()` calls `_persistTelemetry()`, which can only ever construct a write to the telemetry fields, so the 2026-07-17 field bug (a `queryRuntime` reply riding the same notification burst as a Machine-State reply wiped `isPowered`/`activeMode` from the DB microseconds before the old demotion guard read them) cannot recur. `resetTelemetryOnConnect()` is pure in-memory display-blanking **by construction**: it assigns `state` directly and calls no persist method at all, so there is no leak window to guard.
+**Field-scoped persistence (`FanRepository` / `ActiveFanStateNotifier`).** `FanState` is written through scoped read-modify-write methods on `FanRepository` — `saveOperatingState` (`isPowered`/`isBoost`/`speed`/`activeMode`), `saveTimerState` (`activeTimerCode`/`timerActivatedAt`), `saveTelemetry` (`lastWatts`/`lastRpm`/`lastRuntimeSecs`), `saveLighting` (`lastLightColorType`/`lastLightBrightness`/`lastLightIsOn`), `saveLed` (`lastLedIsOn` — CF-02 speed LED) — modeled on the pre-existing `saveOpenSegment` pattern. Every `ActiveFanStateNotifier` mutator (`lib/core/providers.dart`) persists through exactly one of these (`_persistOperating`/`_persistTimer`/`_persistTelemetry`/`_persistLighting`/`_persistLed`); there is no whole-row writer left in that path — the old `update()` + whole-row `saveState`-per-mutation funnel is gone, along with `_restorePending`, `_toPersist`, and `markRestored()`. Consequence: a telemetry or runtime write is now structurally **unable** to touch `isPowered`/`activeMode` — `updateRuntime()` calls `_persistTelemetry()`, which can only ever construct a write to the telemetry fields, so the 2026-07-17 field bug (a `queryRuntime` reply riding the same notification burst as a Machine-State reply wiped `isPowered`/`activeMode` from the DB microseconds before the old demotion guard read them) cannot recur. `resetTelemetryOnConnect()` is pure in-memory display-blanking **by construction**: it assigns `state` directly and calls no persist method at all, so there is no leak window to guard.
 
 ### BLE service implementation notes (`lib/core/ble/ble_service.dart`)
 
@@ -204,7 +249,7 @@ ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known cont
 
 Single source of truth for all BLE command bytes. Adding a new command requires only a YAML edit — no Dart changes.
 
-`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. Lighting commands are currently `null` — pending bytes from Terraton.
+`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. Lighting commands (`commands.lighting.*`) and the CF-02 speed-LED (`commands.led.on/off`) are currently `null` — pending bytes from Terraton.
 
 `get_motor_state_vendor` (`…00 02`) is the vendor-doc checksum sibling of `get_motor_state` (`…00 01`). **It is never sent.** `check_crc()` sums `request_frame[2]+[3]+[5]` only, giving `0x00+0x01+0x00 = 0x01`, so the `…02` frame fails validation, `read_request()` never sets `recv_flag`, and `Process_Response()` is never called. The poll used to alternate the two variants, which meant every second tick got no reply and the display effectively updated every 6 s. The key is kept in `commands.yaml` for reference only.
 
@@ -275,6 +320,11 @@ frame we just sent. Two places do it, both in `_FanControlsPanel`:
 | lit `smart` chip | `powerOn()` | that chip |
 | any speed dot | `setSpeed(n)` | `nature`, `boost`, `reverse` — **Smart stays lit** |
 | timer 2h/4h/8h | that timer frame | `smart` only |
+| `led` toggle (CF-02) | `ledOn()`/`ledOff()` (both `null` today) | — (UI state only, `FanState.lastLedIsOn`) |
+
+Which of these buttons exist at all is per-remote — see "Fan remote profiles"
+above. The `led` toggle is not a mode chip: it never touches `activeMode` and no
+frame clears it.
 
 Every row is read straight from the firmware, not inferred: see the ground-truth
 bullets above and `FW_bug.md`. Boost exits via a speed frame because **speed 7 is
@@ -470,9 +520,13 @@ The notification is started from the foreground (the Timer tap / a powered state
 
 ### Demo mode
 
-Demo fan has `deviceId == kDemoDeviceId` (`'__demo__'`); `_isDemo` getter in `ControlScreen` bypasses all BLE calls. `_applyDemoFrame` parses BLE frames locally and updates state via notifier — same result as real hardware.
+Demo fan has `deviceId == kDemoDeviceId` (`'__demo__'`); `_isDemo` getter in `ControlScreen` bypasses all BLE calls (no `_connect()`, no polls, no lifecycle disconnect). `_applyDemoFrame` parses each outgoing frame locally and updates state via the notifier — same result as a real hardware echo. It also synthesises watts/RPM from the current gear (`_pushDemoTelemetry`) and comes up on gear 3 at power-on, so the dial lights up like a real fan. LED and mood-light toggles already update locally, so they work in demo too.
 
-`kDemoDeviceId` is defined in `lib/shared/app_routes.dart` and imported by `control_screen.dart`, `fan_card.dart`, and `qr_scan_screen.dart`.
+**Entry point:** `demoFanDevice()` (`lib/shared/demo_fan.dart`) builds a throwaway `FanDevice` (never saved to `FanRepository`). The **"Demo Fan"** card in `FansListScreen` (`_DemoFanCard`) opens it — shown only in the tester variant (`!kIsClientVariant`) on the generic and ceiling-fan lists.
+
+**Remote switcher:** on the demo control screen only, `_DemoRemoteSwitcher` (a CF-01/02/03 segmented control) calls `_switchDemoRemote`, which swaps `_FanControlsPanelState._remote` live and blanks any mode/timer/LED the new layout has no button for. `_remote` is non-final purely for this; a real fan resolves it once in `initState` and it never changes.
+
+`kDemoDeviceId` is defined in `lib/shared/app_routes.dart` and imported by `control_screen.dart` and `qr_scan_screen.dart`.
 
 ### Analytics (`lib/features/analytics/analytics_screen.dart`)
 

@@ -135,6 +135,18 @@ class CommandLoader {
     return buildFrame(q['command'] as int?, _toIntList(q['data']));
   }
 
+  static List<int>? ledOn() {
+    final l = _safeGet(['commands', 'led', 'on']);
+    if (l == null) return null;
+    return buildFrame(l['command'] as int?, _toIntList(l['data']));
+  }
+
+  static List<int>? ledOff() {
+    final l = _safeGet(['commands', 'led', 'off']);
+    if (l == null) return null;
+    return buildFrame(l['command'] as int?, _toIntList(l['data']));
+  }
+
   static List<int>? lightOn() {
     final l = _safeGet(['commands', 'lighting', 'on']);
     if (l == null) return null;

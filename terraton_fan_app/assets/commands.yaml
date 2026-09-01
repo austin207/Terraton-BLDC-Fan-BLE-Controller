@@ -91,6 +91,16 @@ commands:
       command: 0x24
       data: [0x00]
 
+  # Speed-indication LED on/off (CF-02 remote). Command bytes pending from
+  # Terraton — fill in `command` and `data` when received. No Dart changes needed.
+  led:
+    on:
+      command: null
+      data: null
+    off:
+      command: null
+      data: null
+
   # Lighting commands pending from Terraton.
   # Fill in command and data when received. No Dart code changes needed.
   lighting:

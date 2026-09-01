@@ -5,35 +5,49 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:terraton_fan_app/shared/theme.dart';
 
+/// The operating-modes row. Which buttons appear — and in what order — is
+/// driven entirely by [modes], a per-remote list from appliances.yaml
+/// (`RemoteProfile.modes`). Recognised entries:
+///
+///   nature | smart | reverse  → mode-frame buttons, routed through [onMode]
+///   boost                     → the Boost button, routed through [onBoost]
+///   led                       → speed-indication LED toggle, routed through [onLed]
+///
+/// The widget holds no state: `activeMode` / `isBoost` / `ledOn` are supplied
+/// by the caller and every tap is a single callback. Unknown entries are
+/// ignored.
 class ModeControlWidget extends StatelessWidget {
+  /// Ordered mode-row buttons for the active remote.
+  final List<String> modes;
+
   final String? activeMode;
   final bool isBoost;
+  final bool ledOn;
   final bool enabled;
+
   // Firmware rejects Smart at speed 1/2 (case BOOST's SMART_MODE branch and
   // case IRSmartMode both gate on `TargetSpeed > 2`, unless Nature/Reverse is
   // active) — the BLE path still echoes a false "Smart set" confirmation
   // when rejected, so the app must not rely on that echo and must simply
   // never let the tap happen in the first place.
   final int currentSpeed;
+
   final void Function(String mode) onMode;
   final VoidCallback onBoost;
+  final void Function(bool on) onLed;
 
   const ModeControlWidget({
     super.key,
+    required this.modes,
     required this.activeMode,
     required this.isBoost,
     required this.enabled,
     required this.currentSpeed,
     required this.onMode,
     required this.onBoost,
+    required this.onLed,
+    this.ledOn = false,
   });
-
-  // Nature uses a custom PNG asset; Smart and Reverse use Material icons.
-  static const _modes = [
-    _ModeEntry('nature',  'Nature',  null, 'assets/icons/nature_plant.png'),
-    _ModeEntry('smart',   'Smart',   Icons.auto_awesome_outlined, null),
-    _ModeEntry('reverse', 'Reverse', Icons.sync_rounded, null),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -47,74 +61,91 @@ class ModeControlWidget extends StatelessWidget {
     final smartDisabled = !isBoost && activeMode == null &&
         (currentSpeed == 1 || currentSpeed == 2);
 
-    return Row(
-      children: [
-        // 3 mode buttons
-        ..._modes.map((entry) {
-          final isActive = activeMode == entry.mode;
-          final btnEnabled = entry.mode == 'smart' ? (enabled && !smartDisabled) : enabled;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _ModeBtn(
-                icon: entry.icon,
-                assetPath: entry.assetPath,
-                label: entry.label,
-                isActive: isActive,
-                enabled: btnEnabled,
-                onTap: () {
-                  unawaited(HapticFeedback.lightImpact());
-                  onMode(entry.mode);
-                },
-              ),
-            ),
-          );
-        }),
+    final buttons = <Widget>[];
+    for (var i = 0; i < modes.length; i++) {
+      final child = _buttonFor(modes[i], smartDisabled: smartDisabled);
+      if (child == null) continue;
+      buttons.add(Expanded(
+        child: Padding(
+          padding: EdgeInsets.only(right: i == modes.length - 1 ? 0 : 8),
+          child: child,
+        ),
+      ));
+    }
 
-        // Boost button — 4th column; GestureDetector key required by tests
-        Expanded(
-          child: Semantics(
-            button: true,
-            label: 'Boost mode',
-            selected: isBoost,
-            enabled: enabled,
-            child: GestureDetector(
-              key: const ValueKey('boost_button'),
-              onTap: enabled
-                  ? () {
-                      unawaited(HapticFeedback.lightImpact());
-                      onBoost();
-                    }
-                  : null,
-              child: _ModeBtn(
-                assetPath: 'assets/icons/boost_rocket.png',
-                label: 'Boost',
-                isActive: isBoost,
-                enabled: enabled,
-                onTap: null, // handled by outer GestureDetector
-              ),
+    return Row(children: buttons);
+  }
+
+  Widget? _buttonFor(String mode, {required bool smartDisabled}) {
+    switch (mode) {
+      case 'nature':
+        return _ModeBtn(
+          assetPath: 'assets/icons/nature_plant.png',
+          label: 'Nature',
+          isActive: activeMode == 'nature',
+          enabled: enabled,
+          onTap: () => _fire(() => onMode('nature')),
+        );
+      case 'smart':
+        return _ModeBtn(
+          icon: Icons.auto_awesome_outlined,
+          label: 'Smart',
+          isActive: activeMode == 'smart',
+          enabled: enabled && !smartDisabled,
+          onTap: () => _fire(() => onMode('smart')),
+        );
+      case 'reverse':
+        return _ModeBtn(
+          icon: Icons.sync_rounded,
+          label: 'Reverse',
+          isActive: activeMode == 'reverse',
+          enabled: enabled,
+          onTap: () => _fire(() => onMode('reverse')),
+        );
+      case 'boost':
+        // GestureDetector + ValueKey('boost_button') kept for widget tests and
+        // to match the original hit target.
+        return Semantics(
+          button: true,
+          label: 'Boost mode',
+          selected: isBoost,
+          enabled: enabled,
+          child: GestureDetector(
+            key: const ValueKey('boost_button'),
+            onTap: enabled ? () => _fire(onBoost) : null,
+            child: _ModeBtn(
+              assetPath: 'assets/icons/boost_rocket.png',
+              label: 'Boost',
+              isActive: isBoost,
+              enabled: enabled,
+              onTap: null, // handled by the outer GestureDetector
             ),
           ),
-        ),
-      ],
-    );
+        );
+      case 'led':
+        return _ModeBtn(
+          key: const ValueKey('led_button'),
+          icon: ledOn ? Icons.lightbulb : Icons.lightbulb_outline,
+          label: 'LED',
+          isActive: ledOn,
+          enabled: enabled,
+          onTap: () => _fire(() => onLed(!ledOn)),
+        );
+      default:
+        return null;
+    }
   }
-}
 
-// ── Mode entry descriptor ─────────────────────────────────────────────────────
-
-class _ModeEntry {
-  final String mode;
-  final String label;
-  final IconData? icon;
-  final String? assetPath;
-  const _ModeEntry(this.mode, this.label, this.icon, this.assetPath);
+  void _fire(VoidCallback action) {
+    unawaited(HapticFeedback.lightImpact());
+    action();
+  }
 }
 
 // ── Mode button ───────────────────────────────────────────────────────────────
 
 class _ModeBtn extends StatelessWidget {
-  final IconData?  icon;       // Material icon (Smart / Reverse)
+  final IconData?  icon;       // Material icon (Smart / Reverse / LED)
   final String?    assetPath;  // PNG asset (Nature / Boost)
   final String     label;
   final bool       isActive;
@@ -122,6 +153,7 @@ class _ModeBtn extends StatelessWidget {
   final VoidCallback? onTap;   // null for boost (outer GestureDetector handles it)
 
   const _ModeBtn({
+    super.key,
     this.icon,
     this.assetPath,
     required this.label,

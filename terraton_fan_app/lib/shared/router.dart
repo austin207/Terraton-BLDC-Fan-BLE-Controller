@@ -80,7 +80,12 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.scanBle,
-      builder: (_, __) => const BleScanScreen(),
+      // `extra` carries the model ID chosen in the remote picker (Automatic
+      // Connect path). Absent for the QR path and the legacy goToOnboarding
+      // sheet — BleScanScreen defaults it to ''.
+      builder: (_, state) => BleScanScreen(
+        model: state.extra is String ? state.extra! as String : '',
+      ),
     ),
     GoRoute(
       path: AppRoutes.nameFan,

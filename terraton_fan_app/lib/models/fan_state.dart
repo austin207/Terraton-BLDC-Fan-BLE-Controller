@@ -27,6 +27,10 @@ class FanState {
   double lastLightBrightness = 0.7;
   bool   lastLightIsOn       = false;
 
+  // Speed-indication LED toggle state (CF-02 remote). UI-only until Terraton
+  // supplies the command bytes; persisted so it restores on reconnect.
+  bool   lastLedIsOn         = false;
+
   // ── Last Known State Continuation — open usage-log segment ─────────────────
   // Persisted so a segment's duration can span app restarts/disconnects.
   // openSegmentGear == 0 means no open segment. Deliberately excluded from
@@ -60,13 +64,14 @@ class FanState {
           lastRuntimeSecs == other.lastRuntimeSecs &&
           lastLightColorType == other.lastLightColorType &&
           lastLightBrightness == other.lastLightBrightness &&
-          lastLightIsOn == other.lastLightIsOn;
+          lastLightIsOn == other.lastLightIsOn &&
+          lastLedIsOn == other.lastLedIsOn;
 
   @override
   int get hashCode => Object.hash(
       deviceId, speed, isBoost, activeMode, activeTimerCode, timerActivatedAt,
       isPowered, lastWatts, lastRpm, lastRuntimeSecs,
-      lastLightColorType, lastLightBrightness, lastLightIsOn);
+      lastLightColorType, lastLightBrightness, lastLightIsOn, lastLedIsOn);
 }
 
 // Nullable fields that may need explicit null use a getter param: () => null
@@ -84,6 +89,7 @@ extension FanStateCopyWith on FanState {
     String? lastLightColorType,
     double? lastLightBrightness,
     bool? lastLightIsOn,
+    bool? lastLedIsOn,
   }) =>
       FanState()
         ..id                  = id
@@ -100,6 +106,7 @@ extension FanStateCopyWith on FanState {
         ..lastLightColorType  = lastLightColorType  ?? this.lastLightColorType
         ..lastLightBrightness = lastLightBrightness ?? this.lastLightBrightness
         ..lastLightIsOn       = lastLightIsOn       ?? this.lastLightIsOn
+        ..lastLedIsOn         = lastLedIsOn         ?? this.lastLedIsOn
         ..openSegmentStart         = openSegmentStart
         ..openSegmentGear          = openSegmentGear
         ..openSegmentMode          = openSegmentMode

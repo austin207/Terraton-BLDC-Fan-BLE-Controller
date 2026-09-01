@@ -107,6 +107,31 @@ void main() {
     });
   });
 
+  // ── Demo fan (tester variant) ──────────────────────────────────────────────
+
+  group('FansListScreen — demo fan', () {
+    testWidgets('demo card is shown', (tester) async {
+      await tester.pumpWidget(
+        _buildScreen(fansValue: const AsyncData([]), repo: mockRepo),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Demo Fan'), findsOneWidget);
+    });
+
+    testWidgets('tapping the demo card opens the control screen', (tester) async {
+      await tester.pumpWidget(
+        _buildScreen(fansValue: const AsyncData([]), repo: mockRepo),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Demo Fan'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Control:Demo Fan'), findsOneWidget);
+    });
+  });
+
   // ── Populated list ──────────────────────────────────────────────────────────
 
   group('FansListScreen — populated list', () {

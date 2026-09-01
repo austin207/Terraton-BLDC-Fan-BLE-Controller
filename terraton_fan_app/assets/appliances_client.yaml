@@ -23,9 +23,21 @@ appliances:
         displayName: Ceiling Fan
         modelPrefix: CF
         icon: assets/icons/Ceiling fan.png
-        modelCount: 21
         controls:
           - speed
           - mode
           - timer
           - lighting
+        remotes:
+          - model: TN-CF-01
+            name: CF-01
+            controls: [speed, mode, timer]
+            modes: [nature, smart, reverse, boost]
+          - model: TN-CF-02
+            name: CF-02
+            controls: [speed, mode, timer]
+            modes: [led, smart, reverse, boost]
+          - model: TN-CF-03
+            name: CF-03
+            controls: [speed, mode, timer, lighting]
+            modes: [reverse, boost]

@@ -23,6 +23,8 @@ class BleFrameBuilder {
   static List<int>? timer8h()             => CommandLoader.timer('8h');
   static List<int>? queryPower()          => CommandLoader.queryPower();
   static List<int>? querySpeed()          => CommandLoader.querySpeed();
+  static List<int>? ledOn()               => CommandLoader.ledOn();
+  static List<int>? ledOff()              => CommandLoader.ledOff();
   static List<int>? lightOn()             => CommandLoader.lightOn();
   static List<int>? lightOff()            => CommandLoader.lightOff();
   static List<int>? lightColorTemp(int v) => CommandLoader.lightColorTemp(v);

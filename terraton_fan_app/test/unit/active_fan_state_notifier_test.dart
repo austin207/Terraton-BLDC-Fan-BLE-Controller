@@ -25,6 +25,8 @@ class _FakeRepo implements FanRepository {
   @override
   Future<void> renameFan(String deviceId, String newNickname) async {}
   @override
+  Future<void> setModel(String deviceId, String model) async {}
+  @override
   FanState getState(String deviceId) =>
       _states[deviceId] ?? (FanState()..deviceId = deviceId);
   @override
@@ -92,6 +94,10 @@ class _FakeRepo implements FanRepository {
       ..lastLightColorType  = colorType
       ..lastLightBrightness = brightness
       ..lastLightIsOn       = isOn;
+  }
+  @override
+  Future<void> saveLed(String deviceId, {required bool isOn}) async {
+    _row(deviceId).lastLedIsOn = isOn;
   }
   @override
   Future<void> saveOpenSegment(

@@ -135,6 +135,7 @@ Manually verified against real hardware.
 | Motor State poll | `55 AA 00 01 01 00 01` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | See below — 4 frames, each applied independently |
 | Query runtime | `55 AA 00 08 01 00 08` *(non-standard fixed frame — do **not** pass through `buildFrame()`)* | `55 AA 07 08 02 HH LL cs` — runtime = `(HH << 8) \| LL) × 5` seconds |
 | Lighting ON/OFF/colour temp | *Pending — bytes not yet provided by Terraton* | *Pending* |
+| Speed-indication LED ON/OFF (CF-02 remote) | *Pending — bytes not yet provided by Terraton* | *Pending* |
 
 ### Response byte → handler
 
