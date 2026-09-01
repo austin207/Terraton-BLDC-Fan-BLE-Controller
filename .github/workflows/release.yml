@@ -1,7 +1,17 @@
 name: Release
 
-# Runs on every push to main. Analyze + test first; build + publish APK only if
-# both pass. Produces a rolling "latest" GitHub Release with three APK splits.
+# DISABLED for auto-run (2026-09-01). Releases are cut locally with `build.ps1`
+# from the repo root, which bumps the version, runs the test suite, builds both
+# variants, and publishes the rolling "latest" GitHub Release. Two release paths
+# racing the same `latest` tag caused conflicts, and this workflow also failed
+# to parse on every push (the `if: ${{ secrets.KEYSTORE_BASE64 != '' }}` step
+# condition is not valid — `secrets` cannot be used in a step `if:`) and its
+# signing secrets were never set. Left here (manual dispatch only) as a
+# reference / starting point if CI-based releases are wanted later; fix the
+# `if:` first (map the secret to `env` and test `env.*`).
+#
+# Manual build + publish APK: analyze + test first, then build + publish. Three
+# APK splits to a rolling "latest" GitHub Release.
 #
 # Required GitHub Secrets
 # ───────────────────────
@@ -19,8 +29,7 @@ name: Release
 # Keep terraton-release.jks somewhere safe offline — you need it to re-sign.
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   # ── 1. Gate: all tests must pass before we build ───────────────────────────
@@ -79,11 +88,14 @@ jobs:
       # Decode the release keystore from the GitHub Secret.
       # Written to RUNNER_TEMP (outside the repo tree) to avoid accidental staging.
       # Falls back to Android debug signing if secret is absent (local forks).
+      # The secret is mapped to `env` first — `secrets` cannot be used directly
+      # in a step `if:` (that made the whole workflow fail to parse).
       - name: Decode keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        if: env.KEYSTORE_BASE64 != ''
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d \
-            > $RUNNER_TEMP/release.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
       - name: Build split APKs
         working-directory: terraton_fan_app

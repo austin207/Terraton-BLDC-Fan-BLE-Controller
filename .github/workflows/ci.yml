@@ -10,6 +10,9 @@ jobs:
   test:
     name: Analyze + Test
     runs-on: ubuntu-latest
+    # Hard cap so a stalled tool fails fast instead of burning a 6-hour runner
+    # (build_runner used to hang here indefinitely on the free runner).
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: terraton_fan_app
@@ -19,14 +22,22 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          # Pinned to the version used locally. `channel: stable` pulled a Dart
+          # newer than the pinned `analyzer` package, which made build_runner /
+          # objectbox_generator stall on the runner ("SDK language version X is
+          # newer than 'analyzer' language version Y").
+          flutter-version: '3.44.8'
           channel: stable
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Generate code (ObjectBox + Riverpod)
-        run: dart run build_runner build --delete-conflicting-outputs
+      # No `build_runner` step: objectbox.g.dart and the *.g.dart files are
+      # committed and kept current by `build.ps1` / the local build_runner run.
+      # Regenerating here added ~40s locally but stalled the free runner. If you
+      # change a model, run `dart run build_runner build --delete-conflicting-outputs`
+      # and commit the result — CI analyzes and tests what's checked in.
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos
