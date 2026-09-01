@@ -7,6 +7,7 @@ Widget _build({
   String? activeMode,
   bool isBoost = false,
   bool enabled = true,
+  int currentSpeed = 3,   // neutral default — keeps Smart enabled unless a test says otherwise
   void Function(String)? onMode,
   VoidCallback? onBoost,
 }) {
@@ -16,6 +17,7 @@ Widget _build({
         activeMode: activeMode,
         isBoost: isBoost,
         enabled: enabled,
+        currentSpeed: currentSpeed,
         onMode: onMode ?? (_) {},
         onBoost: onBoost ?? () {},
       ),
@@ -143,6 +145,125 @@ void main() {
       await tester.pump();
 
       expect(called, isFalse);
+    });
+  });
+
+  // Mirrors firmware's own gate — case BOOST's SMART_MODE branch (BLE) and
+  // case IRSmartMode (remote) both reject Smart at speed 1/2. The BLE path
+  // still echoes a false "Smart set" confirmation when rejected (a firmware
+  // inconsistency, not mirrored here), so the app must never let the tap
+  // happen in the first place rather than relying on that echo.
+  //
+  // Deliberately scoped to when the dial is actually SHOWING a plain speed
+  // of 1 or 2 — i.e. no other mode chip lit. While Boost/Nature/Reverse is
+  // active, `currentSpeed` is a stale pre-mode value (never updated by a
+  // 0x04 frame while a mode is running), and firmware already handles Smart
+  // engaged from Nature/Reverse on its own (forces a fixed Speed-4 start
+  // regardless of the prior speed) — so that staleness must NOT gate Smart.
+  group('ModeControlWidget — Smart disabled at speed 1/2', () {
+    testWidgets('speed 1 does not fire onMode("smart")', (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(currentSpeed: 1, onMode: (m) => received = m));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, isNull);
+    });
+
+    testWidgets('speed 2 does not fire onMode("smart")', (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(currentSpeed: 2, onMode: (m) => received = m));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, isNull);
+    });
+
+    testWidgets('speed 3+ still fires onMode("smart")', (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(currentSpeed: 3, onMode: (m) => received = m));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, 'smart');
+    });
+
+    testWidgets('speed 1/2 does not disable Nature, Reverse, or Boost', (tester) async {
+      String? receivedMode;
+      var boostCalled = false;
+      await tester.pumpWidget(_build(
+        currentSpeed: 1,
+        onMode: (m) => receivedMode = m,
+        onBoost: () => boostCalled = true,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Nature'));
+      await tester.pump();
+      expect(receivedMode, 'nature');
+
+      receivedMode = null;
+      await tester.tap(find.text('Reverse'));
+      await tester.pump();
+      expect(receivedMode, 'reverse');
+
+      await tester.tap(find.byKey(const ValueKey('boost_button')));
+      await tester.pump();
+      expect(boostCalled, isTrue);
+    });
+
+    testWidgets('a stale speed 1/2 does NOT block Smart while Reverse is active',
+        (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(
+        activeMode: 'reverse',
+        currentSpeed: 1,   // stale pre-Reverse speed — must not gate Smart here
+        onMode: (m) => received = m,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, 'smart');
+    });
+
+    testWidgets('a stale speed 1/2 does NOT block Smart while Nature is active',
+        (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(
+        activeMode: 'nature',
+        currentSpeed: 2,   // stale pre-Nature speed — must not gate Smart here
+        onMode: (m) => received = m,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, 'smart');
+    });
+
+    testWidgets('a stale speed 1/2 does NOT block Smart while Boost is active',
+        (tester) async {
+      String? received;
+      await tester.pumpWidget(_build(
+        isBoost: true,
+        currentSpeed: 1,   // stale pre-Boost speed — must not gate Smart here
+        onMode: (m) => received = m,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Smart'));
+      await tester.pump();
+
+      expect(received, 'smart');
     });
   });
 }

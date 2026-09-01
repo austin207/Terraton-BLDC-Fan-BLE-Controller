@@ -1439,6 +1439,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
             activeMode: fanState.activeMode,
             isBoost: fanState.isBoost,
             enabled: enabled,
+            currentSpeed: fanState.speed,
             onMode: _onMode,
             onBoost: _onBoost,
           ),

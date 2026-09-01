@@ -9,6 +9,12 @@ class ModeControlWidget extends StatelessWidget {
   final String? activeMode;
   final bool isBoost;
   final bool enabled;
+  // Firmware rejects Smart at speed 1/2 (case BOOST's SMART_MODE branch and
+  // case IRSmartMode both gate on `TargetSpeed > 2`, unless Nature/Reverse is
+  // active) — the BLE path still echoes a false "Smart set" confirmation
+  // when rejected, so the app must not rely on that echo and must simply
+  // never let the tap happen in the first place.
+  final int currentSpeed;
   final void Function(String mode) onMode;
   final VoidCallback onBoost;
 
@@ -17,6 +23,7 @@ class ModeControlWidget extends StatelessWidget {
     required this.activeMode,
     required this.isBoost,
     required this.enabled,
+    required this.currentSpeed,
     required this.onMode,
     required this.onBoost,
   });
@@ -30,11 +37,22 @@ class ModeControlWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Only blocks Smart when the dial is actually SHOWING a plain speed of
+    // 1 or 2 — i.e. no other mode chip is lit. While Boost/Nature/Reverse is
+    // active, `currentSpeed` is a stale pre-mode value (no 0x04 frame ever
+    // arrives while a mode is running), and firmware already handles Smart
+    // engaged from Nature/Reverse on its own (forces a fixed Speed-4 start
+    // regardless of what came before) — so that stale value must not gate
+    // Smart here too.
+    final smartDisabled = !isBoost && activeMode == null &&
+        (currentSpeed == 1 || currentSpeed == 2);
+
     return Row(
       children: [
         // 3 mode buttons
         ..._modes.map((entry) {
           final isActive = activeMode == entry.mode;
+          final btnEnabled = entry.mode == 'smart' ? (enabled && !smartDisabled) : enabled;
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -43,7 +61,7 @@ class ModeControlWidget extends StatelessWidget {
                 assetPath: entry.assetPath,
                 label: entry.label,
                 isActive: isActive,
-                enabled: enabled,
+                enabled: btnEnabled,
                 onTap: () {
                   unawaited(HapticFeedback.lightImpact());
                   onMode(entry.mode);
