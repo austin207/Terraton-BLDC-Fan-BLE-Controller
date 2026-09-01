@@ -415,16 +415,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     // what forced 0 to be treated as neutral; on this firmware every report
     // is trustworthy, so a remote-driven Timer OFF is finally observable.
     if (timer != null) {
-      // 2026-08-24 firmware fix widened this frame to 2 bytes: the second is
-      // remaining time in 2-minute ticks. ActiveFanStateNotifier.updateTimer
-      // uses it to re-derive the countdown anchor from firmware truth instead
-      // of trusting a locally-remembered start time — see its doc comment for
-      // why that's what fixes the reconnect ambiguity (same code reported
-      // does not mean the same timer instance).
-      final remainingMinutes = BleResponseParser.parseTimerRemainingMinutes(r);
-      notifier.updateTimer(timer, remainingMinutes: remainingMinutes);
+      // The firmware fix widened this frame to carry remaining time
+      // alongside the duration code (2-byte and, since 2026-08-24, 3-byte
+      // shapes both handled — see parseTimerRemainingSeconds).
+      // ActiveFanStateNotifier.updateTimer uses it to re-derive the
+      // countdown anchor from firmware truth instead of trusting a
+      // locally-remembered start time — see its doc comment for why that's
+      // what fixes the reconnect ambiguity (same code reported does not mean
+      // the same timer instance).
+      final remainingSeconds = BleResponseParser.parseTimerRemainingSeconds(r);
+      notifier.updateTimer(timer, remainingSeconds: remainingSeconds);
       ConnectionLogService.machineState(
-        'timer=$timer${remainingMinutes != null ? ' remaining=${remainingMinutes}m' : ''}',
+        'timer=$timer${remainingSeconds != null ? ' remaining=${remainingSeconds}s' : ''}',
       );
     }
   }

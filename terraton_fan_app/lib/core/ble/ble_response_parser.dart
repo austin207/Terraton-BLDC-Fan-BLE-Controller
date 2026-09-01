@@ -19,10 +19,14 @@ class BleResponseParser {
   //
   //   dataLen 1 -> 0x55+0xAA+1 = 0x100 -> cancels, checksums agree exactly
   //   dataLen 2 -> 0x55+0xAA+2 = 0x101 -> our sum is exactly 1 too high
+  //   dataLen 3 -> 0x55+0xAA+3 = 0x102 -> our sum is exactly 2 too high
   //
   // Verified against the 2026-07-04 field capture:
   //   55 AA 07 23 01 18 42  (1 byte) -> 0x07+0x23+0x18 = 0x42, agrees
   //   55 AA 07 24 02 01 68 94 (2 byte) -> 0x07+0x24+0x01+0x68 = 0x94, we get 0x95
+  //
+  // dataLen 3 is the widened 0x22 TIMER frame (2026-08-24 firmware fix,
+  // remaining time as a raw 10s-unit uint16) — same arithmetic, one more byte.
   //
   // Keyed on dataLen, not on the command byte, because that is what the
   // firmware itself branches on. This also covers 0x08 runtime
@@ -30,7 +34,9 @@ class BleResponseParser {
   // an RPM-only tolerance silently threw every runtime reply away.
   static bool _checksumOk(int computed, int received, int dataLen) {
     if ((computed & 0xFF) == received) return true;
-    return dataLen == 2 && ((computed - 1) & 0xFF) == received;
+    if (dataLen == 2) return ((computed - 1) & 0xFF) == received;
+    if (dataLen == 3) return ((computed - 2) & 0xFF) == received;
+    return false;
   }
 
   /// Parses a single frame starting at byte 0.
@@ -119,17 +125,28 @@ class BleResponseParser {
     return const {0x00, 0x02, 0x04, 0x08}.contains(t) ? t : null;
   }
 
-  // Firmware fix (2026-08-24): get_mc_state()'s 0x22 frame is now 2 bytes —
-  // data[0] is the unchanged duration code, data[1] is the remaining time in
-  // 2-minute ticks ((ShutDowntime - CurrentTime) / 12 on the MCU), chosen so
-  // an 8 h timer's remaining value still fits one byte (max 240). Returns
-  // null for the old 1-byte frame shape (firmware not yet updated, or the
-  // demo path, which never sends a second byte) — callers must treat null as
-  // "unknown", never as zero remaining.
-  static int? parseTimerRemainingMinutes(FanResponse r) {
+  // get_mc_state()'s 0x22 frame carries remaining sleep-timer time alongside
+  // the unchanged duration code in data[0]. Two firmware shapes are handled
+  // transparently, keyed on the payload length actually received:
+  //
+  //  - 3-byte payload (2026-08-24+ fix): data[1..2] is a big-endian uint16 in
+  //    the MCU's own tick unit — raw 10s counts straight from
+  //    AutoPowerState.CurrentTime/ShutDowntime, so this carries zero rounding
+  //    error beyond the firmware's own ~10s internal tick.
+  //  - 2-byte payload (the prior widened fix): data[1] alone, in 2-minute
+  //    ticks ((ShutDowntime - CurrentTime) / 12 on the MCU) — kept so a fan
+  //    not yet reflashed to the 3-byte firmware still degrades gracefully
+  //    instead of losing remaining-time reporting entirely.
+  //
+  // Returns null for the original 1-byte frame shape (timer code only, no
+  // remaining-time info at all) — callers must treat null as "unknown",
+  // never as zero remaining.
+  static int? parseTimerRemainingSeconds(FanResponse r) {
     final cmd = CommandLoader.responseCommand('timer');
-    if (r.command != cmd || r.data.length < 2) return null;
-    return r.data[1] * 2;
+    if (r.command != cmd) return null;
+    if (r.data.length >= 3) return ((r.data[1] << 8) | r.data[2]) * 10;
+    if (r.data.length == 2) return r.data[1] * 120;
+    return null;
   }
 
   /// Response: `55 AA 07 08 02 HH LL CRC` — runtime = (HH<<8|LL) × 5 seconds.
