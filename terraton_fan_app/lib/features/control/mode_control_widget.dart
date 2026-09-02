@@ -1,5 +1,6 @@
 // lib/features/control/mode_control_widget.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -125,7 +126,7 @@ class ModeControlWidget extends StatelessWidget {
       case 'led':
         return _ModeBtn(
           key: const ValueKey('led_button'),
-          icon: ledOn ? Icons.lightbulb : Icons.lightbulb_outline,
+          iconBuilder: (color) => _LedBulbIcon(on: ledOn, color: color),
           label: 'LED',
           isActive: ledOn,
           enabled: enabled,
@@ -145,8 +146,10 @@ class ModeControlWidget extends StatelessWidget {
 // ── Mode button ───────────────────────────────────────────────────────────────
 
 class _ModeBtn extends StatelessWidget {
-  final IconData?  icon;       // Material icon (Smart / Reverse / LED)
+  final IconData?  icon;       // Material icon (Smart / Reverse)
   final String?    assetPath;  // PNG asset (Nature / Boost)
+  /// Custom glyph builder, given the resolved active/idle colour (LED).
+  final Widget Function(Color color)? iconBuilder;
   final String     label;
   final bool       isActive;
   final bool       enabled;
@@ -156,6 +159,7 @@ class _ModeBtn extends StatelessWidget {
     super.key,
     this.icon,
     this.assetPath,
+    this.iconBuilder,
     required this.label,
     required this.isActive,
     required this.enabled,
@@ -168,7 +172,9 @@ class _ModeBtn extends StatelessWidget {
 
     // Render PNG asset with color filter so it adopts the active/idle palette.
     Widget iconWidget;
-    if (assetPath != null) {
+    if (iconBuilder != null) {
+      iconWidget = iconBuilder!(iconColor);
+    } else if (assetPath != null) {
       iconWidget = Image.asset(
         assetPath!,
         width: 20, height: 20,
@@ -211,4 +217,120 @@ class _ModeBtn extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── LED bulb glyph ────────────────────────────────────────────────────────────
+// A lightbulb with a power symbol in the glass; radiating rays + a faint fill
+// animate in when [on]. Colour follows the mode-button palette.
+
+class _LedBulbIcon extends StatelessWidget {
+  final bool on;
+  final Color color;
+  const _LedBulbIcon({required this.on, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: on ? 1.0 : 0.0, end: on ? 1.0 : 0.0),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+      builder: (_, t, __) => CustomPaint(
+        size: const Size(24, 24),
+        painter: _LedBulbPainter(color: color, glow: t),
+      ),
+    );
+  }
+}
+
+class _LedBulbPainter extends CustomPainter {
+  final Color color;
+  final double glow; // 0 = off, 1 = fully lit
+
+  _LedBulbPainter({required this.color, required this.glow});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide;
+    final cx = size.width / 2;
+    final cy = s * 0.45;          // glass centre, low enough to leave headroom for rays
+    final glassR = s * 0.34;      // bigger glass — more room around the power glyph
+
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = s * 0.055
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+
+    // Rays — seven, spread like the reference: one up, then diagonals and
+    // horizontals down each side. Evenly spaced over the top 270°, leaving the
+    // bottom clear for the screw base.
+    if (glow > 0) {
+      final rayPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = s * 0.06
+        ..strokeCap = StrokeCap.round
+        ..color = color.withValues(alpha: glow);
+      // radians clockwise from straight up: 0, ±45°, ±90°, ±135°
+      const rays = [-2.356, -1.571, -0.785, 0.0, 0.785, 1.571, 2.356];
+      final inner = glassR + s * 0.06;
+      final outer = inner + s * 0.115 * glow;
+      for (final a in rays) {
+        final dx = math.sin(a), dy = -math.cos(a);
+        canvas.drawLine(
+          Offset(cx + dx * inner, cy + dy * inner),
+          Offset(cx + dx * outer, cy + dy * outer),
+          rayPaint,
+        );
+      }
+    }
+
+    // Faint glass fill when lit.
+    if (glow > 0) {
+      canvas.drawCircle(
+        Offset(cx, cy),
+        glassR,
+        Paint()..color = color.withValues(alpha: 0.20 * glow),
+      );
+    }
+
+    // Glass + a short neck that meets the circle near its bottom.
+    canvas.drawCircle(Offset(cx, cy), glassR, stroke);
+    final neckTopY = cy + glassR * 0.82;
+    final neck = Path()
+      ..moveTo(cx - s * 0.17, neckTopY)
+      ..lineTo(cx - s * 0.12, neckTopY + s * 0.085)
+      ..lineTo(cx + s * 0.12, neckTopY + s * 0.085)
+      ..lineTo(cx + s * 0.17, neckTopY);
+    canvas.drawPath(neck, stroke);
+
+    // Screw base — two ribs.
+    for (var i = 0; i < 2; i++) {
+      final y = neckTopY + s * 0.13 + i * s * 0.075;
+      final half = s * 0.10 - i * s * 0.015;
+      canvas.drawLine(
+          Offset(cx - half, y), Offset(cx + half, y), stroke);
+    }
+
+    // Power glyph inside the glass — SAME size as before (fixed to s, not the
+    // glass radius) so the bigger glass just gives it more breathing room.
+    final gc = Offset(cx, cy + s * 0.01);
+    final gr = s * 0.16;
+    canvas.drawArc(
+      Rect.fromCircle(center: gc, radius: gr),
+      -math.pi / 2 + 0.62,       // start just past top
+      2 * math.pi - 1.24,        // ~71° gap centred on top
+      false,
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(gc.dx, gc.dy - gr - s * 0.05),
+      Offset(gc.dx, gc.dy - gr * 0.12),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LedBulbPainter old) =>
+      old.color != color || old.glow != glow;
 }
