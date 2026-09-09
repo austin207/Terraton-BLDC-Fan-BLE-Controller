@@ -40,4 +40,4 @@ appliances:
           - model: TN-CF-03
             name: CF-03
             controls: [speed, mode, timer, lighting]
-            modes: [reverse, boost]
+            modes: [smart, reverse, boost]

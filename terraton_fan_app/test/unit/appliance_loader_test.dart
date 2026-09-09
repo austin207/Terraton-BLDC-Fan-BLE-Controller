@@ -167,10 +167,10 @@ void main() {
       expect(r.hasControl('lighting'), isFalse);
     });
 
-    test('TN-CF-03 → CF-03: only reverse + boost, has lighting', () {
+    test('TN-CF-03 → CF-03: smart + reverse + boost, has lighting', () {
       final r = ApplianceLoader.remoteForModel('TN-CF-03');
       expect(r.name, 'CF-03');
-      expect(r.modes, ['reverse', 'boost']);
+      expect(r.modes, ['smart', 'reverse', 'boost']);
       expect(r.hasControl('lighting'), isTrue);
     });
 

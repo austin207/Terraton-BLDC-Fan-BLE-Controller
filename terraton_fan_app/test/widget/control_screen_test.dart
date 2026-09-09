@@ -1294,14 +1294,14 @@ void main() {
       expect(find.byType(LightingControlWidget), findsNothing);
     });
 
-    testWidgets('CF-03 shows only Reverse + Boost and adds mood lighting',
+    testWidgets('CF-03 shows Smart + Reverse + Boost and adds mood lighting',
         (tester) async {
       await tester.pumpWidget(buildScreen(model: 'TN-CF-03'));
       await tester.pumpAndSettle();
 
       final modeWidget =
           tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
-      expect(modeWidget.modes, ['reverse', 'boost']);
+      expect(modeWidget.modes, ['smart', 'reverse', 'boost']);
       expect(find.byType(LightingControlWidget), findsOneWidget);
     });
   });
@@ -1338,7 +1338,7 @@ void main() {
 
       final mode =
           tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
-      expect(mode.modes, ['reverse', 'boost']);
+      expect(mode.modes, ['smart', 'reverse', 'boost']);
       expect(mode.activeMode, isNull, reason: 'stale Nature chip must be cleared');
       expect(find.byType(LightingControlWidget), findsOneWidget);
     });

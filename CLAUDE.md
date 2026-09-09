@@ -172,13 +172,14 @@ control screen changes.
 | --- | --- | --- |
 | `TN-CF-01` (default) | Nature · Smart · Reverse · Boost | **hidden** |
 | `TN-CF-02` | **LED** · Smart · Reverse · Boost | hidden |
-| `TN-CF-03` | Reverse · Boost | **shown** (still stub — bytes pending) |
+| `TN-CF-03` | Smart · Reverse · Boost | **shown** (still stub — bytes pending) |
 
 - **LED** is a UI-state-only toggle (`FanState.lastLedIsOn`, persisted via
   `saveLed`). `BleFrameBuilder.ledOn/ledOff` are `null` until Terraton supplies
   bytes — the tap shows a pending SnackBar, exactly like mood lighting.
-- **CF-03** buttons are plain relabels: "Reverse" → `21 01 03`, "Boost" →
-  `21 01 01`. Nature and Smart are gone entirely (no button, no frame).
+- **CF-03** drops Nature only — Smart · Reverse · Boost, same frames and
+  exit rules as CF-01. (An earlier revision removed Smart too; that was
+  reverted 2026-09-09.)
 - **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
   ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
   type's legacy four-mode profile; anything else → an all-controls profile

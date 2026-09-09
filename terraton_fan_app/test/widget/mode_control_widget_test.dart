@@ -5,7 +5,7 @@ import 'package:terraton_fan_app/features/control/mode_control_widget.dart';
 
 const _cf01 = ['nature', 'smart', 'reverse', 'boost'];
 const _cf02 = ['led', 'smart', 'reverse', 'boost'];
-const _cf03 = ['reverse', 'boost'];
+const _cf03 = ['smart', 'reverse', 'boost'];
 
 Widget _build({
   List<String> modes = _cf01,
@@ -59,14 +59,14 @@ void main() {
       expect(find.text('Boost'),   findsOneWidget);
     });
 
-    testWidgets('CF-03 shows only Reverse and Boost', (tester) async {
+    testWidgets('CF-03 shows Smart, Reverse and Boost', (tester) async {
       await tester.pumpWidget(_build(modes: _cf03));
       await tester.pumpAndSettle();
 
+      expect(find.text('Smart'),   findsOneWidget);
       expect(find.text('Reverse'), findsOneWidget);
       expect(find.text('Boost'),   findsOneWidget);
       expect(find.text('Nature'),  findsNothing);
-      expect(find.text('Smart'),   findsNothing);
       expect(find.text('LED'),     findsNothing);
     });
   });
