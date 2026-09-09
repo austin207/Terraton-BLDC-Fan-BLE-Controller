@@ -283,7 +283,7 @@ void main() {
     await tester.pump(); // show SnackBar
 
     expect(
-      find.text('Lighting commands pending from Terraton'),
+      find.text('CoolLight command pending from Terraton'),
       findsOneWidget,
     );
     // The lighting frame is pending (null → SnackBar only) and NOTHING else
@@ -1294,7 +1294,7 @@ void main() {
       expect(find.byType(LightingControlWidget), findsNothing);
     });
 
-    testWidgets('CF-03 shows Smart + Reverse + Boost and adds mood lighting',
+    testWidgets('CF-03 shows Smart+Reverse+Boost, CoolLight, no Timer-OFF',
         (tester) async {
       await tester.pumpWidget(buildScreen(model: 'TN-CF-03'));
       await tester.pumpAndSettle();
@@ -1303,6 +1303,10 @@ void main() {
           tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
       expect(modeWidget.modes, ['smart', 'reverse', 'boost']);
       expect(find.byType(LightingControlWidget), findsOneWidget);
+
+      final timerWidget =
+          tester.widget<TimerControlWidget>(find.byType(TimerControlWidget));
+      expect(timerWidget.options, ['2h', '4h', '8h']);
     });
   });
 

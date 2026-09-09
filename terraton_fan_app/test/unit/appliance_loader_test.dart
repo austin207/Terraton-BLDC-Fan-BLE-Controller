@@ -153,11 +153,12 @@ void main() {
       expect(ApplianceLoader.typeById('ceiling_fan')!.remotes, hasLength(3));
     });
 
-    test('TN-CF-01 → CF-01: four modes, no lighting', () {
+    test('TN-CF-01 → CF-01: four modes, no lighting, full timer', () {
       final r = ApplianceLoader.remoteForModel('TN-CF-01');
       expect(r.name, 'CF-01');
       expect(r.modes, ['nature', 'smart', 'reverse', 'boost']);
       expect(r.hasControl('lighting'), isFalse);
+      expect(r.timerOptions, ['off', '2h', '4h', '8h']);
     });
 
     test('TN-CF-02 → CF-02: LED replaces Nature, no lighting', () {
@@ -167,11 +168,12 @@ void main() {
       expect(r.hasControl('lighting'), isFalse);
     });
 
-    test('TN-CF-03 → CF-03: smart + reverse + boost, has lighting', () {
+    test('TN-CF-03 → CF-03: smart + reverse + boost, lighting, no Timer-OFF', () {
       final r = ApplianceLoader.remoteForModel('TN-CF-03');
       expect(r.name, 'CF-03');
       expect(r.modes, ['smart', 'reverse', 'boost']);
       expect(r.hasControl('lighting'), isTrue);
+      expect(r.timerOptions, ['2h', '4h', '8h']);
     });
 
     test('unknown ceiling model (TN-CF-09) falls back to CF-01', () {

@@ -57,6 +57,7 @@ appliances:
             name: CF-03
             controls: [speed, mode, timer, lighting]
             modes: [smart, reverse, boost]
+            timerOptions: [2h, 4h, 8h]   # physical CF-03 remote has no Timer-OFF button
 
       - id: table_fan
         displayName: Table Fan

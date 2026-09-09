@@ -15,6 +15,7 @@ LightingControlWidget _widget({
   bool isLightOn = false,
   String colorType = 'warm',
   double brightness = 0.6,
+  bool showColorTemp = false,
   VoidCallback? onLightOn,
   VoidCallback? onLightOff,
   void Function(String)? onColorTypeChanged,
@@ -25,6 +26,7 @@ LightingControlWidget _widget({
       isLightOn: isLightOn,
       colorType: colorType,
       brightnessValue: brightness,
+      showColorTemp: showColorTemp,
       onLightOn: onLightOn ?? () {},
       onLightOff: onLightOff ?? () {},
       onColorTypeChanged: onColorTypeChanged ?? (_) {},
@@ -33,9 +35,9 @@ LightingControlWidget _widget({
 
 void main() {
   group('LightingControlWidget — labels', () {
-    testWidgets('shows Mood Lighting label', (tester) async {
+    testWidgets('shows CoolLight label', (tester) async {
       await tester.pumpWidget(_wrap(_widget()));
-      expect(find.text('Mood Lighting'), findsOneWidget);
+      expect(find.text('CoolLight'), findsOneWidget);
     });
 
     testWidgets('shows ON and OFF toggle labels', (tester) async {
@@ -44,8 +46,17 @@ void main() {
       expect(find.text('OFF'), findsOneWidget);
     });
 
-    testWidgets('shows Warm, Neutral, Cool colour buttons', (tester) async {
+    testWidgets('Warm/Neutral/Cool row is hidden by default (dormant)',
+        (tester) async {
       await tester.pumpWidget(_wrap(_widget()));
+      expect(find.text('Warm'), findsNothing);
+      expect(find.text('Neutral'), findsNothing);
+      expect(find.text('Cool'), findsNothing);
+    });
+
+    testWidgets('Warm/Neutral/Cool row appears when showColorTemp is true',
+        (tester) async {
+      await tester.pumpWidget(_wrap(_widget(showColorTemp: true)));
       expect(find.text('Warm'), findsOneWidget);
       expect(find.text('Neutral'), findsOneWidget);
       expect(find.text('Cool'), findsOneWidget);
@@ -88,7 +99,9 @@ void main() {
     });
   });
 
-  group('LightingControlWidget — colour type buttons', () {
+  // Colour-temperature selection is dormant (single light for now) but fully
+  // wired — these run with showColorTemp: true to keep the restore path tested.
+  group('LightingControlWidget — colour type buttons (showColorTemp)', () {
     testWidgets('tapping Neutral calls onColorTypeChanged with "neutral"',
         (tester) async {
       String? changed;
@@ -96,6 +109,7 @@ void main() {
         enabled: true,
         isLightOn: true,
         colorType: 'warm',
+        showColorTemp: true,
         onColorTypeChanged: (t) => changed = t,
       )));
       await tester.tap(find.text('Neutral'));
@@ -109,6 +123,7 @@ void main() {
         enabled: true,
         isLightOn: true,
         colorType: 'warm',
+        showColorTemp: true,
         onColorTypeChanged: (t) => changed = t,
       )));
       await tester.tap(find.text('Cool'));
@@ -120,6 +135,7 @@ void main() {
       await tester.pumpWidget(_wrap(_widget(
         enabled: false,
         isLightOn: true,
+        showColorTemp: true,
         onColorTypeChanged: (_) => called = true,
       )));
       await tester.tap(find.text('Warm'));
@@ -131,6 +147,7 @@ void main() {
       await tester.pumpWidget(_wrap(_widget(
         enabled: true,
         isLightOn: false,
+        showColorTemp: true,
         onColorTypeChanged: (_) => called = true,
       )));
       await tester.tap(find.text('Warm'));

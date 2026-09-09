@@ -1532,6 +1532,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
           TimerControlWidget(
             activeTimerCode: fanState.activeTimerCode,
             enabled: enabled,
+            options: _remote.timerOptions,
             onTimer: (a) {
               final code = switch (a) {
                 '2h' => 0x02,
@@ -1568,26 +1569,30 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
           const SizedBox(height: 20),
         ],
 
-        // ── Mood lighting ───────────────────────────────────────────────────
+        // ── CoolLight ───────────────────────────────────────────────────────
         if (_has('lighting'))
           LightingControlWidget(
             enabled: enabled,
             isLightOn: _isLightOn,
-            colorType: _colorType,
             brightnessValue: _brightnessValue,
+            // Warm/Neutral/Cool row is dormant (single light for now). The
+            // colorType plumbing below stays wired so flipping showColorTemp
+            // back to true fully restores it.
+            colorType: _colorType,
+            showColorTemp: false,
             onLightOn: () {
               setState(() => _isLightOn = true);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
               unawaited(widget.send(BleFrameBuilder.lightOn(),
-                  pendingMsg: 'Lighting commands pending from Terraton'));
+                  pendingMsg: 'CoolLight command pending from Terraton'));
             },
             onLightOff: () {
               setState(() => _isLightOn = false);
               ref.read(activeFanStateProvider(fan.deviceId).notifier)
                   .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
               unawaited(widget.send(BleFrameBuilder.lightOff(),
-                  pendingMsg: 'Lighting commands pending from Terraton'));
+                  pendingMsg: 'CoolLight command pending from Terraton'));
             },
             onColorTypeChanged: (t) {
               setState(() => _colorType = t);
@@ -1599,7 +1604,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                 _         => 0x00,
               };
               unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                  pendingMsg: 'Lighting commands pending from Terraton'));
+                  pendingMsg: 'CoolLight command pending from Terraton'));
             },
             onBrightness: (v) {
               setState(() => _brightnessValue = v);
@@ -1607,7 +1612,7 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
                   .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
               final byte = (v * 255).round().clamp(0, 255);
               unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                  pendingMsg: 'Lighting commands pending from Terraton'));
+                  pendingMsg: 'CoolLight command pending from Terraton'));
             },
           ),
 

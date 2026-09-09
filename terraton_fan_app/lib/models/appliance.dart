@@ -145,11 +145,17 @@ class RemoteProfile {
   /// Only rendered when `controls` contains `mode`.
   final List<String> modes;
 
+  /// Ordered sleep-timer buttons: subset of `off` | `2h` | `4h` | `8h`.
+  /// Defaults to all four; a remote whose physical version lacks a Timer-OFF
+  /// button (e.g. CF-03) declares `timerOptions: [2h, 4h, 8h]`.
+  final List<String> timerOptions;
+
   const RemoteProfile({
     required this.model,
     required this.name,
     required this.controls,
     required this.modes,
+    this.timerOptions = const ['off', '2h', '4h', '8h'],
   });
 
   factory RemoteProfile.fromYaml(Map<Object?, Object?> yaml) => RemoteProfile(
@@ -161,6 +167,10 @@ class RemoteProfile {
         modes: (yaml['modes'] as List<Object?>? ?? const [])
             .cast<String>()
             .toList(growable: false),
+        timerOptions: (yaml['timerOptions'] as List<Object?>?)
+                ?.cast<String>()
+                .toList(growable: false) ??
+            const ['off', '2h', '4h', '8h'],
       );
 
   /// Synthesises the single implicit remote for a type that declares no

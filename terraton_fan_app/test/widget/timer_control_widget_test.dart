@@ -7,6 +7,7 @@ import 'package:terraton_fan_app/shared/theme.dart';
 Widget _build({
   int? activeTimerCode,
   bool enabled = true,
+  List<String>? options,
   void Function(String)? onTimer,
 }) {
   return MaterialApp(
@@ -14,6 +15,7 @@ Widget _build({
       body: TimerControlWidget(
         activeTimerCode: activeTimerCode,
         enabled: enabled,
+        options: options ?? const ['off', '2h', '4h', '8h'],
         onTimer: onTimer ?? (_) {},
       ),
     ),
@@ -30,6 +32,29 @@ void main() {
       expect(find.text('2H'),  findsOneWidget);
       expect(find.text('4H'),  findsOneWidget);
       expect(find.text('8H'),  findsOneWidget);
+    });
+
+    testWidgets('CF-03 options (no OFF) show only 2H / 4H / 8H', (tester) async {
+      await tester.pumpWidget(_build(options: const ['2h', '4h', '8h']));
+      await tester.pumpAndSettle();
+
+      expect(find.text('OFF'), findsNothing);
+      expect(find.text('2H'),  findsOneWidget);
+      expect(find.text('4H'),  findsOneWidget);
+      expect(find.text('8H'),  findsOneWidget);
+    });
+
+    testWidgets('no button is highlighted when no timer is armed and no OFF',
+        (tester) async {
+      await tester.pumpWidget(_build(
+        activeTimerCode: null,
+        options: const ['2h', '4h', '8h'],
+      ));
+      await tester.pumpAndSettle();
+
+      for (final l in ['2H', '4H', '8H']) {
+        expect(tester.widget<Text>(find.text(l)).style?.color, isNot(kYellow));
+      }
     });
   });
 

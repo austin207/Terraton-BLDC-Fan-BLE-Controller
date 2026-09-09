@@ -251,6 +251,17 @@ void main() {
       expect(r.hasControl('lighting'), isFalse);
       expect(r.hasMode('led'), isTrue);
       expect(r.hasMode('nature'), isFalse);
+      expect(r.timerOptions, ['off', '2h', '4h', '8h']); // default when absent
+    });
+
+    test('fromYaml reads an explicit timerOptions list', () {
+      final r = RemoteProfile.fromYaml(<Object?, Object?>{
+        'model': 'TN-CF-03', 'name': 'CF-03',
+        'controls': <Object?>['speed', 'timer'],
+        'modes': <Object?>[],
+        'timerOptions': <Object?>['2h', '4h', '8h'],
+      });
+      expect(r.timerOptions, ['2h', '4h', '8h']);
     });
 
     test('legacy() builds the classic four-mode profile from a type', () {

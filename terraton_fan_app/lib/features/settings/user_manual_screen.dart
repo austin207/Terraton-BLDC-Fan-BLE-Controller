@@ -87,12 +87,11 @@ const _sections = [
   ),
   _SectionData(
     id: 'lighting',
-    label: 'Mood Lighting',
+    label: 'CoolLight',
     icon: Icons.light_mode_rounded,
     accent: kYellow,
     body: [
-      'Toggle the light ON/OFF using the switch in the MOOD LIGHTING section.',
-      'Choose Warm, Neutral, or Cool colour temperature to match your mood.',
+      'Toggle the light ON/OFF using the switch in the CoolLight section.',
       'Drag the intensity slider to dim or brighten the integrated downlight.',
       'Set intensity to 0 to fully turn the downlight off without affecting fan speed.',
     ],

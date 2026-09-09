@@ -165,21 +165,32 @@ A ceiling fan's `FanDevice.model` selects a `RemoteProfile`
 (`ApplianceLoader.remoteForModel`, declared under `ceiling_fan.remotes:` in
 `appliances.yaml` / `appliances_client.yaml`). The profile drives **which
 control sections** (`RemoteProfile.controls`) and **which mode-row buttons**
-(`RemoteProfile.modes`) `_FanControlsPanel` renders — nothing else about the
+(`RemoteProfile.modes`), which **sleep-timer buttons** (`RemoteProfile.timerOptions`)
+and which control sections `_FanControlsPanel` renders — nothing else about the
 control screen changes.
 
-| Model | Mode row | Mood lighting |
-| --- | --- | --- |
-| `TN-CF-01` (default) | Nature · Smart · Reverse · Boost | **hidden** |
-| `TN-CF-02` | **LED** · Smart · Reverse · Boost | hidden |
-| `TN-CF-03` | Smart · Reverse · Boost | **shown** (still stub — bytes pending) |
+| Model | Mode row | Sleep timer | CoolLight |
+| --- | --- | --- | --- |
+| `TN-CF-01` (default) | Nature · Smart · Reverse · Boost | OFF · 2H · 4H · 8H | **hidden** |
+| `TN-CF-02` | **LED** · Smart · Reverse · Boost | OFF · 2H · 4H · 8H | hidden |
+| `TN-CF-03` | Smart · Reverse · Boost | **2H · 4H · 8H** (no OFF) | **shown** (still stub) |
 
 - **LED** is a UI-state-only toggle (`FanState.lastLedIsOn`, persisted via
   `saveLed`). `BleFrameBuilder.ledOn/ledOff` are `null` until Terraton supplies
-  bytes — the tap shows a pending SnackBar, exactly like mood lighting.
-- **CF-03** drops Nature only — Smart · Reverse · Boost, same frames and
-  exit rules as CF-01. (An earlier revision removed Smart too; that was
-  reverted 2026-09-09.)
+  bytes — the tap shows a pending SnackBar, exactly like CoolLight.
+- **CF-03** drops Nature and the Timer-OFF button (its physical remote has
+  neither); Smart · Reverse · Boost use the same frames and exit rules as CF-01.
+  With no OFF button a CF-03 timer clears only on power-off or expiry — the app
+  already handles a running timer that way. (An earlier revision removed Smart
+  too; reverted 2026-09-09.)
+- **`RemoteProfile.timerOptions`** — subset of `off | 2h | 4h | 8h`, default all
+  four. `TimerControlWidget` renders exactly this list. `CLAUDE.md` "Sleep-timer
+  countdown" section still applies — the OFF button was only one of the three
+  chip-clearing paths.
+- **CoolLight** — the Warm/Neutral/Cool colour-temperature row is **dormant**
+  (`LightingControlWidget.showColorTemp = false`), left fully wired for when
+  Terraton ships tunable-white hardware. On/off + brightness are live (frames
+  still `null`).
 - **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
   ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
   type's legacy four-mode profile; anything else → an all-controls profile
@@ -521,7 +532,7 @@ The notification is started from the foreground (the Timer tap / a powered state
 
 ### Demo mode
 
-Demo fan has `deviceId == kDemoDeviceId` (`'__demo__'`); `_isDemo` getter in `ControlScreen` bypasses all BLE calls (no `_connect()`, no polls, no lifecycle disconnect). `_applyDemoFrame` parses each outgoing frame locally and updates state via the notifier — same result as a real hardware echo. It also synthesises watts/RPM from the current gear (`_pushDemoTelemetry`) and comes up on gear 3 at power-on, so the dial lights up like a real fan. LED and mood-light toggles already update locally, so they work in demo too.
+Demo fan has `deviceId == kDemoDeviceId` (`'__demo__'`); `_isDemo` getter in `ControlScreen` bypasses all BLE calls (no `_connect()`, no polls, no lifecycle disconnect). `_applyDemoFrame` parses each outgoing frame locally and updates state via the notifier — same result as a real hardware echo. It also synthesises watts/RPM from the current gear (`_pushDemoTelemetry`) and comes up on gear 3 at power-on, so the dial lights up like a real fan. LED and CoolLight toggles already update locally, so they work in demo too.
 
 **Entry point:** `demoFanDevice()` (`lib/shared/demo_fan.dart`) builds a throwaway `FanDevice` (never saved to `FanRepository`). The **"Demo Fan"** card in `FansListScreen` (`_DemoFanCard`) opens it — shown only in the tester variant (`!kIsClientVariant`) on the generic and ceiling-fan lists.
 

@@ -8,24 +8,33 @@ import 'package:terraton_fan_app/shared/theme.dart';
 class LightingControlWidget extends StatelessWidget {
   final bool enabled;
   final bool isLightOn;
-  final String colorType; // 'warm' | 'neutral' | 'cool'
   final double brightnessValue; // 0.0 = off/dim, 1.0 = full brightness
   final VoidCallback onLightOn;
   final VoidCallback onLightOff;
-  final void Function(String) onColorTypeChanged;
   final void Function(double) onBrightness;
+
+  // ── Colour-temperature selection — DORMANT ──────────────────────────────────
+  // Terraton ships a single (cool) light for now, so the Warm/Neutral/Cool row
+  // is hidden. Left fully wired so it can be brought back by flipping
+  // [showColorTemp] to true when Terraton adds tunable-white hardware.
+  final String colorType; // 'warm' | 'neutral' | 'cool'
+  final void Function(String) onColorTypeChanged;
+  final bool showColorTemp;
 
   const LightingControlWidget({
     super.key,
     required this.enabled,
     required this.isLightOn,
-    required this.colorType,
     required this.brightnessValue,
     required this.onLightOn,
     required this.onLightOff,
-    required this.onColorTypeChanged,
     required this.onBrightness,
+    this.colorType = 'cool',
+    this.onColorTypeChanged = _noOpColorType,
+    this.showColorTemp = false,
   });
+
+  static void _noOpColorType(String _) {}
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +61,7 @@ class LightingControlWidget extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text('Mood Lighting',
+                child: Text('CoolLight',
                     style: GoogleFonts.manrope(
                       fontSize: 15, fontWeight: FontWeight.w700, color: kText,
                     )),
@@ -68,23 +77,24 @@ class LightingControlWidget extends StatelessWidget {
 
           const SizedBox(height: 14),
 
-          // ── Colour type: WARM | NEUTRAL | COOL (independent selection) ────────
-          Opacity(
-            opacity: enabled && isLightOn ? 1.0 : 0.4,
-            child: Row(
-              children: [
-                Expanded(child: _TempBtn(label: 'Warm',    isActive: colorType == 'warm'    && isLightOn, color: kLightWarm,    onTap: enabled && isLightOn ? () => onColorTypeChanged('warm')    : null)),
-                const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Neutral', isActive: colorType == 'neutral' && isLightOn, color: kLightNeutral, onTap: enabled && isLightOn ? () => onColorTypeChanged('neutral') : null)),
-                const SizedBox(width: 8),
-                Expanded(child: _TempBtn(label: 'Cool',    isActive: colorType == 'cool'    && isLightOn, color: kLightCool,    onTap: enabled && isLightOn ? () => onColorTypeChanged('cool')    : null)),
-              ],
+          // ── Colour type: WARM | NEUTRAL | COOL — DORMANT (see showColorTemp) ─
+          if (showColorTemp) ...[
+            Opacity(
+              opacity: enabled && isLightOn ? 1.0 : 0.4,
+              child: Row(
+                children: [
+                  Expanded(child: _TempBtn(label: 'Warm',    isActive: colorType == 'warm'    && isLightOn, color: kLightWarm,    onTap: enabled && isLightOn ? () => onColorTypeChanged('warm')    : null)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _TempBtn(label: 'Neutral', isActive: colorType == 'neutral' && isLightOn, color: kLightNeutral, onTap: enabled && isLightOn ? () => onColorTypeChanged('neutral') : null)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _TempBtn(label: 'Cool',    isActive: colorType == 'cool'    && isLightOn, color: kLightCool,    onTap: enabled && isLightOn ? () => onColorTypeChanged('cool')    : null)),
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: 14),
+          ],
 
-          const SizedBox(height: 14),
-
-          // ── Brightness slider (independent of colour type) ──────────────────
+          // ── Brightness slider ──────────────────────────────────────────────
           Opacity(
             opacity: enabled ? 1.0 : 0.5,
             child: _IntensitySlider(
@@ -188,7 +198,7 @@ class _LightToggle extends StatelessWidget {
   }
 }
 
-// ── Colour temperature button ─────────────────────────────────────────────────
+// ── Colour temperature button — DORMANT (rendered only when showColorTemp) ────
 
 class _TempBtn extends StatelessWidget {
   final String label;

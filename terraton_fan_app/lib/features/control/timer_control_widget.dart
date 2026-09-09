@@ -10,14 +10,20 @@ class TimerControlWidget extends StatelessWidget {
   final bool enabled;
   final void Function(String action) onTimer;
 
+  /// Which buttons to show — subset of `off` | `2h` | `4h` | `8h`, from the
+  /// active remote (`RemoteProfile.timerOptions`). CF-03 drops `off`.
+  final List<String> options;
+
   const TimerControlWidget({
     super.key,
     required this.activeTimerCode,
     required this.enabled,
     required this.onTimer,
+    this.options = const ['off', '2h', '4h', '8h'],
   });
 
-  static const _labels = ['OFF', '2H', '4H', '8H'];
+  List<String> get _labels =>
+      options.map((o) => o.toUpperCase()).toList(growable: false);
 
   static String _codeToLabel(int? code) => switch (code) {
     0x02 => '2H',
