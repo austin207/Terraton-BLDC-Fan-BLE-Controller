@@ -1,5 +1,6 @@
 // lib/features/control/lighting_control_widget.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,7 +58,21 @@ class LightingControlWidget extends StatelessWidget {
                   color: kYellow.withAlpha(25),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(Icons.light_mode_rounded, color: kYellow, size: 20),
+                alignment: Alignment.center,
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOut,
+                  tween: Tween(
+                    end: isLightOn ? brightnessValue.clamp(0.0, 1.0) : 0.0,
+                  ),
+                  builder: (_, v, __) => CustomPaint(
+                    size: const Size(20, 20),
+                    painter: _BrightnessGlyphPainter(
+                      value: v,
+                      color: enabled ? kYellow : kYellow.withAlpha(120),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -404,4 +419,67 @@ class _TickPainter extends CustomPainter {
   @override
   bool shouldRepaint(_TickPainter old) =>
       old.value != value || old.enabled != enabled;
+}
+
+// ── Brightness glyph (CoolLight header icon) ──────────────────────────────────
+// One icon, six states mirroring the slider steps: 0.0 → a crossed "off" circle,
+// then 0.2‑1.0 → a filled sun that grows disc + rays from small to XL.
+
+class _BrightnessGlyphPainter extends CustomPainter {
+  final double value; // 0.0‑1.0, matching brightnessValue
+  final Color color;
+
+  const _BrightnessGlyphPainter({required this.value, required this.color});
+
+  double _lerp(double a, double b, double t) => a + (b - a) * t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final stroke = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // Level 0 — light off / zero brightness: circle with a diagonal slash.
+    if (value <= 0.001) {
+      const r = 5.0;
+      canvas.drawCircle(c, r, stroke);
+      canvas.drawLine(
+        c + const Offset(-6.4, -6.4), c + const Offset(6.4, 6.4), stroke,
+      );
+      return;
+    }
+
+    // Levels 1‑5 — sun, scaled by how far past the first step we are.
+    // Low end: small hub, rays are detached dots at a wide gap. As brightness
+    // rises the hub grows and rays lengthen — but hub, gap and ray length are
+    // Hub, gap and ray length all step evenly across the five levels so no one
+    // jump stands out; the two extra rays land only at the very top (100%).
+    final t = ((value - 0.2) / 0.8).clamp(0.0, 1.0);
+    final discR  = _lerp(2.3, 4.2, t);
+    final gap    = _lerp(2.8, 1.7, t);
+    final rayLen = _lerp(0.0, 2.8, t);
+    final rayW   = _lerp(2.0, 2.2, t);
+    final inner  = discR + gap;
+
+    final rayCount = t >= 0.95 ? 10 : 8; // fuller sunburst at 100% only
+
+    canvas.drawCircle(c, discR, Paint()..color = color..style = PaintingStyle.fill);
+
+    final rayPaint = Paint()
+      ..color = color
+      ..strokeWidth = rayW
+      ..strokeCap = StrokeCap.round;
+    for (int i = 0; i < rayCount; i++) {
+      final a = -math.pi / 2 + i * (2 * math.pi / rayCount);
+      final dir = Offset(math.cos(a), math.sin(a));
+      canvas.drawLine(c + dir * inner, c + dir * (inner + rayLen), rayPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BrightnessGlyphPainter old) =>
+      old.value != value || old.color != color;
 }
