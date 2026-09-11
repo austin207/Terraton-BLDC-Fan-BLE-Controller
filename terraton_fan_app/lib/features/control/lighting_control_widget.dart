@@ -284,20 +284,92 @@ class _IntensitySlider extends StatefulWidget {
 class _IntensitySliderState extends State<_IntensitySlider> {
   static const _steps = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
 
+  // Visual-only handle position while a drag is in progress. Each real
+  // brightness command makes the fan's firmware beep (SetBuzzer on every
+  // accepted CoolLight frame), so sending one per level crossed mid-drag
+  // turned a single scrub into a burst of beeps. A drag now only repaints
+  // locally as the finger moves and sends exactly one command — the final
+  // level — on release, matching the "one gesture, one command" beep a tap
+  // already produces. Null when no drag is in progress (display = widget.value).
+  double? _dragValue;
+
+  // On release _dragValue is NOT cleared immediately — widget.value (poll
+  // truth) only catches up once the fan's echo arrives, ~100 ms later, so
+  // clearing right away made the handle visibly snap back to the stale old
+  // position for a frame before jumping forward again. Keep showing the
+  // dragged-to position until didUpdateWidget below sees the real value
+  // arrive, with this as a safety net in case it never does (dropped write).
+  Timer? _dragConfirmTimeout;
+
   double _nearest(double x) =>
       _steps.reduce((a, b) => (x - a).abs() <= (x - b).abs() ? a : b);
 
-  void _pick(double localX, double width) {
+  double _snap(double localX, double width) =>
+      _nearest((localX / width).clamp(0.0, 1.0));
+
+  // A tap jumps straight to a level — one deliberate action, sent immediately.
+  void _tap(double localX, double width) {
     if (!widget.enabled) return;
-    final snapped = _nearest((localX / width).clamp(0.0, 1.0));
+    final snapped = _snap(localX, width);
     if (snapped != widget.value) {
       unawaited(HapticFeedback.selectionClick());
       widget.onChanged(snapped);
     }
   }
 
+  void _dragUpdate(double localX, double width) {
+    if (!widget.enabled) return;
+    final snapped = _snap(localX, width);
+    if (snapped != _dragValue) {
+      unawaited(HapticFeedback.selectionClick());
+      setState(() => _dragValue = snapped);
+    }
+  }
+
+  void _dragEnd() {
+    final v = _dragValue;
+    if (v == null) return;
+    if (widget.enabled && v != widget.value) {
+      widget.onChanged(v);
+      // Hold the dragged-to position on screen — see _dragValue doc comment —
+      // until the real value arrives (didUpdateWidget) or this fires first.
+      _dragConfirmTimeout?.cancel();
+      _dragConfirmTimeout = Timer(const Duration(seconds: 3), _clearDragOverride);
+    } else {
+      _clearDragOverride();
+    }
+  }
+
+  // The gesture arena can cancel a recognized drag (e.g. a scroll ancestor
+  // steals it) — just snap the handle back, no command was promised yet.
+  void _dragCancel() => _clearDragOverride();
+
+  void _clearDragOverride() {
+    _dragConfirmTimeout?.cancel();
+    _dragConfirmTimeout = null;
+    if (_dragValue != null) setState(() => _dragValue = null);
+  }
+
+  @override
+  void didUpdateWidget(covariant _IntensitySlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The fan's echo (or the next poll tick) landed and matches what this
+    // drag sent — safe to hand the display back to widget.value now, with
+    // no visible jump since they're equal.
+    if (_dragValue != null && widget.value == _dragValue) {
+      _clearDragOverride();
+    }
+  }
+
+  @override
+  void dispose() {
+    _dragConfirmTimeout?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final displayValue = _dragValue ?? widget.value;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
       decoration: BoxDecoration(
@@ -310,15 +382,17 @@ class _IntensitySliderState extends State<_IntensitySlider> {
           final w = box.maxWidth;
           return Semantics(
             slider: true,
-            value: '${(widget.value * 100).round()}%',
+            value: '${(displayValue * 100).round()}%',
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (d) => _pick(d.localPosition.dx, w),
-              onHorizontalDragUpdate: (d) => _pick(d.localPosition.dx, w),
+              onTapDown: (d) => _tap(d.localPosition.dx, w),
+              onHorizontalDragUpdate: (d) => _dragUpdate(d.localPosition.dx, w),
+              onHorizontalDragEnd: (_) => _dragEnd(),
+              onHorizontalDragCancel: _dragCancel,
               child: CustomPaint(
                 size: Size(w, 50),
                 painter: _TickPainter(
-                  value: widget.value,
+                  value: displayValue,
                   enabled: widget.enabled,
                 ),
               ),
