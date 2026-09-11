@@ -158,6 +158,8 @@ class BleResponseParser {
 
   // Converts mode response byte to mode name string.
   // Mode data values (0x01–0x04) come from commands.yaml modes.actions.
+  // 0x20-0x25 is CoolLight (see parseLightState below), not a mode — the map
+  // lookup simply misses for those and this returns null, which is correct.
   static String? parseModeString(FanResponse r) {
     final cmd = CommandLoader.responseCommand('mode');
     if (r.command != cmd || r.data.isEmpty) return null;
@@ -167,6 +169,24 @@ class BleResponseParser {
       0x03: 'reverse',
       0x04: 'smart',
     }[r.data[0]];
+  }
+
+  // CoolLight (CF-03) shares the mode command byte (0x21) with a disjoint
+  // data range — see commands.yaml lighting. 0x20 = off, 0x21-0x25 = levels
+  // 1-5. Arrives both as the direct echo of a lighting command and as a 5th
+  // frame appended to every Motor State poll reply (send_light_state() in
+  // IRScan.c) — parseModeString rejects these bytes (not in its 0x01-0x04
+  // map), so the two parsers never collide on the same frame.
+  static const int _lightBase = 0x20;
+
+  static ({bool isOn, int level})? parseLightState(FanResponse r) {
+    final cmd = CommandLoader.responseCommand('mode');
+    if (r.command != cmd || r.data.isEmpty) return null;
+    final b = r.data[0];
+    if ((b & 0xF0) != _lightBase) return null;
+    final level = b & 0x0F;
+    if (level > 5) return null;
+    return (isOn: level > 0, level: level);
   }
 }
 

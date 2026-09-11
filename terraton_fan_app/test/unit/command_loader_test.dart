@@ -87,12 +87,21 @@ void main() {
       expect(CommandLoader.querySpeed(), [0x55, 0xAA, 0x06, 0x24, 0x01, 0x00, 0x2A]);
     });
 
-    test('lightOn returns null (pending in YAML)', () {
-      expect(CommandLoader.lightOn(), isNull);
+    test('lightOff = 55 AA 06 21 01 20 47', () {
+      expect(CommandLoader.lightOff(), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x20, 0x47]);
     });
 
-    test('lightOff returns null (pending in YAML)', () {
-      expect(CommandLoader.lightOff(), isNull);
+    test('lightLevel(1) = 55 AA 06 21 01 21 48', () {
+      expect(CommandLoader.lightLevel(1), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x21, 0x48]);
+    });
+
+    test('lightLevel(5) = 55 AA 06 21 01 25 4C', () {
+      expect(CommandLoader.lightLevel(5), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x25, 0x4C]);
+    });
+
+    test('lightLevel out of range returns null', () {
+      expect(CommandLoader.lightLevel(0), isNull);
+      expect(CommandLoader.lightLevel(6), isNull);
     });
 
     test('custom returns null gracefully for missing key', () {

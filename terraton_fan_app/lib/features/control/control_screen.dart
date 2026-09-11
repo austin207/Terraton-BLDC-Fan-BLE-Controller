@@ -405,6 +405,20 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       return;
     }
 
+    // CoolLight (CF-03) — shares the 0x21 command byte with mode, disjoint
+    // data range (see parseLightState). Arrives as the direct echo of a
+    // lighting tap and as a 5th frame on every Motor State poll reply.
+    final light = BleResponseParser.parseLightState(r);
+    if (light != null) {
+      notifier.updateLighting(
+        colorType:  'cool', // this firmware has one colour — see showColorTemp
+        brightness: light.level / 5.0,
+        isOn:       light.isOn,
+      );
+      ConnectionLogService.machineState('light=${light.isOn ? light.level : 'off'}');
+      return;
+    }
+
     final timer = BleResponseParser.parseTimer(r);                // 0x22
     // A reported 0 IS a real cancellation now (2026-08-22 firmware fix):
     // get_mc_state()'s timer branch gates on AutoPowerState.FlagAutoPower,
@@ -729,6 +743,18 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       }
     } else if (cmd == CommandLoader.responseCommand('speed')) {
       notifier.updateSpeed(data);
+    } else if (cmd == CommandLoader.responseCommand('mode') &&
+        (data & 0xF0) == 0x20) {
+      // CoolLight — shares the mode command byte with a disjoint data range
+      // (see BleResponseParser.parseLightState). Checked ahead of the mode
+      // branch below so a light tap can never fall through to the `_ =>
+      // null` case there and wrongly clear whatever mode chip is lit.
+      final level = data & 0x0F;
+      notifier.updateLighting(
+        colorType:  'cool',
+        brightness: level / 5.0,
+        isOn:       level > 0,
+      );
     } else if (cmd == CommandLoader.responseCommand('mode')) {
       final modeStr = switch (data) {
         0x01 => 'boost',
@@ -1041,9 +1067,6 @@ class _FanControlsPanel extends ConsumerStatefulWidget {
 
 class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     with WidgetsBindingObserver {
-  String _colorType       = 'warm';
-  double _brightnessValue = 0.7;
-  bool   _isLightOn       = false;
 
   // ── Usage-log segment tracker (Last Known State Continuation) ──────────────
   // A segment's duration can span app restarts/disconnects — it remains open
@@ -1093,10 +1116,6 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     if (s.activeMode == 'smart') {
       _smartBaselineGear = s.speed > 0 ? s.speed : 3;
     }
-    // Restore lighting UI state from last persisted values.
-    _colorType       = s.lastLightColorType;
-    _brightnessValue = s.lastLightBrightness;
-    _isLightOn       = s.lastLightIsOn;
     // Resume or reconcile the persisted open segment (Last Known State Continuation).
     _reconcileOpenSegment(s);
   }
@@ -1378,6 +1397,11 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     notifier.setModeHighlight(null);
     notifier.updateTimer(0);
     notifier.updateLed(false);
+    // CoolLight is CF-03-only; blank it when switching to a remote that has
+    // no lighting control, same as mode/timer/LED above.
+    if (!next.hasControl('lighting')) {
+      notifier.updateLighting(colorType: 'cool', brightness: 0, isOn: false);
+    }
     setState(() => _remote = next);
   }
 
@@ -1569,50 +1593,44 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
           const SizedBox(height: 20),
         ],
 
-        // ── CoolLight ───────────────────────────────────────────────────────
+        // ── CoolLight (CF-03 only) ───────────────────────────────────────────
+        // Dumb-remote, same as the rest of this screen: a tap sends only its
+        // own frame, and display is poll truth — fanState.lastLight* is kept
+        // current by _applyFrame's parseLightState branch (the fan echoes
+        // every accepted command in ~100 ms, and re-reports it on every 3 s
+        // Motor State poll), so no local/optimistic state is kept here.
         if (_has('lighting'))
           LightingControlWidget(
             enabled: enabled,
-            isLightOn: _isLightOn,
-            brightnessValue: _brightnessValue,
-            // Warm/Neutral/Cool row is dormant (single light for now). The
-            // colorType plumbing below stays wired so flipping showColorTemp
-            // back to true fully restores it.
-            colorType: _colorType,
+            isLightOn: fanState.lastLightIsOn,
+            brightnessValue: fanState.lastLightBrightness,
+            // Warm/Neutral/Cool row is dormant — this firmware has one colour.
+            // The colorType plumbing stays wired for when tunable-white
+            // hardware ships; onColorTypeChanged has no frame to send yet.
+            colorType: fanState.lastLightColorType,
             showColorTemp: false,
             onLightOn: () {
-              setState(() => _isLightOn = true);
-              ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: true);
-              unawaited(widget.send(BleFrameBuilder.lightOn(),
-                  pendingMsg: 'CoolLight command pending from Terraton'));
+              // No separate "on" frame — turn on at the last known level,
+              // defaulting to 1 if the light has never been set.
+              final level = fanState.lastLightBrightness <= 0
+                  ? 1
+                  : (fanState.lastLightBrightness * 5).round().clamp(1, 5);
+              unawaited(widget.send(BleFrameBuilder.lightLevel(level),
+                  label: 'CoolLight: on ($level)'));
             },
             onLightOff: () {
-              setState(() => _isLightOn = false);
-              ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                  .updateLighting(colorType: _colorType, brightness: _brightnessValue, isOn: false);
               unawaited(widget.send(BleFrameBuilder.lightOff(),
-                  pendingMsg: 'CoolLight command pending from Terraton'));
+                  label: 'CoolLight: off'));
             },
-            onColorTypeChanged: (t) {
-              setState(() => _colorType = t);
-              ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                  .updateLighting(colorType: t, brightness: _brightnessValue, isOn: _isLightOn);
-              final byte = switch (t) {
-                'neutral' => 0x80,
-                'cool'    => 0xFF,
-                _         => 0x00,
-              };
-              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                  pendingMsg: 'CoolLight command pending from Terraton'));
+            onColorTypeChanged: (_) {
+              // Dormant — showColorTemp is false, so the UI never calls this.
             },
             onBrightness: (v) {
-              setState(() => _brightnessValue = v);
-              ref.read(activeFanStateProvider(fan.deviceId).notifier)
-                  .updateLighting(colorType: _colorType, brightness: v, isOn: _isLightOn);
-              final byte = (v * 255).round().clamp(0, 255);
-              unawaited(widget.send(BleFrameBuilder.lightColorTemp(byte),
-                  pendingMsg: 'CoolLight command pending from Terraton'));
+              final level = (v * 5).round().clamp(0, 5);
+              final frame = level == 0
+                  ? BleFrameBuilder.lightOff()
+                  : BleFrameBuilder.lightLevel(level);
+              unawaited(widget.send(frame, label: 'CoolLight: level $level'));
             },
           ),
 

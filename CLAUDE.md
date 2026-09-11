@@ -132,6 +132,8 @@ Service discovery also searches: Amp'ed RF proprietary (26cc3fc2/26cc3fc1), CC25
 | Nature | `55 AA 06 21 01 02 29` |
 | Reverse | `55 AA 06 21 01 03 2A` |
 | Smart | `55 AA 06 21 01 04 2B` |
+| CoolLight OFF (CF-03) | `55 AA 06 21 01 20 47` |
+| CoolLight level 1–5 (CF-03) | `55 AA 06 21 01 2N checksum` (`N`=1–5) |
 | Timer OFF/2H/4H/8H | `55 AA 06 22 01 00/02/04/08 28/2A/2C/30` |
 | Query Power (watts) | `55 AA 06 23 01 00 29` |
 | Query Speed (RPM) | `55 AA 06 24 01 00 2A` |
@@ -173,11 +175,15 @@ control screen changes.
 | --- | --- | --- | --- |
 | `TN-CF-01` (default) | Nature · Smart · Reverse · Boost | OFF · 2H · 4H · 8H | **hidden** |
 | `TN-CF-02` | **LED** · Smart · Reverse · Boost | OFF · 2H · 4H · 8H | hidden |
-| `TN-CF-03` | Smart · Reverse · Boost | **2H · 4H · 8H** (no OFF) | **shown** (still stub) |
+| `TN-CF-03` | Smart · Reverse · Boost | **2H · 4H · 8H** (no OFF) | **shown** (live, on/off/brightness) |
 
 - **LED** is a UI-state-only toggle (`FanState.lastLedIsOn`, persisted via
   `saveLed`). `BleFrameBuilder.ledOn/ledOff` are `null` until Terraton supplies
-  bytes — the tap shows a pending SnackBar, exactly like CoolLight.
+  bytes — the tap shows a pending SnackBar. Firmware findings (2026-09, "7 LED
+  Final" build): the CF-02 LED bar is driven entirely by internal state
+  (`ONOFFStatus`/`TargetSpeed`/`direction`/`smart_mode`) with no BLE case in
+  `Process_Response()` at all — there is currently nothing for a toggle to send
+  to. Decision on how to proceed is pending.
 - **CF-03** drops Nature and the Timer-OFF button (its physical remote has
   neither); Smart · Reverse · Boost use the same frames and exit rules as CF-01.
   With no OFF button a CF-03 timer clears only on power-off or expiry — the app
@@ -187,10 +193,19 @@ control screen changes.
   four. `TimerControlWidget` renders exactly this list. `CLAUDE.md` "Sleep-timer
   countdown" section still applies — the OFF button was only one of the three
   chip-clearing paths.
-- **CoolLight** — the Warm/Neutral/Cool colour-temperature row is **dormant**
-  (`LightingControlWidget.showColorTemp = false`), left fully wired for when
-  Terraton ships tunable-white hardware. On/off + brightness are live (frames
-  still `null`).
+- **CoolLight** — live end-to-end since 2026-09 (firmware "underlight" build).
+  Wired the same way as every other control on this screen — a tap sends only
+  its own frame; display is poll truth. Off/brightness reuse the **mode**
+  command byte (`0x21`) with a disjoint data range: `0x20` = off, `0x21`-`0x25`
+  = 5 brightness levels (firmware duty table: 20/40/60/80/100%) — mapped 1:1
+  onto the slider's 6 positions (0.0, 0.2, ..., 1.0). The fan echoes the tap
+  directly AND appends the current level as a 5th frame on every 3 s Motor
+  State poll (`send_light_state()`, `IRScan.c`); `BleResponseParser.parseLightState`
+  is what tells a light frame apart from a mode frame on `0x21` (mode bytes are
+  `0x01`-`0x04`, never `0x20`+). The Warm/Neutral/Cool colour-temperature row is
+  still **dormant** (`LightingControlWidget.showColorTemp = false`) — this
+  firmware has one colour; the row is left fully wired for when Terraton ships
+  tunable-white hardware.
 - **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
   ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
   type's legacy four-mode profile; anything else → an all-controls profile
@@ -261,7 +276,7 @@ ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known cont
 
 Single source of truth for all BLE command bytes. Adding a new command requires only a YAML edit — no Dart changes.
 
-`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. Lighting commands (`commands.lighting.*`) and the CF-02 speed-LED (`commands.led.on/off`) are currently `null` — pending bytes from Terraton.
+`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. The CF-02 speed-LED (`commands.led.on/off`) is currently `null` — pending, see the LED bullet under "Fan remote profiles". CoolLight (`commands.lighting.*`) is live — see below.
 
 `get_motor_state_vendor` (`…00 02`) is the vendor-doc checksum sibling of `get_motor_state` (`…00 01`). **It is never sent.** `check_crc()` sums `request_frame[2]+[3]+[5]` only, giving `0x00+0x01+0x00 = 0x01`, so the `…02` frame fails validation, `read_request()` never sets `recv_flag`, and `Process_Response()` is never called. The poll used to alternate the two variants, which meant every second tick got no reply and the display effectively updated every 6 s. The key is kept in `commands.yaml` for reference only.
 

@@ -147,16 +147,21 @@ class CommandLoader {
     return buildFrame(l['command'] as int?, _toIntList(l['data']));
   }
 
-  static List<int>? lightOn() {
-    final l = _safeGet(['commands', 'lighting', 'on']);
+  static List<int>? lightOff() {
+    final l = _safeGet(['commands', 'lighting']);
     if (l == null) return null;
-    return buildFrame(l['command'] as int?, _toIntList(l['data']));
+    return buildFrame(l['command'] as int?, _toIntList(l['off']));
   }
 
-  static List<int>? lightOff() {
-    final l = _safeGet(['commands', 'lighting', 'off']);
+  /// Brightness level 1-5 (see commands.yaml lighting.levels). Returns null
+  /// for an out-of-range level or while lighting.command is still pending.
+  static List<int>? lightLevel(int level) {
+    if (level < 1 || level > 5) return null;
+    final l = _safeGet(['commands', 'lighting']);
     if (l == null) return null;
-    return buildFrame(l['command'] as int?, _toIntList(l['data']));
+    final levels = l['levels'];
+    if (levels is! YamlMap) return null;
+    return buildFrame(l['command'] as int?, _toIntList(levels['$level']));
   }
 
   static List<int>? lightColorTemp(int value) {

@@ -38,6 +38,13 @@ void main() {
   test('timer8h',    () => expect(BleFrameBuilder.timer8h(),    [0x55, 0xAA, 0x06, 0x22, 0x01, 0x08, 0x30]));
   test('queryPower', () => expect(BleFrameBuilder.queryPower(), [0x55, 0xAA, 0x06, 0x23, 0x01, 0x00, 0x29]));
   test('querySpeed', () => expect(BleFrameBuilder.querySpeed(), [0x55, 0xAA, 0x06, 0x24, 0x01, 0x00, 0x2A]));
-  test('lightOn returns null', () => expect(BleFrameBuilder.lightOn(),  isNull));
-  test('lightOff returns null', () => expect(BleFrameBuilder.lightOff(), isNull));
+  // CoolLight (CF-03) — shares the mode command byte (0x21); see commands.yaml.
+  test('lightOff',    () => expect(BleFrameBuilder.lightOff(),    [0x55, 0xAA, 0x06, 0x21, 0x01, 0x20, 0x47]));
+  test('lightLevel(1)', () => expect(BleFrameBuilder.lightLevel(1), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x21, 0x48]));
+  test('lightLevel(3)', () => expect(BleFrameBuilder.lightLevel(3), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x23, 0x4A]));
+  test('lightLevel(5)', () => expect(BleFrameBuilder.lightLevel(5), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x25, 0x4C]));
+  test('lightLevel(0) returns null (out of range)',
+      () => expect(BleFrameBuilder.lightLevel(0), isNull));
+  test('lightLevel(6) returns null (out of range)',
+      () => expect(BleFrameBuilder.lightLevel(6), isNull));
 }

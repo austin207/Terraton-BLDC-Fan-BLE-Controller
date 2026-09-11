@@ -264,31 +264,80 @@ void main() {
     verifyNever(() => mockBle.writeFrame(any()));
   });
 
-  // ── Lighting pending ───────────────────────────────────────────────────────
+  // ── CoolLight (CF-03) ────────────────────────────────────────────────────
+  // Dumb remote, same as every other control: a tap sends only its own frame,
+  // no local/optimistic state write — display is poll truth, driven by
+  // parseLightState applying the fan's echo. See commands.yaml lighting.
 
-  testWidgets('light ON shows SnackBar and sends nothing else',
-      (tester) async {
-    await pumpConnected(tester);
-    // _connect() already sent the post-connect Get Motor State sync frame;
-    // clear it so this verifies only the frames written for the lighting tap.
-    clearInteractions(mockBle);
+  group('CoolLight', () {
+    testWidgets('light ON sends the last-known level (default fan state, 0.7 -> level 4)',
+        (tester) async {
+      await pumpConnected(tester);
+      // _connect() already sent the post-connect Get Motor State sync frame;
+      // clear it so this verifies only the frame written for the lighting tap.
+      clearInteractions(mockBle);
 
-    // LightingControlWidget may be scrolled off the 600 px test viewport.
-    // Invoke onLightOn directly — the contract being tested is the frame
-    // (null → SnackBar, no lighting writeFrame call), not the tap geometry.
-    final lightWidget = tester.widget<LightingControlWidget>(
-      find.byType(LightingControlWidget),
-    );
-    lightWidget.onLightOn();
-    await tester.pump(); // show SnackBar
+      // LightingControlWidget may be scrolled off the 600 px test viewport.
+      // Invoke the callback directly — the contract being tested is the frame,
+      // not the tap geometry.
+      final lightWidget = tester.widget<LightingControlWidget>(
+        find.byType(LightingControlWidget),
+      );
+      lightWidget.onLightOn();
+      await tester.pump();
 
-    expect(
-      find.text('CoolLight command pending from Terraton'),
-      findsOneWidget,
-    );
-    // The lighting frame is pending (null → SnackBar only) and NOTHING else
-    // goes out. A tap on an off fan no longer injects a power-on ahead of it.
-    verifyNever(() => mockBle.writeFrame(any()));
+      // Default FanState.lastLightBrightness = 0.7 -> round(0.7*5) = level 4.
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x24, 0x4B]),
+      ).called(1);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('light OFF sends the off frame', (tester) async {
+      await pumpConnected(tester);
+      clearInteractions(mockBle);
+
+      final lightWidget = tester.widget<LightingControlWidget>(
+        find.byType(LightingControlWidget),
+      );
+      lightWidget.onLightOff();
+      await tester.pump();
+
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x20, 0x47]),
+      ).called(1);
+    });
+
+    testWidgets('brightness drag to 0.4 sends level 2', (tester) async {
+      await pumpConnected(tester);
+      clearInteractions(mockBle);
+
+      final lightWidget = tester.widget<LightingControlWidget>(
+        find.byType(LightingControlWidget),
+      );
+      lightWidget.onBrightness(0.4);
+      await tester.pump();
+
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x22, 0x49]),
+      ).called(1);
+    });
+
+    testWidgets('brightness dragged to 0 sends the off frame, not level 0',
+        (tester) async {
+      await pumpConnected(tester);
+      clearInteractions(mockBle);
+
+      final lightWidget = tester.widget<LightingControlWidget>(
+        find.byType(LightingControlWidget),
+      );
+      lightWidget.onBrightness(0.0);
+      await tester.pump();
+
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x20, 0x47]),
+      ).called(1);
+    });
   });
 
   // ── Machine State restore on reconnect (after mains power-cycle) ─────────────

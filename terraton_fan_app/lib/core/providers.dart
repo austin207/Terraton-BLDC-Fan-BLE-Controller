@@ -337,6 +337,16 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
     required double brightness,
     required bool isOn,
   }) {
+    // No-op guard, same rule as every other mutator on this notifier: CoolLight
+    // now arrives as a 5th frame on every 3 s Motor State poll
+    // (BleResponseParser.parseLightState), not just from a user tap, so an
+    // unguarded write here would allocate a new FanState and hit ObjectBox on
+    // every tick, forever.
+    if (state.lastLightColorType == colorType &&
+        state.lastLightBrightness == brightness &&
+        state.lastLightIsOn == isOn) {
+      return;
+    }
     state = state.copyWith(
       lastLightColorType:  colorType,
       lastLightBrightness: brightness,

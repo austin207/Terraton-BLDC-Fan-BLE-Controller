@@ -101,15 +101,26 @@ commands:
       command: null
       data: null
 
-  # Lighting commands pending from Terraton.
-  # Fill in command and data when received. No Dart code changes needed.
+  # CoolLight (CF-03 remote only). Firmware ("underlight" build, 2026-09)
+  # reuses the mode command byte (0x21, same as Boost/Nature/Reverse/Smart) —
+  # distinguished by data[0]'s upper nibble: 0x20 = off, 0x21-0x25 = brightness
+  # levels 1-5 (firmware duty table: 20/40/60/80/100%). This maps exactly onto
+  # the 6-position brightness slider (0.0, 0.2, ..., 1.0 -> off, level 1..5).
+  # The fan echoes this on every accepted command AND appends it as a 5th
+  # frame on every Motor State poll reply (send_light_state(), IRScan.c) —
+  # BleResponseParser.parseLightState is what tells it apart from a mode
+  # frame on receive.
   lighting:
-    on:
-      command: null
-      data: null
-    off:
-      command: null
-      data: null
+    command: 0x21
+    off: [0x20]
+    levels:
+      "1": [0x21]
+      "2": [0x22]
+      "3": [0x23]
+      "4": [0x24]
+      "5": [0x25]
+    # Tunable-white colour temperature — NOT in this firmware (Terraton ships
+    # a single/cool light). Kept wired for when tunable-white hardware exists.
     color_temp:
       command: null
       data_min: 0
