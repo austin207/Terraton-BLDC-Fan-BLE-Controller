@@ -47,4 +47,9 @@ void main() {
       () => expect(BleFrameBuilder.lightLevel(0), isNull));
   test('lightLevel(6) returns null (out of range)',
       () => expect(BleFrameBuilder.lightLevel(6), isNull));
+
+  // Speed LED "keep-lit" toggle (CF-02) — spec'd for a firmware rev that has
+  // not shipped yet.
+  test('ledOn',  () => expect(BleFrameBuilder.ledOn(),  [0x55, 0xAA, 0x06, 0x21, 0x01, 0x11, 0x38]));
+  test('ledOff', () => expect(BleFrameBuilder.ledOff(), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x10, 0x37]));
 }

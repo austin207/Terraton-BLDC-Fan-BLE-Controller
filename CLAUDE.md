@@ -177,13 +177,23 @@ control screen changes.
 | `TN-CF-02` | **LED** · Smart · Reverse · Boost | OFF · 2H · 4H · 8H | hidden |
 | `TN-CF-03` | Smart · Reverse · Boost | **2H · 4H · 8H** (no OFF) | **shown** (live, on/off/brightness) |
 
-- **LED** is a UI-state-only toggle (`FanState.lastLedIsOn`, persisted via
-  `saveLed`). `BleFrameBuilder.ledOn/ledOff` are `null` until Terraton supplies
-  bytes — the tap shows a pending SnackBar. Firmware findings (2026-09, "7 LED
-  Final" build): the CF-02 LED bar is driven entirely by internal state
-  (`ONOFFStatus`/`TargetSpeed`/`direction`/`smart_mode`) with no BLE case in
-  `Process_Response()` at all — there is currently nothing for a toggle to send
-  to. Decision on how to proceed is pending.
+- **LED** — really a "keep the speed bar lit" toggle for CF-02's 7-LED strip,
+  which otherwise shows the current speed then auto-blanks after 3 s. As
+  shipped ("7 LED Final" build, 2026-09), that behavior is internal-state-only
+  (firmware's `disp_lock` flag) with **no BLE case in `Process_Response()`** —
+  only the IR remote's repurposed Nature button (`case IRNatureWind`) can
+  toggle it. App-side wiring is done ahead of firmware landing it — bytes are
+  **spec'd, not confirmed**: reuses the mode command byte (`0x21`) with a spare
+  data range (`0x10` = off/auto-blank, `0x11` = on/keep-lit), same trick as
+  CoolLight's `LIGHT_BASE`, avoiding the vacated `NATURE`(`0x02`) byte since
+  CF-02 never sends it. `BleFrameBuilder.ledOn/ledOff`,
+  `BleResponseParser.parseLedState`, and the `_applyFrame` receive branch are
+  all wired the same dumb-remote way CoolLight is — no local/optimistic write,
+  `FanState.lastLedIsOn` is poll truth. **Until firmware ships this**, a tap
+  sends a real frame the current 7-LED build's `Process_Response()` doesn't
+  recognize — a silent no-op (no crash, no beep), not the old "pending"
+  SnackBar. Verify these bytes against the actual firmware once it lands
+  (`commands.yaml` `led.on/off` — no Dart changes needed if they differ).
 - **CF-03** drops Nature and the Timer-OFF button (its physical remote has
   neither); Smart · Reverse · Boost use the same frames and exit rules as CF-01.
   With no OFF button a CF-03 timer clears only on power-off or expiry — the app
@@ -259,7 +269,7 @@ Route constants live in `AppRoutes` (`lib/shared/app_routes.dart`).
 
 ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known control state), `UsageLog` (energy segment per mode/speed change), `DailyRuntime` (one record per fan per calendar day; upserted from the runtime-query response every 90 s).
 `FanDevice.deviceId` is the stable primary key. `macAddress` starts empty; filled by `FanRepository.updateMac()` on first successful BLE connection. `FanDevice.model` selects the remote layout (`FanRepository.setModel` rewrites it for "Change remote"); it is set at pairing from the QR payload or the remote picker.
-`FanState.==` and `hashCode` include `deviceId`. `FanState.lastLedIsOn` holds the CF-02 speed-LED toggle (UI state only).
+`FanState.==` and `hashCode` include `deviceId`. `FanState.lastLedIsOn` holds the CF-02 speed-LED keep-lit toggle — see "Fan remote profiles" above for its wiring status (bytes spec'd, firmware pending).
 `DailyRuntime` keyed by `(deviceId, date)` (local midnight); never treat a missing day as zero — `AnalyticsCalculations.normalizeDailyRuntimes` fills gaps with the average of available days.
 `objectbox.g.dart` is generated — run `build_runner` after changing any model.
 
@@ -281,7 +291,7 @@ ObjectBox entities: `FanDevice` (identity/metadata), `FanState` (last-known cont
 
 Single source of truth for all BLE command bytes. Adding a new command requires only a YAML edit — no Dart changes.
 
-`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. The CF-02 speed-LED (`commands.led.on/off`) is currently `null` — pending, see the LED bullet under "Fan remote profiles". CoolLight (`commands.lighting.*`) is live — see below.
+`CommandLoader._safeGet()` returns `null` gracefully for missing keys; `BleFrameBuilder` propagates `null`; `ControlScreen._send()` shows a SnackBar instead of crashing. The CF-02 speed-LED (`commands.led.on/off`) has spec'd-but-unconfirmed bytes — real firmware may need different ones, see the LED bullet under "Fan remote profiles". CoolLight (`commands.lighting.*`) is live — see below.
 
 `get_motor_state_vendor` (`…00 02`) is the vendor-doc checksum sibling of `get_motor_state` (`…00 01`). **It is never sent.** `check_crc()` sums `request_frame[2]+[3]+[5]` only, giving `0x00+0x01+0x00 = 0x01`, so the `…02` frame fails validation, `read_request()` never sets `recv_flag`, and `Process_Response()` is never called. The poll used to alternate the two variants, which meant every second tick got no reply and the display effectively updated every 6 s. The key is kept in `commands.yaml` for reference only.
 
@@ -352,7 +362,7 @@ frame we just sent. Two places do it, both in `_FanControlsPanel`:
 | lit `smart` chip | `powerOn()` | that chip |
 | any speed dot | `setSpeed(n)` | `nature`, `boost`, `reverse` — **Smart stays lit** |
 | timer 2h/4h/8h | that timer frame | `smart` only |
-| `led` toggle (CF-02) | `ledOn()`/`ledOff()` (both `null` today) | — (UI state only, `FanState.lastLedIsOn`) |
+| `led` toggle (CF-02) | `ledOn()`/`ledOff()` (bytes spec'd, firmware pending) | — (poll truth, `FanState.lastLedIsOn`, same as CoolLight) |
 
 Which of these buttons exist at all is per-remote — see "Fan remote profiles"
 above. The `led` toggle is not a mode chip: it never touches `activeMode` and no

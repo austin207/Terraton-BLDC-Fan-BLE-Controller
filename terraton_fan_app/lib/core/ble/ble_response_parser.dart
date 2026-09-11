@@ -188,6 +188,22 @@ class BleResponseParser {
     if (level > 5) return null;
     return (isOn: level > 0, level: level);
   }
+
+  // Speed-LED "keep-lit" toggle (CF-02) — spec'd 2026-09, not yet on shipped
+  // firmware. Same trick as CoolLight: shares the mode command byte (0x21)
+  // with a disjoint data range so it never collides with 0x01-0x04 (mode) or
+  // 0x20-0x25 (CoolLight, a different remote anyway) — see commands.yaml led.
+  // 0x10 = auto-blank (off), 0x11 = keep lit (on).
+  static const int _ledBase = 0x10;
+
+  static bool? parseLedState(FanResponse r) {
+    final cmd = CommandLoader.responseCommand('mode');
+    if (r.command != cmd || r.data.isEmpty) return null;
+    final b = r.data[0];
+    if (b == _ledBase) return false;
+    if (b == (_ledBase | 1)) return true;
+    return null;
+  }
 }
 
 /// Reassembles fan response frames from the raw BLE notification byte stream.

@@ -419,6 +419,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       return;
     }
 
+    // Speed-LED keep-lit toggle (CF-02) — spec'd, not yet on shipped firmware.
+    // Same 0x21-sharing trick as CoolLight, disjoint byte range (see
+    // parseLedState); once real, arrives as a direct echo and as a 5th frame
+    // on every Motor State poll reply, same slot send_light_state() uses.
+    final led = BleResponseParser.parseLedState(r);
+    if (led != null) {
+      notifier.updateLed(led);
+      ConnectionLogService.machineState('led=${led ? 'on' : 'off'}');
+      return;
+    }
+
     final timer = BleResponseParser.parseTimer(r);                // 0x22
     // A reported 0 IS a real cancellation now (2026-08-22 firmware fix):
     // get_mc_state()'s timer branch gates on AutoPowerState.FlagAutoPower,
@@ -755,6 +766,12 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         brightness: level / 5.0,
         isOn:       level > 0,
       );
+    } else if (cmd == CommandLoader.responseCommand('mode') &&
+        (data == 0x10 || data == 0x11)) {
+      // Speed-LED keep-lit toggle (CF-02) — see BleResponseParser.parseLedState.
+      // Same reasoning as the CoolLight branch above: checked ahead of the
+      // generic mode branch so it can't fall through and clear a lit chip.
+      notifier.updateLed(data == 0x11);
     } else if (cmd == CommandLoader.responseCommand('mode')) {
       final modeStr = switch (data) {
         0x01 => 'boost',
@@ -1373,11 +1390,13 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     unawaited(widget.send(BleFrameBuilder.setBoost(), label: 'Boost'));
   }
 
-  /// Speed-indication LED toggle (CF-02). UI-state only for now — the frame
-  /// is null until Terraton supplies the bytes, so `send` shows a pending
-  /// SnackBar. Mirrors how the mood-lighting toggle behaves today.
+  /// Speed-indication LED "keep-lit" toggle (CF-02). Dumb-remote, same as
+  /// CoolLight: a tap sends only its own frame — no local write here.
+  /// fanState.lastLedIsOn is kept current by _applyFrame's parseLedState
+  /// branch, from the fan's direct echo and the Motor State poll's 5th frame.
+  /// Bytes are spec'd (commands.yaml led.on/off) for a firmware rev that has
+  /// not shipped yet, so this currently shows a pending SnackBar.
   void _onLed(bool on) {
-    ref.read(activeFanStateProvider(widget.fan.deviceId).notifier).updateLed(on);
     unawaited(widget.send(
       on ? BleFrameBuilder.ledOn() : BleFrameBuilder.ledOff(),
       pendingMsg: 'Speed LED command pending from Terraton',

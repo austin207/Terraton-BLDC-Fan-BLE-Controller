@@ -104,6 +104,16 @@ void main() {
       expect(CommandLoader.lightLevel(6), isNull);
     });
 
+    // Speed LED "keep-lit" toggle (CF-02) — spec'd for a firmware rev that
+    // has not shipped yet (see commands.yaml led).
+    test('ledOn = 55 AA 06 21 01 11 38', () {
+      expect(CommandLoader.ledOn(), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x11, 0x38]);
+    });
+
+    test('ledOff = 55 AA 06 21 01 10 37', () {
+      expect(CommandLoader.ledOff(), [0x55, 0xAA, 0x06, 0x21, 0x01, 0x10, 0x37]);
+    });
+
     test('custom returns null gracefully for missing key', () {
       expect(CommandLoader.custom(['commands', 'nonexistent', 'action'], [0x01]), isNull);
     });

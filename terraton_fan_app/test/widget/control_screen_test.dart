@@ -157,8 +157,8 @@ void main() {
 
   // Pump the screen and emit a connected state.
   // Two extra pumps let stream delivery and StreamProvider rebuild complete.
-  Future<void> pumpConnected(WidgetTester tester) async {
-    await tester.pumpWidget(buildScreen());
+  Future<void> pumpConnected(WidgetTester tester, {String? model}) async {
+    await tester.pumpWidget(model == null ? buildScreen() : buildScreen(model: model));
     await tester.pump();       // fire addPostFrameCallback → _connect()
     await tester.pump();       // drain async microtasks from startScan/connect
     stateCtrl.add(BleConnectionState.connected);
@@ -363,6 +363,57 @@ void main() {
       verify(
         () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x20, 0x47]),
       ).called(1);
+    });
+  });
+
+  // ── Speed LED "keep-lit" toggle (CF-02) ─────────────────────────────────────
+  // Spec'd 2026-09 for a firmware rev that has not shipped yet — see
+  // BleResponseParser.parseLedState / commands.yaml led. Same dumb-remote
+  // pattern as CoolLight: tap sends only its own frame; display is poll truth.
+
+  group('Speed LED (CF-02)', () {
+    testWidgets('LED ON sends the on frame', (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-02');
+      clearInteractions(mockBle);
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      modeWidget.onLed(true);
+      await tester.pump();
+
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x11, 0x38]),
+      ).called(1);
+    });
+
+    testWidgets('LED OFF sends the off frame', (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-02');
+      clearInteractions(mockBle);
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      modeWidget.onLed(false);
+      await tester.pump();
+
+      verify(
+        () => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x21, 0x01, 0x10, 0x37]),
+      ).called(1);
+    });
+
+    testWidgets('an LED-ON echo updates ledOn without touching the mode chip',
+        (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-02');
+
+      // 55 AA 07 21 01 11 39 — LED ON, response packet id (0x07).
+      notifyCtrl.add(const [0x55, 0xAA, 0x07, 0x21, 0x01, 0x11, 0x39]);
+      await tester.pump();
+      await tester.pump();
+
+      final modeWidget =
+          tester.widget<ModeControlWidget>(find.byType(ModeControlWidget));
+      expect(modeWidget.ledOn, isTrue);
+      expect(modeWidget.activeMode, isNull);
+      expect(modeWidget.isBoost, isFalse);
     });
   });
 

@@ -91,15 +91,21 @@ commands:
       command: 0x24
       data: [0x00]
 
-  # Speed-indication LED on/off (CF-02 remote). Command bytes pending from
-  # Terraton — fill in `command` and `data` when received. No Dart changes needed.
+  # Speed-indication LED "keep-lit" toggle (CF-02 remote). Spec'd 2026-09 for
+  # a firmware rev that has not shipped yet — reuses the mode command byte
+  # (0x21, same as CoolLight/modes) with a spare data range: the LED bar
+  # normally shows the current speed then auto-blanks after 3s (firmware's
+  # existing `disp_lock` flag, currently toggled only by the IR remote's
+  # repurposed Nature button); 0x10 = auto-blank (off), 0x11 = keep lit (on).
+  # Verify these bytes against the firmware once it lands — update here only,
+  # no Dart changes needed.
   led:
     on:
-      command: null
-      data: null
+      command: 0x21
+      data: [0x11]
     off:
-      command: null
-      data: null
+      command: 0x21
+      data: [0x10]
 
   # CoolLight (CF-03 remote only). Firmware ("underlight" build, 2026-09)
   # reuses the mode command byte (0x21, same as Boost/Nature/Reverse/Smart) —
