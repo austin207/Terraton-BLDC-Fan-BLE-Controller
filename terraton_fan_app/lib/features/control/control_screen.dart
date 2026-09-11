@@ -857,7 +857,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
         ?? BleConnectionState.disconnected;
 
     final enabled         = _isDemo || connState == BleConnectionState.connected;
-    final controlsEnabled = enabled && fanState.isPowered;
     final isDisconnected  = !_isDemo && connState == BleConnectionState.disconnected;
 
     return Scaffold(
@@ -920,16 +919,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
                 const SizedBox(height: 20),
                 // Only block taps when disconnected. A tap while the fan is off
                 // still sends its own frame — nothing is injected ahead of it.
+                // The power-dependent dim (fan off but connected) now lives
+                // INSIDE _FanControlsPanel, section by section — CoolLight is
+                // not fan-power-gated (see its no-dim comment there), so it can
+                // no longer share one opacity with everything else here.
                 IgnorePointer(
                   ignoring: !enabled,
-                  child: AnimatedOpacity(
-                    opacity: controlsEnabled ? 1.0 : 0.45,
-                    duration: const Duration(milliseconds: 300),
-                    child: _FanControlsPanel(
-                      fan: widget.fan,
-                      enabled: enabled,
-                      send: _send,
-                    ),
+                  child: _FanControlsPanel(
+                    fan: widget.fan,
+                    enabled: enabled,
+                    send: _send,
                   ),
                 ),
                 // Debug card: visible to service technicians only (isServiceAccess).
@@ -1442,6 +1441,17 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
     return Column(
       children: [
 
+        // Fan-power-dependent dim (connected but off) for every section below
+        // that actually depends on the fan running — speed dial, modes, timer.
+        // Does NOT wrap CoolLight: firmware confirms the light is fully
+        // independent of fan power (case POWER never touches LightOnOff /
+        // LightApply), so it stays full opacity here and dims only on its own
+        // on/off state, via LightingControlWidget's enabled/isLightOn Opacity.
+        AnimatedOpacity(
+          opacity: fanState.isPowered ? 1.0 : 0.45,
+          duration: const Duration(milliseconds: 300),
+          child: Column(children: [
+
         // ── Demo remote switcher (tester demo fan only) ─────────────────────
         if (_isDemoFan) ...[
           _DemoRemoteSwitcher(
@@ -1593,6 +1603,9 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
           const SizedBox(height: 20),
         ],
 
+          ]),
+        ),
+
         // ── CoolLight (CF-03 only) ───────────────────────────────────────────
         // Dumb-remote, same as the rest of this screen: a tap sends only its
         // own frame, and display is poll truth — fanState.lastLight* is kept
@@ -1637,14 +1650,22 @@ class _FanControlsPanelState extends ConsumerState<_FanControlsPanel>
         // ── Custom controls from ControlRegistry ──────────────────────────
         // Any control type in appliances.yaml that is not built-in is looked
         // up in ControlRegistry and rendered here. Register builders in main.dart.
-        for (final controlType in customControls)
-          if (ControlRegistry.get(controlType) case final builder?)
-            builder(ControlBuildParams(
-              device:    fan,
-              fanState:  fanState,
-              enabled:   enabled,
-              ref:       ref,
-            )),
+        // Kept under the same fan-power dim as the built-in controls above —
+        // unlike CoolLight, nothing here is known to be power-independent.
+        AnimatedOpacity(
+          opacity: fanState.isPowered ? 1.0 : 0.45,
+          duration: const Duration(milliseconds: 300),
+          child: Column(children: [
+            for (final controlType in customControls)
+              if (ControlRegistry.get(controlType) case final builder?)
+                builder(ControlBuildParams(
+                  device:    fan,
+                  fanState:  fanState,
+                  enabled:   enabled,
+                  ref:       ref,
+                )),
+          ]),
+        ),
 
       ],
     );

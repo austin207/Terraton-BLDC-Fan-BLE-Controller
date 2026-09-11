@@ -270,6 +270,32 @@ void main() {
   // parseLightState applying the fan's echo. See commands.yaml lighting.
 
   group('CoolLight', () {
+    testWidgets('is not dimmed by fan power — only the power-dependent sections are',
+        (tester) async {
+      await pumpConnected(tester); // connected, but NOT powered on
+
+      // No AnimatedOpacity wraps CoolLight at all any more — it is a direct
+      // sibling of the power-gated section, not nested inside it, so it is
+      // always full opacity regardless of fanState.isPowered.
+      expect(
+        find.ancestor(
+          of: find.byType(LightingControlWidget),
+          matching: find.byType(AnimatedOpacity),
+        ),
+        findsNothing,
+        reason: 'CoolLight is power-independent in firmware — power off must not dim it',
+      );
+
+      final dialOpacity = tester.widget<AnimatedOpacity>(
+        find.ancestor(
+          of: find.byType(CircularSpeedDial),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dialOpacity.opacity, 0.45,
+          reason: 'the speed dial (and modes/timer) still dim while the fan is off');
+    });
+
     testWidgets('light ON sends the last-known level (default fan state, 0.7 -> level 4)',
         (tester) async {
       await pumpConnected(tester);

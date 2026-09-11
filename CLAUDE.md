@@ -205,7 +205,12 @@ control screen changes.
   `0x01`-`0x04`, never `0x20`+). The Warm/Neutral/Cool colour-temperature row is
   still **dormant** (`LightingControlWidget.showColorTemp = false`) — this
   firmware has one colour; the row is left fully wired for when Terraton ships
-  tunable-white hardware.
+  tunable-white hardware. **Not dimmed when the fan powers off** — confirmed
+  from firmware (`case POWER` never touches `LightOnOff`/`LightApply`) that
+  CoolLight is independent of fan power, so `ControlScreen` does not nest it
+  under the fan-power `AnimatedOpacity` the way the speed dial/modes/timer are
+  (see "Control screen" testing note below). It dims only on its own on/off
+  state.
 - **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
   ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
   type's legacy four-mode profile; anything else → an all-controls profile
@@ -593,4 +598,4 @@ Real data from `UsageLogRepository`. Usage segments are flushed by `_FanControls
 - `CircularSpeedDial` stacks 6 `GestureDetector`s at the same centre — `tester.tap()` is intercepted by the overlaid Column; invoke `dial.onSpeedSelected(n)` directly
 - `LightingControlWidget` and the boost button sit below the 600 px test viewport — obtain the widget with `tester.widget<...>(find.byType(...))` and call its callback directly
 - `_BoostButton` is a `StatefulWidget` (owns `_shimmerCtrl`); find it via `ValueKey('boost_button')` on its outer `GestureDetector`
-- Power-gate: `controlsEnabled = enabled && fanState.isPowered` — tests that check dial or boost state must emit a power-on BLE response frame first
+- Power-gate: applied per-section now (2026-09), as `AnimatedOpacity(opacity: fanState.isPowered ? 1.0 : 0.45, ...)` wrapping the speed dial + modes + timer + custom controls inside `_FanControlsPanel` — tests that check dial or boost state must emit a power-on BLE response frame first. **CoolLight is deliberately excluded**: it is not nested under either of those two `AnimatedOpacity`s, since firmware confirms the light is independent of fan power (`case POWER` never touches `LightOnOff`/`LightApply`) — it dims only on its own on/off state via `LightingControlWidget`'s own `enabled`/`isLightOn`-driven `Opacity`.
