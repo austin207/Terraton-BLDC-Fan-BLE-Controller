@@ -379,11 +379,20 @@ optimistic write on this screen, alongside the sleep timer. They are required,
 not a convenience: none of the exit frames produce a `0x21` reply, so without
 them a chip could never turn off.
 
-**A `power == false` frame** clears power, both mode chips and the timer, but
-**keeps the speed**. Not a judgement call: firmware's power-off branch runs
-`ClearModes()` and clears `FlagAutoPower`, while `OldTargetSpeed` survives and is
-restored on the next power-on. Keeping the speed also avoids fighting the `0x04`
-frame arriving two bytes later in the same burst.
+**A `power == false` frame** clears power, Boost/Nature/Smart and the timer, but
+**keeps the speed and Reverse**. Not a judgement call: firmware's power-off
+branch explicitly clears `NatureFlage` and `FlagAutoPower`, and `smart_mode` is
+unconditionally zeroed on the *next* power-on — so none of Boost/Nature/Smart
+survive a power cycle from the app's point of view. `OldTargetSpeed` survives
+and is restored on the next power-on, so the speed the OFF reply reports is
+kept — also avoids fighting the `0x04` frame arriving two bytes later in the
+same burst. **Reverse is the one exception (confirmed 2026-09):** `direction`
+is a plain global firmware no longer resets on a normal power-off — only a
+genuine MCU reset (mains power loss) zero-initializes it again — so a fan
+that was reversed when powered off is still reversed when powered back on.
+`ActiveFanStateNotifier.applyPowerOff()` keeps `activeMode == 'reverse'`
+through the OFF transition for exactly this reason; every other mode still
+clears.
 
 **Polling** — one `_pollTimer` at 3 s (`_startPoll`) writing two frames per tick,
 paced 60 ms apart by `WriteQueue`: `statusPoll()` for watts/RPM and Get Motor

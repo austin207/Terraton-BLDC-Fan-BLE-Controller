@@ -278,23 +278,32 @@ class ActiveFanStateNotifier extends AutoDisposeFamilyNotifier<FanState, String>
 
   /// Applied when a `0x02` frame reports the fan is OFF.
   ///
-  /// Clearing the mode chips and the timer is not inference — the firmware's
-  /// power-off branch runs `ClearModes()` and `FlagAutoPower = 0`, so those
-  /// really are gone in the fan. `speed` is deliberately KEPT: the firmware
-  /// preserves `OldTargetSpeed` across off/on and restores it on power-on, an
-  /// OFF state reply reports that stored speed in frame [2], and clearing it
-  /// here would fight that frame two bytes later in the same burst.
+  /// Clearing Boost/Nature/Smart and the timer is not inference — firmware's
+  /// power-off branch clears `NatureFlage` and `FlagAutoPower` explicitly,
+  /// and unconditionally zeroes `smart_mode` on the NEXT power-ON, so neither
+  /// survives a power cycle from the app's point of view. **Reverse is the
+  /// one exception, confirmed 2026-09**: `direction` is a plain global that
+  /// firmware no longer resets on a normal power-off (only a genuine MCU
+  /// reset — mains power loss — zero-initializes it again), so a fan that
+  /// was reversed when powered off is still reversed when powered back on.
+  /// Clearing the chip here would just have it flash back on at the next
+  /// poll tick; keeping it is reading the byte, not guessing.
+  /// `speed` is deliberately KEPT: the firmware preserves `OldTargetSpeed`
+  /// across off/on and restores it on power-on, an OFF state reply reports
+  /// that stored speed in frame [2], and clearing it here would fight that
+  /// frame two bytes later in the same burst.
   void applyPowerOff() {
+    final keptMode = state.activeMode == 'reverse' ? 'reverse' : null;
     if (!state.isPowered &&
         !state.isBoost &&
-        state.activeMode == null &&
+        state.activeMode == keptMode &&
         state.activeTimerCode == null) {
       return;
     }
     state = state.copyWith(
       isPowered:        false,
       isBoost:          false,
-      activeMode:       () => null,
+      activeMode:       () => keptMode,
       activeTimerCode:  () => null,
       timerActivatedAt: () => null,
     );

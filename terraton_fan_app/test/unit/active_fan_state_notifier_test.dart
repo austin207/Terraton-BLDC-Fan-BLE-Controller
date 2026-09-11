@@ -308,6 +308,30 @@ void main() {
       n.applyPowerOff();
       expect(c.read(activeFanStateProvider(deviceId)).speed, 5);
     });
+
+    test('KEEPS Reverse — firmware no longer resets direction on a normal '
+        'power-off (2026-09), only a genuine MCU reset does', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updatePower(true);
+      n.setModeHighlight('reverse');
+      n.applyPowerOff();
+      final s = c.read(activeFanStateProvider(deviceId));
+      expect(s.isPowered, false);
+      expect(s.activeMode, 'reverse');
+      expect(s.isBoost, false);
+    });
+
+    test('still clears Nature/Smart/Boost — only Reverse survives', () {
+      final c = makeContainer();
+      addTearDown(c.dispose);
+      final n = c.read(activeFanStateProvider(deviceId).notifier);
+      n.updatePower(true);
+      n.setModeHighlight('nature');
+      n.applyPowerOff();
+      expect(c.read(activeFanStateProvider(deviceId)).activeMode, isNull);
+    });
   });
 
   // ── resetTelemetryOnConnect ─────────────────────────────────────────────────
