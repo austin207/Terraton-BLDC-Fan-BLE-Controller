@@ -417,6 +417,66 @@ void main() {
     });
   });
 
+  // ── Twin ON/OFF power buttons (CF-01/CF-02) ─────────────────────────────────
+  // Mirrors the physical remote's separate IRFANON vs IRALLOFF/IRFANOFF
+  // buttons. UI-only — firmware confirms IRFANON and powerOn() are the same
+  // state transition. See _PowerButtonPair.
+
+  group('Twin power buttons (CF-01/CF-02)', () {
+    testWidgets(
+        'CF-01 and CF-02 render an OFF icon + ON text pair; CF-03 renders one toggle icon',
+        (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-01');
+      expect(find.byIcon(Icons.power_settings_new_rounded), findsOneWidget);
+      expect(find.text('ON'), findsOneWidget);
+
+      await pumpConnected(tester, model: 'TN-CF-02');
+      expect(find.byIcon(Icons.power_settings_new_rounded), findsOneWidget);
+      expect(find.text('ON'), findsOneWidget);
+
+      await pumpConnected(tester, model: 'TN-CF-03');
+      expect(find.byIcon(Icons.power_settings_new_rounded), findsOneWidget);
+      expect(find.text('ON'), findsNothing);
+    });
+
+    testWidgets('exposes separate Fan ON / Fan OFF semantics on CF-01',
+        (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-01');
+      expect(find.bySemanticsLabel('Fan ON'), findsOneWidget);
+      expect(find.bySemanticsLabel('Fan OFF'), findsOneWidget);
+      expect(find.bySemanticsLabel('Power'), findsNothing);
+    });
+
+    testWidgets('ON always sends powerOn(), OFF always sends powerOff() — '
+        'both send regardless of current displayed state', (tester) async {
+      await pumpConnected(tester, model: 'TN-CF-01');
+      clearInteractions(mockBle);
+
+      // Fan starts off (default FanState). Tap ON (text glyph).
+      await tester.tap(find.text('ON'));
+      await tester.pump();
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
+          .called(1);
+
+      // No poll reply has confirmed it yet (fanState.isPowered is still
+      // false), but tapping OFF (icon glyph) must still send its frame
+      // unconditionally — same "every press sends a frame" rule as every
+      // other control.
+      clearInteractions(mockBle);
+      await tester.tap(find.byIcon(Icons.power_settings_new_rounded));
+      await tester.pump();
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x00, 0x08]))
+          .called(1);
+
+      // And tapping ON again, still off, still sends.
+      clearInteractions(mockBle);
+      await tester.tap(find.text('ON'));
+      await tester.pump();
+      verify(() => mockBle.writeFrame([0x55, 0xAA, 0x06, 0x02, 0x01, 0x01, 0x09]))
+          .called(1);
+    });
+  });
+
   // ── Machine State restore on reconnect (after mains power-cycle) ─────────────
   // _connect() starts a MachineStateSync session: getMotorState polls retry
   // (alternating the lab and vendor checksum variants) and a state is applied
@@ -1478,8 +1538,9 @@ void main() {
       await tester.pumpWidget(buildScreen(model: 'TN-CF-01', deviceId: '__demo__'));
       await tester.pumpAndSettle();
 
-      // Power button is a 56 dp circle above the panel.
-      await tester.tap(find.byIcon(Icons.power_settings_new_rounded));
+      // CF-01 now renders twin ON/OFF power circles (see _PowerButtonPair) —
+      // ON is the text glyph, OFF is the icon glyph.
+      await tester.tap(find.text('ON'));
       await tester.pumpAndSettle();
 
       final dial = tester.widget<CircularSpeedDial>(find.byType(CircularSpeedDial));

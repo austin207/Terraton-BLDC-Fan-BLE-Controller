@@ -221,6 +221,19 @@ control screen changes.
   under the fan-power `AnimatedOpacity` the way the speed dial/modes/timer are
   (see "Control screen" testing note below). It dims only on its own on/off
   state.
+- **Power button — twin ON/OFF for CF-01/CF-02, single toggle everywhere else.**
+  `ControlScreen` resolves `ApplianceLoader.remoteForModel(fan.model).name` and
+  renders `_PowerButtonPair` (two always-tappable 56dp circles, `_PowerCircle`
+  under the hood) when it is `'CF-01'` or `'CF-02'`, else the original single
+  toggling `_PowerButton`. Mirrors the physical remote's separate `IRFANON` vs
+  `IRALLOFF`/`IRFANOFF` IR codes (confirmed 2026-09) — but is UI-only: firmware
+  ground truth shows `IRFANON` and the app's existing `powerOn()` (BLE
+  `POWER`, data=`0x01`) do the exact same state transition, so no new frame or
+  byte was needed. Whichever circle matches `fanState.isPowered` shows the
+  usual glow; the other reads dim (same disabled-look tokens as a disconnected
+  button) but stays fully tappable — every press still sends its frame,
+  including the "already active" one, same as the rest of this screen. CF-03
+  keeps the single toggle since its remote is out of scope for this request.
 - **Resolution fallback:** exact `TN-CF-01/02/03` → that profile; an unknown
   ceiling model or an empty model → CF-01; a non-ceiling `TN-` prefix → that
   type's legacy four-mode profile; anything else → an all-controls profile

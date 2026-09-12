@@ -876,6 +876,31 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
     final enabled         = _isDemo || connState == BleConnectionState.connected;
     final isDisconnected  = !_isDemo && connState == BleConnectionState.disconnected;
 
+    // CF-01/CF-02 get separate ON/OFF buttons, mirroring their physical
+    // remote's distinct IRFANON vs IRALLOFF/IRFANOFF buttons — firmware
+    // ground truth confirms IRFANON and the app's existing powerOn() (BLE
+    // POWER, data=0x01) are functionally identical, so this is a UI-only
+    // change, not a new frame. CF-03 (and every other appliance type) keeps
+    // the single toggling _PowerButton.
+    final remoteName = ApplianceLoader.remoteForModel(widget.fan.model).name;
+    final useTwinPowerButtons = remoteName == 'CF-01' || remoteName == 'CF-02';
+
+    // One button, one frame. No memory restore: the firmware's power-on
+    // branch already sets TargetSpeed from its stored OldTargetSpeed, so
+    // re-sending a speed would be redundant, and re-sending a stored Reverse
+    // would actively flip the fan the wrong way (Reverse is direction ^= 1,
+    // a toggle). Shared by the single toggle button and both twin buttons.
+    void sendPower(bool on) {
+      if (!enabled && !_isDemo) {
+        setState(() => _showDisconnectAlert = true);
+        return;
+      }
+      unawaited(_send(
+        on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
+        label: on ? 'Power ON' : 'Power OFF',
+      ));
+    }
+
     return Scaffold(
       backgroundColor: kBg,
       appBar: AppBar(
@@ -908,32 +933,35 @@ class _ControlScreenState extends ConsumerState<ControlScreen>
       body: Stack(
         children: [
           SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(20, 16, 20, isDisconnected ? 200 : 28),
+            // CF-01/CF-02 have no CoolLight section, so the content is
+            // visibly shorter than CF-03's — extra top inset shifts
+            // everything down to close that empty gap at the bottom.
+            padding: EdgeInsets.fromLTRB(
+              20, useTwinPowerButtons ? 56 : 16, 20, isDisconnected ? 200 : 28,
+            ),
             child: Column(
               children: [
                 if (widget.fan.isServiceAccess)
                   _ServiceAccessBanner(remaining: _serviceRemaining),
-                _PowerButton(
-                  isPowered: fanState.isPowered,
-                  isConnected: enabled,
-                  onTap: () {
-                    if (!enabled && !_isDemo) {
-                      setState(() => _showDisconnectAlert = true);
-                      return;
-                    }
-                    // One button, one frame. No memory restore: the firmware's
-                    // power-on branch already sets TargetSpeed from its stored
-                    // OldTargetSpeed, so re-sending a speed would be redundant,
-                    // and re-sending a stored Reverse would actively flip the
-                    // fan the wrong way (Reverse is direction ^= 1, a toggle).
-                    final on = !fanState.isPowered;
-                    unawaited(_send(
-                      on ? BleFrameBuilder.powerOn() : BleFrameBuilder.powerOff(),
-                      label: on ? 'Power ON' : 'Power OFF',
-                    ));
-                  },
-                ),
-                const SizedBox(height: 20),
+                if (useTwinPowerButtons)
+                  _PowerButtonPair(
+                    isPowered: fanState.isPowered,
+                    isConnected: enabled,
+                    onTapOn:  () => sendPower(true),
+                    onTapOff: () => sendPower(false),
+                  )
+                else
+                  _PowerButton(
+                    isPowered: fanState.isPowered,
+                    isConnected: enabled,
+                    onTap: () => sendPower(!fanState.isPowered),
+                  ),
+                // Twin buttons stay put; the panel below (starting with the
+                // speed dial) is pushed further down to roughly match the
+                // gap already visible between the dial's bottom "4" node and
+                // the OPERATING MODES row — makes the screen read as evenly
+                // filled instead of front-loaded at the top.
+                SizedBox(height: useTwinPowerButtons ? 44 : 20),
                 // Only block taps when disconnected. A tap while the fan is off
                 // still sends its own frame — nothing is injected ahead of it.
                 // The power-dependent dim (fan off but connected) now lives
@@ -1896,10 +1924,126 @@ class _PowerButton extends StatelessWidget {
       ];
     }
 
+    return _PowerCircle(
+      semanticLabel: 'Power',
+      semanticValue: isPowered ? 'on' : 'off',
+      rim: rim, bgColor: bgColor, shadows: shadows,
+      glyph: Icon(Icons.power_settings_new_rounded, size: 26, color: iconColor),
+      onTap: onTap,
+    );
+  }
+}
+
+// ── Twin ON/OFF power buttons (CF-01 / CF-02) ─────────────────────────────────
+// Mirrors the physical remote's distinct IRFANON vs IRALLOFF/IRFANOFF buttons
+// — firmware ground truth confirms IRFANON and the app's powerOn() (BLE
+// POWER, data=0x01) are functionally identical, so this is UI-only: two
+// always-tappable circles instead of one toggling circle. Whichever matches
+// fanState.isPowered is lit with the usual glow; the other reads as dim
+// (same disabled-look tokens as a disconnected button) but stays tappable —
+// tapping it still sends its frame, same as every other control on this
+// screen (see "Tapping the active button is a no-op" in the dumb-remote
+// table — nothing here is exempt from that rule either).
+class _PowerButtonPair extends StatelessWidget {
+  final bool isPowered;
+  final bool isConnected;
+  final VoidCallback onTapOn;
+  final VoidCallback onTapOff;
+
+  const _PowerButtonPair({
+    required this.isPowered,
+    required this.isConnected,
+    required this.onTapOn,
+    required this.onTapOff,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const dimShadows = [BoxShadow(color: kHairline, blurRadius: 8)];
+
+    // Outline + glyph are always tinted red (OFF) / green (ON) whenever
+    // connected — active or not. Only the fill + glow are reserved for the
+    // currently-confirmed state; an inactive-but-connected button is a
+    // colour-outlined circle on the plain card background, not the disabled
+    // grey look (that's reserved for genuinely disconnected).
+    final onGlyphColor  = !isConnected ? kDisabledIcon : kPowerOn;
+    final offGlyphColor = !isConnected ? kDisabledIcon : kPowerOff;
+    final onRim  = !isConnected ? kDisabledRim : kPowerOn;
+    final offRim = !isConnected ? kDisabledRim : kPowerOff;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // OFF on the left, ON on the right.
+        _PowerCircle(
+          semanticLabel: 'Fan OFF',
+          semanticValue: !isPowered ? 'off' : null,
+          rim:     offRim,
+          bgColor: !isConnected ? kCard : (!isPowered ? kPowerOffFill : kCard),
+          shadows: !isConnected || isPowered
+              ? dimShadows
+              : const [
+                  BoxShadow(color: kPowerOffGlow1, blurRadius: 10),
+                  BoxShadow(color: kPowerOffGlow2, blurRadius: 22),
+                ],
+          glyph: Icon(Icons.power_settings_new_rounded, size: 26, color: offGlyphColor),
+          onTap: onTapOff,
+        ),
+        // Gap chosen so each button's centre lines up with the speed dial's
+        // dot ring below: dot N sits at radius 110 and angle (N-1)*60deg-90
+        // (CircularSpeedDial._polar), so dot 6 is at x=-95.26 and dot 2 is at
+        // x=+95.26 from the shared horizontal centre — a 190.53 centre-to-
+        // centre distance. Minus one 56dp button width = 134.5 gap.
+        const SizedBox(width: 134.5),
+        _PowerCircle(
+          semanticLabel: 'Fan ON',
+          semanticValue: isPowered ? 'on' : null,
+          rim:     onRim,
+          bgColor: !isConnected ? kCard : (isPowered ? kPowerOnFill : kCard),
+          shadows: !isConnected || !isPowered
+              ? dimShadows
+              : const [
+                  BoxShadow(color: kPowerOnGlow1, blurRadius: 14),
+                  BoxShadow(color: kPowerOnGlow2, blurRadius: 28),
+                ],
+          glyph: Text('ON',
+              style: GoogleFonts.manrope(
+                fontSize: 15, fontWeight: FontWeight.w800, color: onGlyphColor,
+                letterSpacing: 0.4,
+              )),
+          onTap: onTapOn,
+        ),
+      ],
+    );
+  }
+}
+
+// ── Shared 56dp circular icon button used by both power layouts above ────────
+
+class _PowerCircle extends StatelessWidget {
+  final String semanticLabel;
+  final String? semanticValue;
+  final Color rim, bgColor;
+  final List<BoxShadow> shadows;
+  final Widget glyph;
+  final VoidCallback onTap;
+
+  const _PowerCircle({
+    required this.semanticLabel,
+    this.semanticValue,
+    required this.rim,
+    required this.bgColor,
+    required this.shadows,
+    required this.glyph,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Power',
-      value: isPowered ? 'on' : 'off',
+      label: semanticLabel,
+      value: semanticValue,
       child: GestureDetector(
         onTap: () {
           unawaited(HapticFeedback.lightImpact());
@@ -1914,7 +2058,12 @@ class _PowerButton extends StatelessWidget {
             border: Border.all(color: rim, width: 1.5),
             boxShadow: shadows,
           ),
-          child: Icon(Icons.power_settings_new_rounded, size: 26, color: iconColor),
+          alignment: Alignment.center,
+          // ExcludeSemantics: the ON glyph is a Text('ON', ...), which — unlike
+          // Icon — carries its own implicit semantics by default. Left
+          // unexcluded it merges into the ancestor Semantics(label:...) above
+          // and the button's semantic label stops being exactly "Fan ON".
+          child: ExcludeSemantics(child: glyph),
         ),
       ),
     );
