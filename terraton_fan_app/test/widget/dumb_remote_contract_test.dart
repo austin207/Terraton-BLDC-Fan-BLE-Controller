@@ -654,7 +654,7 @@ void main() {
       await emit(tester, rSmart);
       await emit(tester, [...rWatts10, ...rRpm300]);
       final s = stateOf(tester);
-      expect(s.lastWatts, 10);
+      expect(s.lastWatts, 11); // wire value 10 W + fixed +1 W wall-power offset
       expect(s.lastRpm, 300);
       expect(s.activeMode, 'smart');
       expect(s.isPowered, true);

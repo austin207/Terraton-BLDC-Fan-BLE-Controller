@@ -61,10 +61,12 @@ void main() {
       expect(BleResponseParser.parseSpeed(r!), isNull);
     });
 
-    test('parses watt response', () {
-      // (0x55+0xAA+0x07+0x23+0x01+0x1C) & 0xFF = 326 & 0xFF = 0x46  (28 W)
+    test('parses watt response, wall-power offset applied', () {
+      // (0x55+0xAA+0x07+0x23+0x01+0x1C) & 0xFF = 326 & 0xFF = 0x46
+      // wire byte = 28 W (raw FOC motor-power estimate); parser adds the
+      // fixed +1 W wall-power offset (bench-confirmed, see parser comment).
       final r = BleResponseParser.parse([0x55, 0xAA, 0x07, 0x23, 0x01, 0x1C, 0x46]);
-      expect(BleResponseParser.parsePowerWatts(r!), 28);
+      expect(BleResponseParser.parsePowerWatts(r!), 29);
     });
 
     test('parses RPM response — correct checksum', () {

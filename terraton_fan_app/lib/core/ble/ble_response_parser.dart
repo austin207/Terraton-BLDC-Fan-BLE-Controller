@@ -86,10 +86,24 @@ class BleResponseParser {
     return results;
   }
 
-  // Protocol: power reported as a single byte in watts (max 255 W).
+  // Protocol: power reported as a single byte in watts (max 255 W). The raw
+  // byte is firmware's FOC-estimated motor input power (IRScan.c send_status
+  // / POWER_CMD case) — it never sees the AC-DC/PFC stage, the control PCB's
+  // own quiescent draw, or the BLE60 module, so a wall-power meter reads
+  // consistently higher at every speed (bench-confirmed 2026-09-15, constant
+  // across the full speed range — a fixed overhead, not a scaling error, so
+  // this is an additive correction, not a change to firmware's POWER_REG_K).
+  // Measured gap was 1.3 W; watts is an int end-to-end (FanState.lastWatts,
+  // UsageLog.watts), so the offset is rounded to a whole watt. Re-validate
+  // _wallPowerOffsetWatts if a second unit or a different mains voltage
+  // shows a different gap.
+  static const _wallPowerOffsetWatts = 1;
+
   static int? parsePowerWatts(FanResponse r) {
     final cmd = CommandLoader.responseCommand('power_watts');
-    return r.command == cmd && r.data.isNotEmpty ? r.data[0] : null;
+    return r.command == cmd && r.data.isNotEmpty
+        ? r.data[0] + _wallPowerOffsetWatts
+        : null;
   }
 
   // Speed reported as two bytes (high byte, low byte) — 16-bit RPM value.

@@ -761,7 +761,7 @@ void main() {
 
       final s = stateOf(tester);
       expect(s.activeMode, 'smart'); // not wiped by the stored-speed frame
-      expect(s.lastWatts, 10);       // telemetry still applied live
+      expect(s.lastWatts, 11);       // telemetry still applied live (wire 10 + 1 W offset)
       expect(s.lastRpm, 300);
     });
 
@@ -1329,7 +1329,7 @@ void main() {
       notifyCtrl.add([...watts10, ...rpm300]);
       await tester.pump();
       await tester.pump();
-      expect(stateOf(tester).lastWatts, 10,
+      expect(stateOf(tester).lastWatts, 11, // wire 10 + 1 W offset
           reason: 'sanity check — telemetry applies live before the drop');
       expect(stateOf(tester).lastRpm, 300,
           reason: 'sanity check — telemetry applies live before the drop');
